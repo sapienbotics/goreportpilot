@@ -1,0 +1,17 @@
+-- ReportPilot Initial Database Schema
+-- Run via Supabase Dashboard SQL editor or Supabase CLI
+-- See docs/reportpilot-feature-design-blueprint.md for full schema specification
+--
+-- Tables to create:
+--   1. users (extends auth.users)
+--   2. clients
+--   3. connections
+--   4. data_snapshots
+--   5. reports
+--   6. report_templates
+--   7. report_deliveries
+--   8. scheduled_reports
+--
+-- IMPORTANT: Enable RLS on every table before inserting data.
+
+-- Placeholder: schema will be implemented in Phase 1

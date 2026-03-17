@@ -1,0 +1,8 @@
+{
+  "name": "ReportPilot — Stripe Webhook Handler",
+  "description": "Handles Stripe subscription lifecycle events (created, updated, cancelled). See docs/reportpilot-feature-design-blueprint.md.",
+  "nodes": [],
+  "connections": {},
+  "active": false,
+  "settings": {}
+}

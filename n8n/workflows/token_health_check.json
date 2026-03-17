@@ -1,0 +1,8 @@
+{
+  "name": "ReportPilot — Token Health Check",
+  "description": "Checks OAuth token expiry for all connections and alerts users when tokens need renewal. See docs/reportpilot-auth-integration-deepdive.md.",
+  "nodes": [],
+  "connections": {},
+  "active": false,
+  "settings": {}
+}

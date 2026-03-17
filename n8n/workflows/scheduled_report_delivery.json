@@ -1,0 +1,8 @@
+{
+  "name": "ReportPilot — Scheduled Report Delivery",
+  "description": "Generates and delivers reports on user-configured schedules (weekly/monthly). See docs/reportpilot-feature-design-blueprint.md.",
+  "nodes": [],
+  "connections": {},
+  "active": false,
+  "settings": {}
+}

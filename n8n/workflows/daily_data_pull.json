@@ -1,0 +1,8 @@
+{
+  "name": "ReportPilot — Daily Data Pull",
+  "description": "Triggers daily data pulls from GA4, Meta Ads, and Google Ads for all active connections. See docs/reportpilot-feature-design-blueprint.md.",
+  "nodes": [],
+  "connections": {},
+  "active": false,
+  "settings": {}
+}
