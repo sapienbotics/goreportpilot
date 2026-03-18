@@ -5,7 +5,8 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
+import { buttonVariants } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import { Users } from 'lucide-react'
 
 export default async function DashboardPage() {
@@ -38,9 +39,12 @@ export default async function DashboardPage() {
           <p className="text-slate-600 text-sm mb-4">
             You have <span className="font-semibold text-slate-900">0 clients</span>. Add your first client to get started.
           </p>
-          <Button asChild className="bg-indigo-700 hover:bg-indigo-800 text-white">
-            <Link href="/dashboard/clients">Add Client</Link>
-          </Button>
+          <Link
+            href="/dashboard/clients"
+            className={cn(buttonVariants(), 'bg-indigo-700 hover:bg-indigo-800 text-white')}
+          >
+            Add Client
+          </Link>
         </CardContent>
       </Card>
     </div>

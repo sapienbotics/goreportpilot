@@ -2,7 +2,8 @@
 // Full marketing page with hero, features, pricing, and footer will be built in Phase 4
 
 import Link from 'next/link'
-import { Button } from '@/components/ui/button'
+import { buttonVariants } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
 export default function LandingPage() {
   return (
@@ -18,12 +19,18 @@ export default function LandingPage() {
           AI writes your client reports. You review and send. 5 minutes, not 3 hours.
         </p>
         <div className="flex gap-3 justify-center">
-          <Button asChild className="bg-indigo-700 hover:bg-indigo-800 text-white">
-            <Link href="/signup">Get Started</Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link href="/login">Sign In</Link>
-          </Button>
+          <Link
+            href="/signup"
+            className={cn(buttonVariants(), 'bg-indigo-700 hover:bg-indigo-800 text-white')}
+          >
+            Get Started
+          </Link>
+          <Link
+            href="/login"
+            className={buttonVariants({ variant: 'outline' })}
+          >
+            Sign In
+          </Link>
         </div>
       </div>
     </div>
