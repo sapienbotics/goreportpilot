@@ -7,11 +7,16 @@ export interface Client {
   id: string
   user_id: string
   name: string
-  website?: string
-  industry?: string
-  contact_name?: string
-  contact_email?: string
-  logo_url?: string
+  website?: string | null
+  industry?: string | null
+  contact_name?: string | null
+  contact_email?: string | null
+  primary_contact_email?: string | null
+  logo_url?: string | null
+  goals_context?: string | null
+  ai_tone: string
+  notes?: string | null
+  is_active: boolean
   created_at: string
   updated_at: string
 }

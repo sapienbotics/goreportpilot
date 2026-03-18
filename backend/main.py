@@ -23,10 +23,13 @@ async def health_check():
     return {"status": "healthy", "service": "reportpilot-api"}
 
 
-# Routers will be included here as they are built:
-# from routers import auth, clients, connections, reports, data_pull, webhooks
+from routers import clients
+
+app.include_router(clients.router, prefix="/api/clients", tags=["clients"])
+
+# Routers to be included as they are built:
+# from routers import auth, connections, reports, data_pull, webhooks
 # app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
-# app.include_router(clients.router, prefix="/api/clients", tags=["clients"])
 # app.include_router(connections.router, prefix="/api/connections", tags=["connections"])
 # app.include_router(reports.router, prefix="/api/reports", tags=["reports"])
 # app.include_router(data_pull.router, prefix="/api/data", tags=["data"])
