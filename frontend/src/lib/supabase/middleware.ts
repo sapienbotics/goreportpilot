@@ -39,5 +39,15 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
+  // If user IS logged in and trying to access /login or /signup, redirect to /dashboard
+  if (
+    user &&
+    (request.nextUrl.pathname === '/login' || request.nextUrl.pathname === '/signup')
+  ) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/dashboard'
+    return NextResponse.redirect(url)
+  }
+
   return supabaseResponse
 }

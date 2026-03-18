@@ -1,7 +1,48 @@
-// Dashboard home — overview of all clients and recent reports
-// Shows summary stats: total clients, reports generated, active connections
-// See docs/reportpilot-feature-design-blueprint.md for dashboard wireframe
+// Dashboard home — authenticated users only
+// Fetches user server-side and shows welcome state
 
-export default function DashboardPage() {
-  return <div>Dashboard — Coming soon</div>
+import Link from 'next/link'
+import { redirect } from 'next/navigation'
+import { createClient } from '@/lib/supabase/server'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Users } from 'lucide-react'
+
+export default async function DashboardPage() {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    redirect('/login')
+  }
+
+  return (
+    <div className="max-w-4xl mx-auto">
+      <div className="mb-8">
+        <h1 className="text-2xl font-bold text-slate-900" style={{ fontFamily: 'var(--font-plus-jakarta-sans)' }}>
+          Welcome to ReportPilot
+        </h1>
+        <p className="mt-1 text-slate-500 text-sm">{user.email}</p>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-slate-700">
+            <Users className="h-5 w-5 text-indigo-600" />
+            Get started
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-slate-600 text-sm mb-4">
+            You have <span className="font-semibold text-slate-900">0 clients</span>. Add your first client to get started.
+          </p>
+          <Button asChild className="bg-indigo-700 hover:bg-indigo-800 text-white">
+            <Link href="/dashboard/clients">Add Client</Link>
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
+  )
 }

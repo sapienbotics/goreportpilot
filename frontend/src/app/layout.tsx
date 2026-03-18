@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
+import { Toaster } from "@/components/ui/sonner";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -30,6 +31,7 @@ export default function RootLayout({
     <html lang="en" className={cn(inter.variable, plusJakartaSans.variable)}>
       <body className="font-sans antialiased bg-background text-foreground">
         {children}
+        <Toaster />
       </body>
     </html>
   );

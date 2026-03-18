@@ -1,10 +1,23 @@
 // Supabase Auth callback route
-// Handles the OAuth redirect from Supabase after Google SSO login
-// Exchanges the code for a session and redirects to /dashboard
+// Exchanges the authorization code for a session after email confirmation or OAuth login
+// Redirects to /dashboard on success, /login?error=... on failure
 
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
 
-export async function GET(request: NextRequest) {
-  // Placeholder — will be implemented with Supabase SSR in Phase 1
-  return NextResponse.redirect(new URL('/dashboard', request.url))
+export async function GET(request: Request) {
+  const { searchParams, origin } = new URL(request.url)
+  const code = searchParams.get('code')
+  const next = searchParams.get('next') ?? '/dashboard'
+
+  if (code) {
+    const supabase = await createClient()
+    const { error } = await supabase.auth.exchangeCodeForSession(code)
+    if (!error) {
+      return NextResponse.redirect(`${origin}${next}`)
+    }
+  }
+
+  // Return the user to an error page with instructions
+  return NextResponse.redirect(`${origin}/login?error=auth_callback_failed`)
 }
