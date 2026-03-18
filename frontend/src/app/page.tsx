@@ -2,8 +2,6 @@
 // Full marketing page with hero, features, pricing, and footer will be built in Phase 4
 
 import Link from 'next/link'
-import { buttonVariants } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
 
 export default function LandingPage() {
   return (
@@ -21,13 +19,13 @@ export default function LandingPage() {
         <div className="flex gap-3 justify-center">
           <Link
             href="/signup"
-            className={cn(buttonVariants(), 'bg-indigo-700 hover:bg-indigo-800 text-white')}
+            className="inline-flex items-center justify-center rounded-lg bg-indigo-700 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-800"
           >
             Get Started
           </Link>
           <Link
             href="/login"
-            className={buttonVariants({ variant: 'outline' })}
+            className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
           >
             Sign In
           </Link>

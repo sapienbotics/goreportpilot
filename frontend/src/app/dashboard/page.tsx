@@ -5,8 +5,6 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { buttonVariants } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
 import { Users } from 'lucide-react'
 
 export default async function DashboardPage() {
@@ -41,7 +39,7 @@ export default async function DashboardPage() {
           </p>
           <Link
             href="/dashboard/clients"
-            className={cn(buttonVariants(), 'bg-indigo-700 hover:bg-indigo-800 text-white')}
+            className="inline-flex items-center justify-center rounded-lg bg-indigo-700 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-800"
           >
             Add Client
           </Link>
