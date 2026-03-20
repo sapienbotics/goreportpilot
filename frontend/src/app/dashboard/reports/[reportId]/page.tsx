@@ -72,14 +72,25 @@ function ChangeTag({ change, invert }: { change: number | null; invert?: boolean
   )
 }
 
+// ── Shared helper — normalise str | string[] → string[] ─────────────────────
+// GPT-4o returns paragraph fields as strings and bullet fields as arrays;
+// handle both so neither component crashes regardless of AI output format.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toLines(content: any): string[] {
+  if (Array.isArray(content)) return content.map(String).filter((l) => l.trim())
+  if (typeof content === 'string') return content.split('\n').filter((l) => l.trim())
+  return []
+}
+
 // ── Narrative section ───────────────────────────────────────────────────────
 function NarrativeSection({ title, content, icon }: {
   title: string
-  content: string | undefined
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  content: any
   icon?: React.ReactNode
 }) {
-  if (!content) return null
-  const paragraphs = content.split('\n').filter((l) => l.trim())
+  const paragraphs = toLines(content)
+  if (paragraphs.length === 0) return null
   return (
     <div>
       <h3 className="text-base font-semibold text-slate-800 flex items-center gap-2 mb-3">
@@ -100,11 +111,12 @@ function NarrativeSection({ title, content, icon }: {
 // ── Bullet-list section (wins / concerns / next steps) ──────────────────────
 function BulletSection({ title, content, color }: {
   title: string
-  content: string | undefined
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  content: any
   color: 'emerald' | 'amber' | 'indigo'
 }) {
-  if (!content) return null
-  const lines = content.split('\n').filter((l) => l.trim())
+  const lines = toLines(content)
+  if (lines.length === 0) return null
 
   const dotClass = {
     emerald: 'text-emerald-500',
@@ -234,7 +246,7 @@ export default function ReportDetailPage() {
             {report.period_start} → {report.period_end}
             <span
               className={`ml-3 rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                report.status === 'ready'
+                report.status === 'draft' || report.status === 'approved'
                   ? 'bg-emerald-50 text-emerald-700'
                   : 'bg-slate-100 text-slate-500'
               }`}

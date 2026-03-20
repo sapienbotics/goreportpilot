@@ -37,7 +37,7 @@ export interface Report {
   client_id: string
   client_name?: string | null
   title: string
-  status: 'generating' | 'ready' | 'error'
+  status: 'generating' | 'draft' | 'approved' | 'sent' | 'failed'
   period_start: string
   period_end: string
   pptx_url?: string | null

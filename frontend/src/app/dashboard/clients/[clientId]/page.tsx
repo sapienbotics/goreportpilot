@@ -417,7 +417,7 @@ export default function ClientDetailPage({ params }: Props) {
                     <div className="flex items-center gap-2">
                       <span
                         className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                          report.status === 'ready'
+                          report.status === 'draft' || report.status === 'approved'
                             ? 'bg-emerald-50 text-emerald-700'
                             : 'bg-slate-100 text-slate-500'
                         }`}
