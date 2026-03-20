@@ -378,7 +378,7 @@ export default function ClientDetailPage({ params }: Props) {
             <div className="space-y-3">
               {/* GA4 row */}
               {(() => {
-                const ga4 = connections.find((c) => c.platform === 'google_analytics')
+                const ga4 = connections.find((c) => c.platform === 'ga4')
                 return ga4 ? (
                   <div className="flex items-center justify-between rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3">
                     <div className="flex items-center gap-3">
