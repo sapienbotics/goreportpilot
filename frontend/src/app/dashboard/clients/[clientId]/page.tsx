@@ -49,10 +49,9 @@ export default function ClientDetailPage({ params }: Props) {
     try {
       const updated = await clientsApi.update(client.id, {
         name: editValues.name,
-        website: editValues.website ?? undefined,
+        website_url: editValues.website_url ?? undefined,
         industry: editValues.industry ?? undefined,
-        contact_name: editValues.contact_name ?? undefined,
-        contact_email: editValues.contact_email ?? undefined,
+        primary_contact_email: editValues.primary_contact_email ?? undefined,
         goals_context: editValues.goals_context ?? undefined,
         notes: editValues.notes ?? undefined,
       })
@@ -178,20 +177,20 @@ export default function ClientDetailPage({ params }: Props) {
           <Field label="Website">
             {editing ? (
               <Input
-                value={editValues.website ?? ''}
-                onChange={(e) => setEditValues((v) => ({ ...v, website: e.target.value }))}
+                value={editValues.website_url ?? ''}
+                onChange={(e) => setEditValues((v) => ({ ...v, website_url: e.target.value }))}
                 placeholder="https://example.com"
                 type="url"
               />
-            ) : client.website ? (
+            ) : client.website_url ? (
               <a
-                href={client.website}
+                href={client.website_url}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-indigo-700 hover:underline flex items-center gap-1"
               >
                 <Globe className="h-3.5 w-3.5" />
-                {client.website.replace(/^https?:\/\//, '')}
+                {client.website_url.replace(/^https?:\/\//, '')}
               </a>
             ) : (
               <span className="text-slate-400">—</span>
@@ -210,33 +209,21 @@ export default function ClientDetailPage({ params }: Props) {
             )}
           </Field>
 
-          <Field label="Contact name">
-            {editing ? (
-              <Input
-                value={editValues.contact_name ?? ''}
-                onChange={(e) => setEditValues((v) => ({ ...v, contact_name: e.target.value }))}
-                placeholder="Jane Smith"
-              />
-            ) : (
-              <span>{client.contact_name ?? <span className="text-slate-400">—</span>}</span>
-            )}
-          </Field>
-
           <Field label="Contact email">
             {editing ? (
               <Input
-                value={editValues.contact_email ?? ''}
-                onChange={(e) => setEditValues((v) => ({ ...v, contact_email: e.target.value }))}
+                value={editValues.primary_contact_email ?? ''}
+                onChange={(e) => setEditValues((v) => ({ ...v, primary_contact_email: e.target.value }))}
                 type="email"
                 placeholder="jane@example.com"
               />
-            ) : client.contact_email ? (
+            ) : client.primary_contact_email ? (
               <a
-                href={`mailto:${client.contact_email}`}
+                href={`mailto:${client.primary_contact_email}`}
                 className="text-indigo-700 hover:underline flex items-center gap-1"
               >
                 <Mail className="h-3.5 w-3.5" />
-                {client.contact_email}
+                {client.primary_contact_email}
               </a>
             ) : (
               <span className="text-slate-400">—</span>

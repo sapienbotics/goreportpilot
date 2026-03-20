@@ -15,10 +15,8 @@ from pydantic import BaseModel, EmailStr, HttpUrl, field_validator
 
 class ClientCreate(BaseModel):
     name: str
-    website: str | None = None
+    website_url: str | None = None
     industry: str | None = None
-    contact_name: str | None = None
-    contact_email: str | None = None
     primary_contact_email: str | None = None
     goals_context: str | None = None
     ai_tone: str = "professional"
@@ -35,10 +33,8 @@ class ClientCreate(BaseModel):
 
 class ClientUpdate(BaseModel):
     name: str | None = None
-    website: str | None = None
+    website_url: str | None = None
     industry: str | None = None
-    contact_name: str | None = None
-    contact_email: str | None = None
     primary_contact_email: str | None = None
     goals_context: str | None = None
     ai_tone: str | None = None
@@ -60,10 +56,8 @@ class ClientResponse(BaseModel):
     id: str
     user_id: str
     name: str
-    website: str | None = None
+    website_url: str | None = None
     industry: str | None = None
-    contact_name: str | None = None
-    contact_email: str | None = None
     primary_contact_email: str | None = None
     logo_url: str | None = None
     goals_context: str | None = None

@@ -7,10 +7,8 @@ export interface Client {
   id: string
   user_id: string
   name: string
-  website?: string | null
+  website_url?: string | null
   industry?: string | null
-  contact_name?: string | null
-  contact_email?: string | null
   primary_contact_email?: string | null
   logo_url?: string | null
   goals_context?: string | null

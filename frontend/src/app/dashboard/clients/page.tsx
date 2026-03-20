@@ -105,16 +105,16 @@ export default function ClientsPage() {
                   )}
                 </CardHeader>
                 <CardContent className="space-y-1.5">
-                  {client.website && (
+                  {client.website_url && (
                     <p className="text-xs text-slate-500 flex items-center gap-1.5 truncate">
                       <Globe className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                      {client.website.replace(/^https?:\/\//, '')}
+                      {client.website_url.replace(/^https?:\/\//, '')}
                     </p>
                   )}
-                  {client.contact_email && (
+                  {client.primary_contact_email && (
                     <p className="text-xs text-slate-500 flex items-center gap-1.5 truncate">
                       <Mail className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                      {client.contact_email}
+                      {client.primary_contact_email}
                     </p>
                   )}
                 </CardContent>

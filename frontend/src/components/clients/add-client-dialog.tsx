@@ -15,10 +15,9 @@ import type { Client } from '@/types'
 
 const schema = z.object({
   name: z.string().min(1, 'Client name is required'),
-  website: z.string().optional(),
+  website_url: z.string().optional(),
   industry: z.string().optional(),
-  contact_name: z.string().optional(),
-  contact_email: z.string().email('Invalid email').optional().or(z.literal('')),
+  primary_contact_email: z.string().email('Invalid email').optional().or(z.literal('')),
   goals_context: z.string().optional(),
 })
 
@@ -47,7 +46,7 @@ export default function AddClientDialog({ open, onOpenChange, onClientAdded }: P
     try {
       const payload = {
         ...values,
-        contact_email: values.contact_email || undefined,
+        primary_contact_email: values.primary_contact_email || undefined,
       }
       const client = await clientsApi.create(payload)
       reset()
@@ -109,7 +108,7 @@ export default function AddClientDialog({ open, onOpenChange, onClientAdded }: P
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Website</label>
             <Input
-              {...register('website')}
+              {...register('website_url')}
               placeholder="https://acme.com"
               type="url"
             />
@@ -124,26 +123,17 @@ export default function AddClientDialog({ open, onOpenChange, onClientAdded }: P
             />
           </div>
 
-          {/* Contact name */}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Contact name</label>
-            <Input
-              {...register('contact_name')}
-              placeholder="Jane Smith"
-            />
-          </div>
-
           {/* Contact email */}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Contact email</label>
             <Input
-              {...register('contact_email')}
+              {...register('primary_contact_email')}
               type="email"
               placeholder="jane@acme.com"
-              aria-invalid={!!errors.contact_email}
+              aria-invalid={!!errors.primary_contact_email}
             />
-            {errors.contact_email && (
-              <p className="mt-1 text-xs text-rose-600">{errors.contact_email.message}</p>
+            {errors.primary_contact_email && (
+              <p className="mt-1 text-xs text-rose-600">{errors.primary_contact_email.message}</p>
             )}
           </div>
 
