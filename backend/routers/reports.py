@@ -23,6 +23,36 @@ from services.supabase_client import get_supabase_admin
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+
+def _map_db_row(row: dict, client_name: str | None = None) -> dict:
+    """
+    Translate raw Supabase report row to the field names expected by
+    ReportResponse / ReportListItem.
+
+    DB column  →  API field
+    ai_narrative  →  narrative
+    sections      →  data_summary  (extracted from sections JSONB)
+    pptx_file_url →  pptx_url
+    pdf_file_url  →  pdf_url
+    """
+    sections = row.get("sections") or {}
+    return {
+        "id":           row["id"],
+        "user_id":      row["user_id"],
+        "client_id":    row["client_id"],
+        "client_name":  client_name,
+        "title":        row["title"],
+        "status":       row["status"],
+        "period_start": str(row["period_start"]),
+        "period_end":   str(row["period_end"]),
+        "narrative":    row.get("ai_narrative"),
+        "data_summary": sections.get("data_summary") if isinstance(sections, dict) else None,
+        "pptx_url":     row.get("pptx_file_url"),
+        "pdf_url":      row.get("pdf_file_url"),
+        "created_at":   row["created_at"],
+        "updated_at":   row["updated_at"],
+    }
+
 # Local storage directory — lives inside backend/generated_reports/
 # Gitignored; move to Supabase Storage in a later phase.
 _HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # backend/
@@ -135,19 +165,19 @@ async def generate_report(
         month_year = request.period_start
     title = f"{client['name']} — {month_year} Performance Report"
 
-    # 9 — Persist report record in Supabase
+    # 9 — Persist report record in Supabase (use actual DB column names)
     insert_payload = {
-        "id":           report_id,
-        "user_id":      user_id,
-        "client_id":    request.client_id,
-        "title":        title,
-        "status":       "ready",
-        "period_start": request.period_start,
-        "period_end":   request.period_end,
-        "pptx_url":     pptx_path,
-        "pdf_url":      pdf_path,
-        "narrative":    narrative,
-        "data_summary": data_summary,
+        "id":            report_id,
+        "user_id":       user_id,
+        "client_id":     request.client_id,
+        "title":         title,
+        "status":        "draft",           # CHECK: generating|draft|approved|sent|failed
+        "period_start":  request.period_start,
+        "period_end":    request.period_end,
+        "pptx_file_url": pptx_path,         # actual DB column name
+        "pdf_file_url":  pdf_path,          # actual DB column name
+        "ai_narrative":  narrative,         # actual DB column name
+        "sections":      {"data_summary": data_summary},  # no data_summary column — store in sections JSONB
     }
     result = supabase.table("reports").insert(insert_payload).execute()
     if not result.data:
@@ -156,9 +186,7 @@ async def generate_report(
             detail="Report generated but failed to save to database",
         )
 
-    row = result.data[0]
-    row["client_name"] = client["name"]
-    return ReportResponse(**row)
+    return ReportResponse(**_map_db_row(result.data[0], client_name=client["name"]))
 
 
 # ---------------------------------------------------------------------------
@@ -195,11 +223,10 @@ async def list_client_reports(
         .execute()
     )
 
-    items = []
-    for row in reports_result.data:
-        row["client_name"] = client_name
-        items.append(ReportListItem(**row))
-
+    items = [
+        ReportListItem(**_map_db_row(row, client_name=client_name))
+        for row in reports_result.data
+    ]
     return ReportListResponse(reports=items, total=len(items))
 
 
@@ -234,11 +261,10 @@ async def list_all_reports(
     )
     client_map = {c["id"]: c["name"] for c in (clients_result.data or [])}
 
-    items = []
-    for row in reports_result.data:
-        row["client_name"] = client_map.get(row["client_id"])
-        items.append(ReportListItem(**row))
-
+    items = [
+        ReportListItem(**_map_db_row(row, client_name=client_map.get(row["client_id"])))
+        for row in reports_result.data
+    ]
     return ReportListResponse(reports=items, total=len(items))
 
 
@@ -266,13 +292,12 @@ async def get_report(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
 
     row = result.data
-    # Enrich with client name
     client_result = (
         supabase.table("clients").select("name").eq("id", row["client_id"]).single().execute()
     )
-    row["client_name"] = client_result.data["name"] if client_result.data else None
+    client_name = client_result.data["name"] if client_result.data else None
 
-    return ReportResponse(**row)
+    return ReportResponse(**_map_db_row(row, client_name=client_name))
 
 
 # ---------------------------------------------------------------------------
