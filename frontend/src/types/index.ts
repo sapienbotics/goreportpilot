@@ -33,13 +33,17 @@ export interface Connection {
 
 export interface Report {
   id: string
+  user_id: string
   client_id: string
+  client_name?: string | null
   title: string
   status: 'generating' | 'ready' | 'error'
-  date_range_start: string
-  date_range_end: string
-  pptx_url?: string
-  pdf_url?: string
+  period_start: string
+  period_end: string
+  pptx_url?: string | null
+  pdf_url?: string | null
+  narrative?: Record<string, string> | null
+  data_summary?: Record<string, number | null> | null
   created_at: string
   updated_at: string
 }

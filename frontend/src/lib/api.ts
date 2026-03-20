@@ -29,6 +29,23 @@ api.interceptors.request.use(async (config) => {
 
 export default api
 
+// Helper — makes an authenticated GET request and triggers a browser file download.
+// Must be called from a client component (uses window/document).
+export async function downloadFileWithAuth(url: string, filename: string): Promise<void> {
+  const response = await api.get(url, { responseType: 'blob' })
+  const blob = new Blob([response.data], {
+    type: (response.headers['content-type'] as string) || 'application/octet-stream',
+  })
+  const blobUrl = window.URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = blobUrl
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  window.URL.revokeObjectURL(blobUrl)
+}
+
 // ---------------------------------------------------------------------------
 // Clients API
 // ---------------------------------------------------------------------------
@@ -70,5 +87,39 @@ export const clientsApi = {
 
   delete: async (clientId: string): Promise<void> => {
     await api.delete(`/api/clients/${clientId}`)
+  },
+}
+
+// ---------------------------------------------------------------------------
+// Reports API
+// ---------------------------------------------------------------------------
+
+export interface ReportGeneratePayload {
+  client_id: string
+  period_start: string // "YYYY-MM-DD"
+  period_end: string   // "YYYY-MM-DD"
+}
+
+import type { Report } from '@/types'
+
+export const reportsApi = {
+  generate: async (payload: ReportGeneratePayload): Promise<Report> => {
+    const { data } = await api.post('/api/reports/generate', payload)
+    return data
+  },
+
+  get: async (id: string): Promise<Report> => {
+    const { data } = await api.get(`/api/reports/${id}`)
+    return data
+  },
+
+  listAll: async (): Promise<{ reports: Report[]; total: number }> => {
+    const { data } = await api.get('/api/reports')
+    return data
+  },
+
+  listByClient: async (clientId: string): Promise<{ reports: Report[]; total: number }> => {
+    const { data } = await api.get(`/api/reports/client/${clientId}`)
+    return data
   },
 }

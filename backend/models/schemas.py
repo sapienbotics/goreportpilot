@@ -73,3 +73,52 @@ class ClientResponse(BaseModel):
 class ClientListResponse(BaseModel):
     clients: list[ClientResponse]
     total: int
+
+
+# ---------------------------------------------------------------------------
+# Report schemas
+# ---------------------------------------------------------------------------
+
+class ReportGenerateRequest(BaseModel):
+    client_id: str
+    period_start: str  # "YYYY-MM-DD"
+    period_end: str    # "YYYY-MM-DD"
+
+
+class ReportResponse(BaseModel):
+    id: str
+    user_id: str
+    client_id: str
+    client_name: str | None = None
+    title: str
+    status: str
+    period_start: str
+    period_end: str
+    narrative: dict | None = None
+    data_summary: dict | None = None
+    pptx_url: str | None = None
+    pdf_url: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ReportListItem(BaseModel):
+    id: str
+    user_id: str
+    client_id: str
+    client_name: str | None = None
+    title: str
+    status: str
+    period_start: str
+    period_end: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ReportListResponse(BaseModel):
+    reports: list[ReportListItem]
+    total: int
