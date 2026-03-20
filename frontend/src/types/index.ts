@@ -22,7 +22,7 @@ export interface Client {
 export interface Connection {
   id: string
   client_id: string
-  platform: 'google_analytics' | 'meta_ads' | 'google_ads'
+  platform: 'ga4' | 'meta_ads' | 'google_ads' | 'search_console' | 'linkedin_ads'
   account_id: string
   account_name: string
   status: 'active' | 'expired' | 'error'
