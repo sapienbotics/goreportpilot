@@ -97,7 +97,7 @@ async def generate_report(
         supabase.table("connections")
         .select("id,account_id,access_token_encrypted,refresh_token_encrypted,token_expires_at")
         .eq("client_id", request.client_id)
-        .eq("platform", "google_analytics")
+        .eq("platform", "ga4")
         .eq("status", "active")
         .limit(1)
         .execute()

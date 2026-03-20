@@ -75,6 +75,12 @@ async def create_connection(
         else None
     )
 
+    # Normalise platform value to match the DB CHECK constraint.
+    # The frontend sends "google_analytics"; the DB allows "ga4".
+    platform = body.platform
+    if platform == "google_analytics":
+        platform = "ga4"
+
     # Re-encrypt access_token and refresh_token into their individual DB columns.
     # The auth callback bundles them together for transit; the DB stores them separately.
     raw_access  = token_payload.get("access_token", "")
@@ -87,7 +93,7 @@ async def create_connection(
         supabase.table("connections")
         .select("id")
         .eq("client_id", body.client_id)
-        .eq("platform", body.platform)
+        .eq("platform", platform)
         .eq("account_id", body.account_id)
         .execute()
     )
@@ -96,7 +102,7 @@ async def create_connection(
     insert_payload = {
         "id":                       connection_id,
         "client_id":                body.client_id,
-        "platform":                 body.platform,
+        "platform":                 platform,
         "account_id":               body.account_id,
         "account_name":             body.account_name,
         "status":                   "active",
