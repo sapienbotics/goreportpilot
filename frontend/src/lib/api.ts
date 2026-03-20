@@ -35,10 +35,8 @@ export default api
 
 export interface ClientCreatePayload {
   name: string
-  website?: string
+  website_url?: string
   industry?: string
-  contact_name?: string
-  contact_email?: string
   primary_contact_email?: string
   goals_context?: string
   ai_tone?: string
