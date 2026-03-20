@@ -31,6 +31,26 @@ from reportlab.lib import colors as rl_colors
 
 logger = logging.getLogger(__name__)
 
+
+def _to_lines(value: Any) -> list[str]:
+    """
+    Normalise a narrative value to a flat list of non-empty lines.
+    GPT-4o may return strings OR lists depending on the field; handle both.
+    """
+    if isinstance(value, list):
+        # Each element may itself be a multi-line string — flatten
+        lines: list[str] = []
+        for item in value:
+            if isinstance(item, str):
+                lines.extend(item.splitlines())
+            else:
+                lines.append(str(item))
+        return [l for l in lines if l.strip()]
+    if isinstance(value, str):
+        return [l for l in value.splitlines() if l.strip()]
+    return []
+
+
 # ── PPTX brand colours ──────────────────────────────────────────────────────
 _INDIGO        = RGBColor(0x43, 0x38, 0xCA)
 _INDIGO_LIGHT  = RGBColor(0xC7, 0xD2, 0xFE)
@@ -109,19 +129,19 @@ def _text_box(
 
 def _multiline_text_box(
     slide: Any,
-    text: str,
+    text: Any,   # str OR list — normalised via _to_lines
     left: float, top: float, width: float, height: float,
     font_size: int = 12,
     color: RGBColor | None = None,
     line_spacing_pt: int = 8,
 ) -> None:
-    """Render multi-paragraph text, splitting on newlines."""
+    """Render multi-paragraph text, splitting on newlines. Accepts str or list."""
     color = color or _SLATE_700
     tb = slide.shapes.add_textbox(Inches(left), Inches(top), Inches(width), Inches(height))
     tf = tb.text_frame
     tf.word_wrap = True
 
-    paragraphs = [line for line in text.split("\n") if line.strip()]
+    paragraphs = _to_lines(text)
     for i, para in enumerate(paragraphs):
         p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
         p.space_before = Pt(line_spacing_pt if i > 0 else 0)
@@ -386,9 +406,8 @@ def generate_pdf_report(
 
     # ── Executive Summary ────────────────────────────────────────────────────
     story.append(Paragraph("Executive Summary", h1))
-    for line in narrative.get("executive_summary", "").split("\n"):
-        if line.strip():
-            story.append(Paragraph(line.strip(), body))
+    for line in _to_lines(narrative.get("executive_summary", "")):
+        story.append(Paragraph(line, body))
     story.append(Spacer(1, 0.1 * inch))
 
     # ── KPI table ────────────────────────────────────────────────────────────
@@ -461,9 +480,8 @@ def generate_pdf_report(
     if t_chart and os.path.exists(t_chart):
         story.append(RLImage(t_chart, width=6.5 * inch, height=2.8 * inch))
         story.append(Spacer(1, 0.05 * inch))
-    for line in narrative.get("website_performance", "").split("\n"):
-        if line.strip():
-            story.append(Paragraph(line.strip(), body))
+    for line in _to_lines(narrative.get("website_performance", "")):
+        story.append(Paragraph(line, body))
     story.append(Spacer(1, 0.1 * inch))
 
     # ── Paid Advertising ─────────────────────────────────────────────────────
@@ -476,30 +494,26 @@ def generate_pdf_report(
     if cp_chart and os.path.exists(cp_chart):
         story.append(RLImage(cp_chart, width=6.5 * inch, height=2.8 * inch))
         story.append(Spacer(1, 0.05 * inch))
-    for line in narrative.get("paid_advertising", "").split("\n"):
-        if line.strip():
-            story.append(Paragraph(line.strip(), body))
+    for line in _to_lines(narrative.get("paid_advertising", "")):
+        story.append(Paragraph(line, body))
     story.append(Spacer(1, 0.1 * inch))
 
     # ── Key Wins ──────────────────────────────────────────────────────────────
     story.append(Paragraph("Key Wins", h1))
-    for line in narrative.get("key_wins", "").split("\n"):
-        if line.strip():
-            story.append(Paragraph(line.strip(), body))
+    for line in _to_lines(narrative.get("key_wins", "")):
+        story.append(Paragraph(line, body))
     story.append(Spacer(1, 0.1 * inch))
 
     # ── Concerns & Recommendations ───────────────────────────────────────────
     story.append(Paragraph("Concerns & Recommendations", h1))
-    for line in narrative.get("concerns", "").split("\n"):
-        if line.strip():
-            story.append(Paragraph(line.strip(), body))
+    for line in _to_lines(narrative.get("concerns", "")):
+        story.append(Paragraph(line, body))
     story.append(Spacer(1, 0.1 * inch))
 
     # ── Next Steps ────────────────────────────────────────────────────────────
     story.append(Paragraph("Next Steps", h1))
-    for line in narrative.get("next_steps", "").split("\n"):
-        if line.strip():
-            story.append(Paragraph(line.strip(), body))
+    for line in _to_lines(narrative.get("next_steps", "")):
+        story.append(Paragraph(line, body))
 
     # ── Footer ────────────────────────────────────────────────────────────────
     story.append(Spacer(1, 0.3 * inch))
