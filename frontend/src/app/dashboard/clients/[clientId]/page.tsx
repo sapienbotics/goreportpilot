@@ -1,6 +1,6 @@
 'use client'
 
-// Client detail page — shows client info, generate report, and report history.
+// Client detail page — shows client info, connections, generate report, and report history.
 // Includes edit-in-place and delete (soft-delete).
 
 import { useEffect, useState } from 'react'
@@ -8,13 +8,14 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   Globe, Mail, Building2, Pencil, Trash2, Check, X as XIcon,
-  FileText, Sparkles, Download, ChevronRight, Calendar,
+  FileText, Sparkles, ChevronRight, Calendar, BarChart2,
+  Link2, Unlink, Loader2, AlertTriangle,
 } from 'lucide-react'
-import { clientsApi, reportsApi } from '@/lib/api'
+import { clientsApi, reportsApi, connectionsApi, authApi } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import type { Client, Report } from '@/types'
+import type { Client, Report, Connection } from '@/types'
 
 interface Props {
   params: { clientId: string }
@@ -50,6 +51,12 @@ export default function ClientDetailPage({ params }: Props) {
   const [generating,  setGenerating]  = useState(false)
   const [genError,    setGenError]    = useState<string | null>(null)
 
+  // Connections
+  const [connections,       setConnections]       = useState<Connection[]>([])
+  const [connectionsLoading, setConnectionsLoading] = useState(true)
+  const [connectingGa4,     setConnectingGa4]     = useState(false)
+  const [disconnecting,     setDisconnecting]     = useState<string | null>(null)
+
   // Reports list
   const [reports, setReports]         = useState<Report[]>([])
   const [reportsLoading, setReportsLoading] = useState(true)
@@ -68,6 +75,21 @@ export default function ClientDetailPage({ params }: Props) {
       }
     }
     fetchClient()
+  }, [clientId])
+
+  // Fetch connections for this client
+  useEffect(() => {
+    const fetchConnections = async () => {
+      try {
+        const { connections: data } = await connectionsApi.listByClient(clientId)
+        setConnections(data)
+      } catch {
+        // Non-fatal — connections section just stays empty
+      } finally {
+        setConnectionsLoading(false)
+      }
+    }
+    fetchConnections()
   }, [clientId])
 
   // Fetch reports for this client
@@ -116,6 +138,33 @@ export default function ClientDetailPage({ params }: Props) {
     } catch {
       setError('Failed to delete client.')
       setDeleting(false)
+    }
+  }
+
+  const handleConnectGa4 = async () => {
+    setConnectingGa4(true)
+    try {
+      const { url } = await authApi.getGoogleAuthUrl()
+      // Store clientId in sessionStorage so the callback page can retrieve it
+      // (Google's OAuth redirect cannot carry arbitrary extra state)
+      sessionStorage.setItem('ga4_connect_client_id', clientId)
+      window.location.href = url
+    } catch {
+      setConnectingGa4(false)
+      setError('Failed to start Google Analytics authorisation. Please try again.')
+    }
+  }
+
+  const handleDisconnect = async (connectionId: string) => {
+    if (!window.confirm('Remove this connection? Reports for this client will use mock data until reconnected.')) return
+    setDisconnecting(connectionId)
+    try {
+      await connectionsApi.delete(connectionId)
+      setConnections((prev) => prev.filter((c) => c.id !== connectionId))
+    } catch {
+      setError('Failed to remove connection.')
+    } finally {
+      setDisconnecting(null)
     }
   }
 
@@ -311,6 +360,83 @@ export default function ClientDetailPage({ params }: Props) {
               </span>
             )}
           </Field>
+        </CardContent>
+      </Card>
+
+      {/* ── Platform Connections ─────────────────────────────────────────── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base text-slate-700 flex items-center gap-2">
+            <Link2 className="h-4 w-4 text-slate-400" />
+            Platform Connections
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {connectionsLoading ? (
+            <div className="h-12 rounded-lg bg-slate-100 animate-pulse" />
+          ) : (
+            <div className="space-y-3">
+              {/* GA4 row */}
+              {(() => {
+                const ga4 = connections.find((c) => c.platform === 'google_analytics')
+                return ga4 ? (
+                  <div className="flex items-center justify-between rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <BarChart2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                      <div>
+                        <p className="text-sm font-medium text-slate-800">{ga4.account_name}</p>
+                        <p className="text-xs text-slate-400">{ga4.account_id}</p>
+                      </div>
+                      <span className="text-xs font-medium text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                        Connected
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => handleDisconnect(ga4.id)}
+                      disabled={disconnecting === ga4.id}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-60"
+                    >
+                      {disconnecting === ga4.id
+                        ? <Loader2 className="h-3 w-3 animate-spin" />
+                        : <Unlink className="h-3 w-3" />}
+                      Disconnect
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <BarChart2 className="h-4 w-4 text-slate-400 shrink-0" />
+                      <div>
+                        <p className="text-sm font-medium text-slate-700">Google Analytics 4</p>
+                        <p className="text-xs text-slate-400">Not connected — reports use sample data</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleConnectGa4}
+                      disabled={connectingGa4}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-800 transition-colors disabled:opacity-60"
+                    >
+                      {connectingGa4
+                        ? <Loader2 className="h-3 w-3 animate-spin" />
+                        : <Link2 className="h-3 w-3" />}
+                      Connect GA4
+                    </button>
+                  </div>
+                )
+              })()}
+
+              {/* Meta Ads row — coming soon */}
+              <div className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 px-4 py-3 opacity-60">
+                <div className="flex items-center gap-3">
+                  <AlertTriangle className="h-4 w-4 text-slate-400 shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-slate-500">Meta Ads</p>
+                    <p className="text-xs text-slate-400">Coming soon</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

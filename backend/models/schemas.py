@@ -122,3 +122,68 @@ class ReportListItem(BaseModel):
 class ReportListResponse(BaseModel):
     reports: list[ReportListItem]
     total: int
+
+
+# ---------------------------------------------------------------------------
+# Auth / OAuth schemas
+# ---------------------------------------------------------------------------
+
+class GoogleAuthUrlResponse(BaseModel):
+    """Returned by GET /api/auth/google/url"""
+    url: str
+    state: str
+
+
+class Ga4Property(BaseModel):
+    """A single GA4 property from the Google Analytics Admin API"""
+    property_id: str   # e.g. "properties/123456789"
+    display_name: str
+    time_zone: str | None = None
+    currency_code: str | None = None
+
+
+class GoogleCallbackRequest(BaseModel):
+    """Frontend sends this after receiving the OAuth redirect."""
+    code: str
+    state: str
+
+
+class GoogleCallbackResponse(BaseModel):
+    """Backend exchanges code for tokens and returns available GA4 properties."""
+    properties: list[Ga4Property]
+    # Opaque handle the frontend sends back when creating a connection.
+    # Contains the encrypted tokens — never expose the raw tokens to the frontend.
+    token_handle: str
+
+
+# ---------------------------------------------------------------------------
+# Connection schemas
+# ---------------------------------------------------------------------------
+
+class ConnectionCreate(BaseModel):
+    client_id: str
+    platform: str          # "google_analytics" | "meta_ads" | "google_ads"
+    account_id: str        # GA4 property_id or Meta ad_account_id
+    account_name: str
+    # Opaque encrypted token handle returned by GoogleCallbackResponse.
+    # Backend will parse and store this securely.
+    token_handle: str
+
+
+class ConnectionResponse(BaseModel):
+    id: str
+    client_id: str
+    platform: str
+    account_id: str
+    account_name: str
+    status: str             # "active" | "expired" | "error"
+    token_expires_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ConnectionListResponse(BaseModel):
+    connections: list[ConnectionResponse]
+    total: int

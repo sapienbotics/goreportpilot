@@ -4,7 +4,7 @@
 
 import axios from 'axios'
 import { createBrowserClient } from '@supabase/ssr'
-import type { Client } from '@/types'
+import type { Client, Connection } from '@/types'
 
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000',
@@ -101,6 +101,72 @@ export interface ReportGeneratePayload {
 }
 
 import type { Report } from '@/types'
+
+// ---------------------------------------------------------------------------
+// Auth API  (Google OAuth)
+// ---------------------------------------------------------------------------
+
+export interface GoogleAuthUrlResponse {
+  url: string
+  state: string
+}
+
+export interface Ga4Property {
+  property_id: string
+  display_name: string
+  time_zone?: string | null
+  currency_code?: string | null
+}
+
+export interface GoogleCallbackPayload {
+  code: string
+  state: string
+}
+
+export interface GoogleCallbackResponse {
+  properties: Ga4Property[]
+  token_handle: string
+}
+
+export const authApi = {
+  getGoogleAuthUrl: async (): Promise<GoogleAuthUrlResponse> => {
+    const { data } = await api.get('/api/auth/google/url')
+    return data
+  },
+
+  googleCallback: async (payload: GoogleCallbackPayload): Promise<GoogleCallbackResponse> => {
+    const { data } = await api.post('/api/auth/google/callback', payload)
+    return data
+  },
+}
+
+// ---------------------------------------------------------------------------
+// Connections API
+// ---------------------------------------------------------------------------
+
+export interface ConnectionCreatePayload {
+  client_id: string
+  platform: string
+  account_id: string
+  account_name: string
+  token_handle: string
+}
+
+export const connectionsApi = {
+  create: async (payload: ConnectionCreatePayload): Promise<Connection> => {
+    const { data } = await api.post('/api/connections', payload)
+    return data
+  },
+
+  listByClient: async (clientId: string): Promise<{ connections: Connection[]; total: number }> => {
+    const { data } = await api.get(`/api/connections/client/${clientId}`)
+    return data
+  },
+
+  delete: async (connectionId: string): Promise<void> => {
+    await api.delete(`/api/connections/${connectionId}`)
+  },
+}
 
 export const reportsApi = {
   generate: async (payload: ReportGeneratePayload): Promise<Report> => {

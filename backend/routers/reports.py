@@ -89,9 +89,46 @@ async def generate_report(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
     client = client_result.data
 
-    # 2 — Generate mock data
+    # 2 — Prefer real GA4 data; fall back to mock data
     from services.mock_data import generate_all_mock_data  # noqa: PLC0415
-    raw_data = generate_all_mock_data(client["name"], request.period_start, request.period_end)
+
+    # Check for an active GA4 connection for this client
+    ga4_conn_result = (
+        supabase.table("connections")
+        .select("id,account_id,encrypted_tokens")
+        .eq("client_id", request.client_id)
+        .eq("platform", "google_analytics")
+        .eq("status", "active")
+        .limit(1)
+        .execute()
+    )
+
+    ga4_data = None
+    if ga4_conn_result.data:
+        ga4_conn = ga4_conn_result.data[0]
+        try:
+            from services.google_analytics import pull_ga4_data  # noqa: PLC0415
+            ga4_data = await pull_ga4_data(
+                encrypted_tokens=ga4_conn["encrypted_tokens"],
+                property_id=ga4_conn["account_id"],
+                period_start=request.period_start,
+                period_end=request.period_end,
+                connection_id=ga4_conn["id"],
+                supabase=supabase,
+            )
+            logger.info("Using real GA4 data for client %s", request.client_id)
+        except Exception:
+            logger.exception(
+                "Real GA4 pull failed for client %s — falling back to mock data",
+                request.client_id,
+            )
+            ga4_data = None
+
+    # Build the combined raw_data dict
+    mock_all = generate_all_mock_data(client["name"], request.period_start, request.period_end)
+    if ga4_data is not None:
+        mock_all["ga4"] = ga4_data   # replace only the GA4 section with real data
+    raw_data = mock_all
 
     # 3 — AI narrative (async I/O)
     from services.ai_narrative import generate_narrative  # noqa: PLC0415
