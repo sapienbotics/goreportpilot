@@ -151,7 +151,11 @@ def _multiline_text_box(
         run.font.color.rgb = color
 
 
-def _format_change(change: float) -> tuple[str, RGBColor]:
+def _format_change(change: float | None) -> tuple[str, RGBColor]:
+    """Return (formatted string, colour) for a percentage change value.
+    Handles None gracefully — real API data may have no comparison period."""
+    if change is None:
+        return "N/A", _SLATE_400
     if change > 0:
         return f"+{change:.1f}%", _EMERALD
     if change < 0:
@@ -219,20 +223,21 @@ def generate_pptx_report(
     slide = prs.slides.add_slide(blank)
     _add_slide_header(slide, "Key Performance Indicators", W)
 
-    roas       = meta.get("roas", 0)
-    prev_roas  = meta.get("prev_roas", 0)
-    roas_chg   = round((roas - prev_roas) / max(prev_roas, 0.01) * 100, 1) if prev_roas else 0.0
-    cpa        = meta.get("cost_per_conversion", 0)
-    prev_cpa   = meta.get("prev_cost_per_conversion", 0)
-    cpa_chg    = round((cpa - prev_cpa) / max(prev_cpa, 0.01) * 100, 1) if prev_cpa else 0.0
+    roas       = meta.get("roas") or 0.0
+    prev_roas  = meta.get("prev_roas") or 0.0
+    roas_chg   = round((roas - prev_roas) / max(prev_roas, 0.01) * 100, 1) if prev_roas else None
+    cpa        = meta.get("cost_per_conversion") or 0.0
+    prev_cpa   = meta.get("prev_cost_per_conversion") or 0.0
+    cpa_chg    = round((cpa - prev_cpa) / max(prev_cpa, 0.01) * 100, 1) if prev_cpa else None
 
     kpis = [
-        ("Sessions",    f"{ga4.get('sessions', 0):,}",            ga4.get("sessions_change", 0)),
-        ("Users",       f"{ga4.get('users', 0):,}",               ga4.get("users_change", 0)),
-        ("Conversions", f"{ga4.get('conversions', 0):,}",         ga4.get("conversions_change", 0)),
-        ("Ad Spend",    f"${meta.get('spend', 0):,.0f}",          meta.get("spend_change", 0)),
-        ("ROAS",        f"{roas:.1f}x",                           roas_chg),
-        ("Cost / Conv", f"${cpa:.2f}",                            -cpa_chg),  # lower is better
+        # Use .get() without a 0 default so real API None values reach _format_change
+        ("Sessions",    f"{ga4.get('sessions', 0):,}",    ga4.get("sessions_change")),
+        ("Users",       f"{ga4.get('users', 0):,}",       ga4.get("users_change")),
+        ("Conversions", f"{ga4.get('conversions', 0):,}", ga4.get("conversions_change")),
+        ("Ad Spend",    f"${meta.get('spend', 0):,.0f}",  meta.get("spend_change")),
+        ("ROAS",        f"{roas:.1f}x",                   roas_chg),
+        ("Cost / Conv", f"${cpa:.2f}",                    -cpa_chg if cpa_chg is not None else None),
     ]
 
     col_x = [0.35, 4.55, 8.75]
@@ -253,7 +258,7 @@ def generate_pptx_report(
         _text_box(slide, value, x + 0.2, y + 0.6, box_w - 0.4, 0.9,
                   font_size=26, bold=True, color=_SLATE_900)
 
-        change_str, change_color = _format_change(float(change))
+        change_str, change_color = _format_change(change)
         _text_box(slide, f"{change_str} vs prev period", x + 0.2, y + 1.65, box_w - 0.4, 0.4,
                   font_size=10, bold=True, color=change_color)
 
@@ -363,9 +368,11 @@ def generate_pdf_report(
                               fontSize=18, textColor=_RL_SLATE_900, spaceAfter=2, leading=22,
                               fontName="Helvetica-Bold")
     chg_pos = ParagraphStyle("RPChgPos", parent=ss["Normal"],
-                              fontSize=9, textColor=_RL_EMERALD, leading=12, fontName="Helvetica-Bold")
+                              fontSize=9, textColor=_RL_EMERALD,   leading=12, fontName="Helvetica-Bold")
     chg_neg = ParagraphStyle("RPChgNeg", parent=ss["Normal"],
-                              fontSize=9, textColor=_RL_ROSE,    leading=12, fontName="Helvetica-Bold")
+                              fontSize=9, textColor=_RL_ROSE,      leading=12, fontName="Helvetica-Bold")
+    chg_na  = ParagraphStyle("RPChgNa",  parent=ss["Normal"],
+                              fontSize=9, textColor=_RL_SLATE_400, leading=12, fontName="Helvetica")
     small   = ParagraphStyle("RPSmall", parent=ss["Normal"],
                               fontSize=8, textColor=_RL_SLATE_400, leading=10, alignment=TA_CENTER)
 
@@ -413,22 +420,27 @@ def generate_pdf_report(
     # ── KPI table ────────────────────────────────────────────────────────────
     story.append(Paragraph("Key Performance Indicators", h1))
 
-    def _chg(val: float) -> ParagraphStyle:
+    def _chg(val: float | None) -> ParagraphStyle:
+        if val is None:
+            return chg_na
         return chg_pos if val >= 0 else chg_neg
 
-    def _chg_str(val: float) -> str:
+    def _chg_str(val: float | None) -> str:
+        if val is None:
+            return "N/A"
         return f"+{val:.1f}%" if val >= 0 else f"{val:.1f}%"
 
-    s_chg = ga4.get("sessions_change", 0)
-    u_chg = ga4.get("users_change", 0)
-    c_chg = ga4.get("conversions_change", 0)
-    sp_chg = meta.get("spend_change", 0)
-    roas   = meta.get("roas", 0)
-    proas  = meta.get("prev_roas", 0)
-    roas_chg = round((roas - proas) / max(proas, 0.01) * 100, 1) if proas else 0.0
-    cpa    = meta.get("cost_per_conversion", 0)
-    pcpa   = meta.get("prev_cost_per_conversion", 0)
-    cpa_chg = round((cpa - pcpa) / max(pcpa, 0.01) * 100, 1) if pcpa else 0.0
+    # Use plain .get() so real API None values propagate to _chg/_chg_str
+    s_chg  = ga4.get("sessions_change")
+    u_chg  = ga4.get("users_change")
+    c_chg  = ga4.get("conversions_change")
+    sp_chg = meta.get("spend_change")
+    roas   = meta.get("roas") or 0.0
+    proas  = meta.get("prev_roas") or 0.0
+    roas_chg = round((roas - proas) / max(proas, 0.01) * 100, 1) if proas else None
+    cpa    = meta.get("cost_per_conversion") or 0.0
+    pcpa   = meta.get("prev_cost_per_conversion") or 0.0
+    cpa_chg = round((cpa - pcpa) / max(pcpa, 0.01) * 100, 1) if pcpa else None
 
     kpi_rows = [
         # Row 0 — labels
@@ -450,7 +462,9 @@ def generate_pdf_report(
         # Row 5 — changes
         [Paragraph(_chg_str(sp_chg), _chg(sp_chg)),
          Paragraph(_chg_str(roas_chg), _chg(roas_chg)),
-         Paragraph(_chg_str(-cpa_chg), _chg(-cpa_chg))],   # lower CPA = good
+         # lower CPA = good, so invert sign — but guard None first
+         Paragraph(_chg_str(-cpa_chg if cpa_chg is not None else None),
+                   _chg(-cpa_chg if cpa_chg is not None else None))],
     ]
 
     col_w = (A4[0] - 1.5 * inch) / 3
