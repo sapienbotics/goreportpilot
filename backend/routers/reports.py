@@ -95,7 +95,7 @@ async def generate_report(
     # Check for an active GA4 connection for this client
     ga4_conn_result = (
         supabase.table("connections")
-        .select("id,account_id,encrypted_tokens")
+        .select("id,account_id,access_token_encrypted,refresh_token_encrypted,token_expires_at")
         .eq("client_id", request.client_id)
         .eq("platform", "google_analytics")
         .eq("status", "active")
@@ -108,8 +108,23 @@ async def generate_report(
         ga4_conn = ga4_conn_result.data[0]
         try:
             from services.google_analytics import pull_ga4_data  # noqa: PLC0415
+            # Parse token_expires_at ISO string → unix timestamp float
+            raw_exp = ga4_conn.get("token_expires_at")
+            token_expires_ts: float | None = None
+            if raw_exp:
+                try:
+                    from datetime import timezone as _tz  # noqa: PLC0415
+                    # Python 3.11+ fromisoformat handles 'Z' and offset suffixes
+                    dt = datetime.fromisoformat(str(raw_exp).replace("Z", "+00:00"))
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=_tz.utc)
+                    token_expires_ts = dt.timestamp()
+                except Exception:
+                    pass
             ga4_data = await pull_ga4_data(
-                encrypted_tokens=ga4_conn["encrypted_tokens"],
+                access_token_encrypted=ga4_conn["access_token_encrypted"],
+                refresh_token_encrypted=ga4_conn["refresh_token_encrypted"],
+                token_expires_at=token_expires_ts,
                 property_id=ga4_conn["account_id"],
                 period_start=request.period_start,
                 period_end=request.period_end,

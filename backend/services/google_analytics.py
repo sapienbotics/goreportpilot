@@ -6,7 +6,6 @@ Falls back to mock data when a real connection is not available.
 See docs/reportpilot-auth-integration-deepdive.md for the full OAuth + data flow.
 """
 import asyncio
-import json
 import logging
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
@@ -52,52 +51,46 @@ async def _refresh_access_token(refresh_token: str) -> tuple[str, float]:
     return access_token, expires_at
 
 
-def _load_tokens(encrypted: str) -> dict:
-    """Decrypt and parse the stored token JSON."""
-    return json.loads(decrypt_token(encrypted))
-
-
-def _save_tokens(token_payload: dict) -> str:
-    """Encrypt and return updated token JSON."""
-    return encrypt_token(json.dumps(token_payload))
-
-
 async def _get_valid_access_token(
-    encrypted_tokens: str,
+    access_token_encrypted: str,
+    refresh_token_encrypted: str,
+    token_expires_at: float | None,
     supabase: Any,
     connection_id: str,
 ) -> str:
     """
     Return a valid access token, refreshing automatically when expired.
-    Persists the refreshed token back to Supabase if a refresh occurs.
+
+    Accepts the two separate DB columns (access_token_encrypted,
+    refresh_token_encrypted) and the token_expires_at unix timestamp.
+    Persists the refreshed access token back to Supabase if a refresh occurs.
     """
-    tokens     = _load_tokens(encrypted_tokens)
     now        = datetime.now(tz=timezone.utc).timestamp()
-    expires_at = tokens.get("token_expires_at", 0)
+    expires_at = token_expires_at or 0
 
     # Refresh 60 seconds before actual expiry as a buffer
     if now >= expires_at - 60:
         logger.info("GA4 access token expired for connection %s — refreshing", connection_id)
-        refresh_token = tokens.get("refresh_token")
-        if not refresh_token:
+
+        if not refresh_token_encrypted:
             raise RuntimeError(
                 "No refresh token stored — the user must re-authorise the GA4 connection."
             )
+        refresh_token = decrypt_token(refresh_token_encrypted)
         new_access_token, new_expires_at = await _refresh_access_token(refresh_token)
-        tokens["access_token"]     = new_access_token
-        tokens["token_expires_at"] = new_expires_at
-        new_encrypted = _save_tokens(tokens)
 
-        # Write the refreshed token back to DB
+        # Write the refreshed access token back to DB
         supabase.table("connections").update({
-            "encrypted_tokens": new_encrypted,
+            "access_token_encrypted": encrypt_token(new_access_token),
             "token_expires_at": datetime.fromtimestamp(
                 new_expires_at, tz=timezone.utc
             ).isoformat(),
             "status": "active",
         }).eq("id", connection_id).execute()
 
-    return tokens["access_token"]
+        return new_access_token
+
+    return decrypt_token(access_token_encrypted)
 
 
 # ---------------------------------------------------------------------------
@@ -226,7 +219,9 @@ def _parse_ga4_responses(
 # ---------------------------------------------------------------------------
 
 async def pull_ga4_data(
-    encrypted_tokens: str,
+    access_token_encrypted: str,
+    refresh_token_encrypted: str,
+    token_expires_at: float | None,
     property_id: str,
     period_start: str,   # "YYYY-MM-DD"
     period_end: str,
@@ -236,12 +231,21 @@ async def pull_ga4_data(
     """
     Pull real GA4 data for the given property and date range.
 
+    Accepts the two separate DB columns (access_token_encrypted,
+    refresh_token_encrypted) and the token_expires_at unix timestamp.
+
     Returns the same dict shape as services.mock_data.generate_mock_ga4_data()
     so the report pipeline requires no changes.
 
     Raises RuntimeError / PermissionError on unrecoverable API failures.
     """
-    access_token = await _get_valid_access_token(encrypted_tokens, supabase, connection_id)
+    access_token = await _get_valid_access_token(
+        access_token_encrypted=access_token_encrypted,
+        refresh_token_encrypted=refresh_token_encrypted,
+        token_expires_at=token_expires_at,
+        supabase=supabase,
+        connection_id=connection_id,
+    )
 
     metrics_base = [
         {"name": "sessions"},

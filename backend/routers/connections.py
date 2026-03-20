@@ -75,6 +75,13 @@ async def create_connection(
         else None
     )
 
+    # Re-encrypt access_token and refresh_token into their individual DB columns.
+    # The auth callback bundles them together for transit; the DB stores them separately.
+    raw_access  = token_payload.get("access_token", "")
+    raw_refresh = token_payload.get("refresh_token", "")
+    access_token_encrypted  = encrypt_token(raw_access)  if raw_access  else ""
+    refresh_token_encrypted = encrypt_token(raw_refresh) if raw_refresh else ""
+
     # Check for an existing connection for the same client + platform + account
     existing = (
         supabase.table("connections")
@@ -87,14 +94,16 @@ async def create_connection(
     connection_id = str(uuid.uuid4())
 
     insert_payload = {
-        "id":               connection_id,
-        "client_id":        body.client_id,
-        "platform":         body.platform,
-        "account_id":       body.account_id,
-        "account_name":     body.account_name,
-        "status":           "active",
-        "encrypted_tokens": body.token_handle,   # already encrypted by auth router
-        "token_expires_at": token_expires_at,
+        "id":                       connection_id,
+        "client_id":                body.client_id,
+        "platform":                 body.platform,
+        "account_id":               body.account_id,
+        "account_name":             body.account_name,
+        "status":                   "active",
+        "access_token_encrypted":   access_token_encrypted,
+        "refresh_token_encrypted":  refresh_token_encrypted,
+        "token_expires_at":         token_expires_at,
+        "consecutive_failures":     0,
     }
 
     if existing.data:
