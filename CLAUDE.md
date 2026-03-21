@@ -24,12 +24,12 @@ Automates the workflow of pulling data from Google Analytics, Meta Ads, and Goog
 | Report Gen | python-pptx 0.6.23+ | latest stable | PowerPoint generation |
 | Report Gen | ReportLab 4.x | latest stable | PDF generation |
 | Charts | matplotlib 3.8+ | latest stable | Static chart images for reports |
-| Scheduling | n8n (self-hosted) | latest | Cron jobs, token checks, email scheduling |
+| Scheduling | FastAPI BackgroundTasks + APScheduler | latest | Scheduled report generation and delivery |
 | Email | Resend | latest | Branded report delivery emails |
 | Frontend Hosting | Vercel | — | Next.js deployment |
 | Backend Hosting | Railway | — | FastAPI deployment |
 | File Storage | Supabase Storage | — | Generated PPT/PDF files |
-| Payments | Stripe | latest API | Subscription billing |
+| Payments | Razorpay | latest API | Subscription billing (Stripe is invite-only in India) |
 | Token Encryption | cryptography (Python) | 42.x+ | AES-256-GCM for OAuth tokens |
 
 ---
@@ -392,37 +392,35 @@ These three documents contain the complete product specification. **Read the rel
 
 ---
 
-## Phased Build Plan
+## Build Progress
 
-### Phase 1: Foundation (Week 1)
-- Project scaffolding (this directory structure)
-- Next.js + TypeScript + Tailwind + shadcn/ui setup
-- Supabase project + database schema + RLS policies
-- Supabase Auth (signup, login, Google SSO, protected routes)
-- Landing page (marketing: hero, features, pricing, footer)
-- Dashboard layout (sidebar, header, empty state)
+### COMPLETED ✅
+- **Scaffolding**: Monorepo (Next.js 14 + FastAPI), directory structure, 95+ files
+- **Database**: 8 Supabase tables + 28 RLS policies + 15 indexes + 5 triggers + 1 seed template
+- **Auth**: Email/password signup, email confirmation, login, logout, protected /dashboard/* routes
+- **Dashboard**: Sidebar nav, header with email + sign out, active highlighting
+- **Backend API**: FastAPI with JWT auth middleware (verifies Supabase tokens)
+- **Client CRUD**: Create, list, get, update, soft-delete with ownership verification + frontend pages
+- **Landing Page**: 10-section marketing page (hero with CSS mockup, problem, how-it-works, features, competitor comparison, pricing with annual toggle, FAQ accordion, CTA, footer)
+- **Mock Data Service**: Realistic GA4 + Meta Ads fake data matching real API response structure
+- **AI Narrative Engine**: GPT-4o with 4 tone presets (professional/conversational/executive/data-heavy), returns 6 sections as JSON, graceful fallback
+- **Chart Generator**: 4 matplotlib charts (sessions line, traffic sources bar, spend vs conversions dual-axis, campaign performance)
+- **PowerPoint Generator**: 8-slide branded deck with embedded charts, KPI scorecard with color-coded changes
+- **PDF Generator**: Clean A4 report with ReportLab, KPI table, embedded charts, all narrative sections
+- **Report API**: Generate, list, get, download PPTX/PDF endpoints
+- **Report Preview UI**: KPI cards, narrative sections, key wins/concerns/next steps, download buttons
+- **GA4 OAuth**: Full flow (consent → callback → token exchange → property listing → connection save → real data pull with auto-refresh)
+- **Meta Ads OAuth**: Full flow (Facebook login → token exchange → short-to-long-lived → ad account listing → connection save → real data pull)
+- **Token Encryption**: AES-256-GCM via cryptography library, nonce prepended, base64 encoded
+- **Currency Handling**: Dynamic currency symbols (₹, $, €, £, etc.) across AI narrative, charts, PDF, PPTX, and frontend preview
+- **Connection Management**: Save, list, delete connections with encrypted tokens, platform normalization
 
-### Phase 2: Integrations (Week 2)
-- Google Cloud Project + OAuth credentials setup
-- GA4 OAuth flow (complete: button → callback → tokens → property list → store)
-- Meta Ads OAuth flow (complete: button → callback → short→long token → account list → store)
-- Token encryption (AES-256-GCM) from Day 1
-- Client CRUD (create, list, view, edit, delete)
-- Connection management (link GA4/Meta accounts to clients)
-
-### Phase 3: Data + AI + Reports (Week 3)
-- GA4 data pull service
-- Meta Ads data pull service
-- Data normalization + storage in data_snapshots
-- AI narrative engine (GPT-4o with prompt templates + tone presets)
-- Report generation (python-pptx + ReportLab + matplotlib charts)
-- Report preview UI in browser
-
-### Phase 4: Delivery + Polish (Week 4)
-- Report editor (inline editing, section toggle/reorder)
-- Email delivery (Resend with branded templates + attachments)
-- Scheduled reports (n8n workflows)
-- White-label (logo, colors, branded sender)
-- Stripe billing (checkout, plan management, webhooks)
-- Token health checks (n8n workflow + user alerts)
-- Testing, bug fixes, deploy to Vercel + Railway
+### REMAINING — See `docs/REMAINING-FEATURES.md` for full checklist
+- Report customization (section toggles, KPI selection, templates, inline editing)
+- Email delivery (Resend)
+- Scheduled reports (background jobs)
+- White-label branding (logo, colors, remove ReportPilot badge)
+- Settings page (account, branding, AI prefs, email config)
+- Billing & subscription (Razorpay, plan enforcement, trials, webhooks)
+- Legal pages (Privacy Policy, Terms of Service)
+- Polish & deployment
