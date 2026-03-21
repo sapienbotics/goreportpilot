@@ -286,6 +286,8 @@ def _build_replacements(
         "{{custom_section_title}}":  (custom_section or {}).get("title", "Additional Notes"),
         "{{custom_section_text}}":   (custom_section or {}).get("text", ""),
         "{{footer_text}}":           f"{agency_name} \u2022 Confidential \u2022 {report_date}",
+        "{{agency_logo}}":           "",  # Cleared — actual image embedded by _embed_logos()
+        "{{client_logo}}":           "",  # Cleared — actual image embedded by _embed_logos()
     }
 
     # KPI placeholders
@@ -318,7 +320,11 @@ def _replace_placeholders_in_slide(slide: Any, replacements: dict[str, str]) -> 
 
 
 def _replace_charts(prs: Any, charts: Dict[str, str]) -> None:
-    """Replace chart placeholder text boxes with actual chart PNG images."""
+    """Replace chart placeholder text boxes with actual chart PNG images.
+
+    Matches placeholders by checking if the shape text contains a chart
+    placeholder key (handles leading/trailing whitespace or formatting).
+    """
     chart_mapping = {
         "{{chart_sessions}}":  charts.get("sessions"),
         "{{chart_traffic}}":   charts.get("traffic_sources"),
@@ -326,30 +332,52 @@ def _replace_charts(prs: Any, charts: Dict[str, str]) -> None:
         "{{chart_campaigns}}": charts.get("campaigns"),
     }
 
+    logger.debug("_replace_charts called with %d chart paths: %s",
+                 len([v for v in chart_mapping.values() if v]), list(charts.keys()))
+
+    replaced = 0
     for slide in prs.slides:
         shapes_to_process = []
         for shape in slide.shapes:
-            if shape.has_text_frame:
-                text = shape.text_frame.text.strip()
-                if text in chart_mapping and chart_mapping[text]:
-                    shapes_to_process.append((shape, chart_mapping[text]))
+            if not shape.has_text_frame:
+                continue
+            text = shape.text_frame.text.strip()
+            # Match if the shape text IS or CONTAINS a chart placeholder
+            for placeholder, chart_path in chart_mapping.items():
+                if placeholder in text and chart_path:
+                    shapes_to_process.append((shape, chart_path, placeholder))
+                    break
 
-        for shape, chart_path in shapes_to_process:
-            if os.path.exists(chart_path):
-                # Add chart image at the same position/size as the placeholder
-                slide.shapes.add_picture(
-                    chart_path,
-                    shape.left, shape.top,
-                    shape.width, shape.height,
-                )
-                # Clear the placeholder text
-                for para in shape.text_frame.paragraphs:
-                    for run in para.runs:
-                        run.text = ""
+        for shape, chart_path, placeholder in shapes_to_process:
+            if not os.path.exists(chart_path):
+                logger.warning("Chart file does not exist: %s", chart_path)
+                continue
+            # Add chart image at the same position/size as the placeholder shape
+            slide.shapes.add_picture(
+                chart_path,
+                shape.left, shape.top,
+                shape.width, shape.height,
+            )
+            # Clear the placeholder text completely
+            for para in shape.text_frame.paragraphs:
+                for run in para.runs:
+                    run.text = ""
+            replaced += 1
+            logger.debug("Replaced %s with image %s", placeholder, chart_path)
+
+    logger.info("_replace_charts: %d/%d chart placeholders replaced", replaced, len([v for v in chart_mapping.values() if v]))
 
 
 def _colorize_kpi_changes(prs: Any, data: Dict[str, Any]) -> None:
-    """Color KPI change values: green for positive, red for negative."""
+    """Color KPI change values on the KPI slide (index 2).
+
+    Finds text matching change patterns (+X.X%, -X.X%, N/A) and applies:
+      - Green (#059669) for positive changes
+      - Red (#E11D48) for negative changes
+      - Gray (#94A3B8) for N/A
+    """
+    # Target KPI slide specifically (index 2) and the cover/exec slides
+    # where change text won't appear, but be safe and scan all slides
     for slide in prs.slides:
         for shape in slide.shapes:
             if not shape.has_text_frame:
@@ -357,12 +385,17 @@ def _colorize_kpi_changes(prs: Any, data: Dict[str, Any]) -> None:
             for para in shape.text_frame.paragraphs:
                 for run in para.runs:
                     text = run.text.strip()
-                    if text.startswith("+") and text.endswith("%"):
+                    if not text:
+                        continue
+                    # Positive change: "+12.3%" or "+12.3% vs prev period"
+                    if text.startswith("+") and "%" in text:
                         run.font.color.rgb = _EMERALD
                         run.font.bold = True
-                    elif text.startswith("-") and text.endswith("%"):
+                    # Negative change: "-5.2%" or "-5.2% vs prev period"
+                    elif text.startswith("-") and "%" in text:
                         run.font.color.rgb = _ROSE
                         run.font.bold = True
+                    # N/A
                     elif text == "N/A":
                         run.font.color.rgb = _SLATE_400
 
@@ -419,36 +452,78 @@ def _get_slides_to_delete(
 
 
 def _embed_logos(prs: Any, branding: dict | None) -> None:
-    """Embed agency and client logos on the cover slide."""
+    """Embed agency and client logos on the cover slide.
+
+    Also clears the {{agency_logo}} and {{client_logo}} placeholder text
+    so they don't appear as raw text in the final output.
+    Note: _replace_placeholders_in_slide already clears these (replaced
+    with ""), but this function handles the image embedding on top.
+    """
     if not branding:
         return
     cover = prs.slides[0]
 
-    # Agency logo — top-right of cover
+    # Find the placeholder shapes for positioning and clear them
+    agency_logo_shape = None
+    client_logo_shape = None
+    for shape in cover.shapes:
+        if not shape.has_text_frame:
+            continue
+        text = shape.text_frame.text.strip()
+        # After _replace_placeholders_in_slide, these should already be empty.
+        # But if they survived (e.g. the replacement key wasn't in dict), clear now.
+        if "agency_logo" in text.lower() or text == "{{agency_logo}}":
+            agency_logo_shape = shape
+            for para in shape.text_frame.paragraphs:
+                for run in para.runs:
+                    run.text = ""
+        elif "client_logo" in text.lower() or text == "{{client_logo}}":
+            client_logo_shape = shape
+            for para in shape.text_frame.paragraphs:
+                for run in para.runs:
+                    run.text = ""
+
+    # Embed agency logo image
     agency_img = _download_image(branding.get("agency_logo_url", ""))
     if agency_img:
         try:
             agency_img.seek(0)
-            sw = prs.slide_width
-            cover.shapes.add_picture(
-                agency_img,
-                sw - Inches(2.2), Inches(0.3),
-                height=Inches(0.8),
-            )
+            if agency_logo_shape:
+                # Place at the placeholder shape's position
+                cover.shapes.add_picture(
+                    agency_img,
+                    agency_logo_shape.left, agency_logo_shape.top,
+                    height=agency_logo_shape.height,
+                )
+            else:
+                # Fallback: top-right of cover
+                sw = prs.slide_width
+                cover.shapes.add_picture(
+                    agency_img,
+                    sw - Inches(2.2), Inches(0.3),
+                    height=Inches(0.8),
+                )
         except Exception as e:
             logger.debug("Could not embed agency logo: %s", e)
 
-    # Client logo — center of cover
+    # Embed client logo image
     client_img = _download_image(branding.get("client_logo_url", ""))
     if client_img:
         try:
             client_img.seek(0)
-            sw = prs.slide_width
-            cover.shapes.add_picture(
-                client_img,
-                (sw - Inches(2.0)) // 2, Inches(5.5),
-                height=Inches(1.5),
-            )
+            if client_logo_shape:
+                cover.shapes.add_picture(
+                    client_img,
+                    client_logo_shape.left, client_logo_shape.top,
+                    height=client_logo_shape.height,
+                )
+            else:
+                sw = prs.slide_width
+                cover.shapes.add_picture(
+                    client_img,
+                    (sw - Inches(2.0)) // 2, Inches(5.5),
+                    height=Inches(1.5),
+                )
         except Exception as e:
             logger.debug("Could not embed client logo: %s", e)
 
