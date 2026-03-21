@@ -4,7 +4,7 @@
 
 import axios from 'axios'
 import { createBrowserClient } from '@supabase/ssr'
-import type { Client, Connection } from '@/types'
+import type { Client, Connection, Report } from '@/types'
 
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000',
@@ -62,6 +62,8 @@ export interface ClientCreatePayload {
 
 export interface ClientUpdatePayload extends Partial<ClientCreatePayload> {
   is_active?: boolean
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  report_config?: any  // ReportConfig — use any to avoid circular import
 }
 
 export const clientsApi = {
@@ -98,9 +100,9 @@ export interface ReportGeneratePayload {
   client_id: string
   period_start: string // "YYYY-MM-DD"
   period_end: string   // "YYYY-MM-DD"
+  template?: string    // "full" | "summary" | "brief" — defaults to "full"
+  visual_template?: string // "modern_clean" | "dark_executive" | "colorful_agency"
 }
-
-import type { Report } from '@/types'
 
 // ---------------------------------------------------------------------------
 // Auth API  (Google OAuth)
@@ -128,6 +130,24 @@ export interface GoogleCallbackResponse {
   token_handle: string
 }
 
+export interface MetaAuthUrlResponse {
+  url: string
+  state: string
+}
+
+export interface MetaAdAccount {
+  account_id: string
+  account_name: string
+  currency: string
+  status: number
+}
+
+export interface MetaCallbackResponse {
+  ad_accounts: MetaAdAccount[]
+  token_handle: string
+  expires_in: number
+}
+
 export const authApi = {
   getGoogleAuthUrl: async (): Promise<GoogleAuthUrlResponse> => {
     const { data } = await api.get('/api/auth/google/url')
@@ -136,6 +156,16 @@ export const authApi = {
 
   googleCallback: async (payload: GoogleCallbackPayload): Promise<GoogleCallbackResponse> => {
     const { data } = await api.post('/api/auth/google/callback', payload)
+    return data
+  },
+
+  getMetaAuthUrl: async (): Promise<MetaAuthUrlResponse> => {
+    const { data } = await api.get('/api/auth/meta/url')
+    return data
+  },
+
+  metaCallback: async (code: string): Promise<MetaCallbackResponse> => {
+    const { data } = await api.post('/api/auth/meta/callback', { code })
     return data
   },
 }
@@ -150,6 +180,7 @@ export interface ConnectionCreatePayload {
   account_id: string
   account_name: string
   token_handle: string
+  currency?: string  // Ad account billing currency (e.g. "INR"). Defaults to "USD" on backend.
 }
 
 export const connectionsApi = {
@@ -166,6 +197,147 @@ export const connectionsApi = {
   delete: async (connectionId: string): Promise<void> => {
     await api.delete(`/api/connections/${connectionId}`)
   },
+}
+
+export interface ReportSendPayload {
+  to_emails: string[]
+  subject?: string
+  attachment?: 'pdf' | 'pptx' | 'both'
+  sender_name?: string
+  reply_to?: string
+}
+
+export interface ReportSendResult {
+  success: boolean
+  resend_id?: string
+  to: string[]
+  subject: string
+}
+
+// ---------------------------------------------------------------------------
+// Settings API
+// ---------------------------------------------------------------------------
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const settingsApi = {
+  getProfile: async (): Promise<Record<string, unknown>> => {
+    const { data } = await api.get('/api/settings/profile')
+    return data
+  },
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  updateProfile: async (payload: Record<string, any>): Promise<Record<string, unknown>> => {
+    const { data } = await api.patch('/api/settings/profile', payload)
+    return data
+  },
+
+  uploadLogo: async (file: File): Promise<{ url: string }> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    // For FormData uploads we use fetch directly to avoid setting Content-Type manually
+    const supabase = (await import('@supabase/ssr')).createBrowserClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    )
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/settings/upload-logo`,
+      {
+        method: 'POST',
+        headers: session?.access_token
+          ? { Authorization: `Bearer ${session.access_token}` }
+          : {},
+        body: formData,
+      },
+    )
+    if (!res.ok) throw new Error(await res.text())
+    return res.json()
+  },
+}
+
+// ---------------------------------------------------------------------------
+// Scheduled Reports API
+// ---------------------------------------------------------------------------
+
+export interface ScheduledReportPayload {
+  client_id: string
+  frequency: 'weekly' | 'biweekly' | 'monthly'
+  day_of_week?: number
+  day_of_month?: number
+  time_utc?: string
+  template?: string
+  auto_send?: boolean
+  send_to_emails?: string[]
+}
+
+export interface ScheduledReport {
+  id: string
+  client_id: string
+  user_id: string
+  frequency: string
+  day_of_week?: number | null
+  day_of_month?: number | null
+  time_utc: string
+  template: string
+  auto_send: boolean
+  send_to_emails: string[]
+  is_active: boolean
+  last_generated_at?: string | null
+  next_run_at?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export const scheduledReportsApi = {
+  create: async (payload: ScheduledReportPayload): Promise<ScheduledReport> => {
+    const { data } = await api.post('/api/scheduled-reports', payload)
+    return data
+  },
+
+  getByClient: async (clientId: string): Promise<ScheduledReport[]> => {
+    const { data } = await api.get(`/api/scheduled-reports/client/${clientId}`)
+    return data
+  },
+
+  list: async (): Promise<ScheduledReport[]> => {
+    const { data } = await api.get('/api/scheduled-reports')
+    return data
+  },
+
+  update: async (id: string, payload: Partial<ScheduledReportPayload> & { is_active?: boolean }): Promise<ScheduledReport> => {
+    const { data } = await api.patch(`/api/scheduled-reports/${id}`, payload)
+    return data
+  },
+
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/api/scheduled-reports/${id}`)
+  },
+}
+
+// ---------------------------------------------------------------------------
+// Client logo upload helper
+// ---------------------------------------------------------------------------
+
+export async function uploadClientLogo(clientId: string, file: File): Promise<{ url: string }> {
+  const formData = new FormData()
+  formData.append('file', file)
+  const supabase = (await import('@supabase/ssr')).createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  )
+  const { data: { session } } = await supabase.auth.getSession()
+  const res = await fetch(
+    `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/clients/${clientId}/upload-logo`,
+    {
+      method: 'POST',
+      headers: session?.access_token
+        ? { Authorization: `Bearer ${session.access_token}` }
+        : {},
+      body: formData,
+    },
+  )
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
 }
 
 export const reportsApi = {
@@ -186,6 +358,24 @@ export const reportsApi = {
 
   listByClient: async (clientId: string): Promise<{ reports: Report[]; total: number }> => {
     const { data } = await api.get(`/api/reports/client/${clientId}`)
+    return data
+  },
+
+  /** Save manual text edits for one or more narrative sections. */
+  update: async (id: string, userEdits: Record<string, string>): Promise<Report> => {
+    const { data } = await api.patch(`/api/reports/${id}`, { user_edits: userEdits })
+    return data
+  },
+
+  /** Re-run AI for a single narrative section. */
+  regenerateSection: async (id: string, section: string): Promise<Report> => {
+    const { data } = await api.post(`/api/reports/${id}/regenerate-section`, { section })
+    return data
+  },
+
+  /** Send the report to one or more email addresses. */
+  send: async (id: string, payload: ReportSendPayload): Promise<ReportSendResult> => {
+    const { data } = await api.post(`/api/reports/${id}/send`, payload)
     return data
   },
 }

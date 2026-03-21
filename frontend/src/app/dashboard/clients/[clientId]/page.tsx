@@ -1,21 +1,23 @@
 'use client'
 
-// Client detail page — shows client info, connections, generate report, and report history.
-// Includes edit-in-place and delete (soft-delete).
+// Client detail page — shows client info, connections, report config, generate report, and report history.
+// Includes edit-in-place, delete (soft-delete), and per-client report customization.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   Globe, Mail, Building2, Pencil, Trash2, Check, X as XIcon,
   FileText, Sparkles, ChevronRight, Calendar, BarChart2,
-  Link2, Unlink, Loader2, AlertTriangle,
+  Link2, Unlink, Loader2, Megaphone, Settings2, Upload, Clock,
 } from 'lucide-react'
-import { clientsApi, reportsApi, connectionsApi, authApi } from '@/lib/api'
+import { clientsApi, reportsApi, connectionsApi, authApi, scheduledReportsApi, uploadClientLogo } from '@/lib/api'
+import type { ScheduledReport, ScheduledReportPayload } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import type { Client, Report, Connection } from '@/types'
+import type { Client, Report, Connection, ReportConfig } from '@/types'
+import { DEFAULT_REPORT_CONFIG } from '@/types'
 
 interface Props {
   params: { clientId: string }
@@ -46,16 +48,44 @@ export default function ClientDetailPage({ params }: Props) {
 
   // Generate report state
   const defaultRange = lastMonthRange()
-  const [periodStart, setPeriodStart] = useState(defaultRange.start)
-  const [periodEnd,   setPeriodEnd]   = useState(defaultRange.end)
-  const [generating,  setGenerating]  = useState(false)
-  const [genError,    setGenError]    = useState<string | null>(null)
+  const [periodStart,       setPeriodStart]       = useState(defaultRange.start)
+  const [periodEnd,         setPeriodEnd]         = useState(defaultRange.end)
+  const [selectedTemplate,  setSelectedTemplate]  = useState<'full' | 'summary' | 'brief'>('full')
+  const [visualTemplate,    setVisualTemplate]    = useState<'modern_clean' | 'dark_executive' | 'colorful_agency'>('modern_clean')
+  const [generating,        setGenerating]        = useState(false)
+  const [genError,          setGenError]          = useState<string | null>(null)
 
   // Connections
   const [connections,       setConnections]       = useState<Connection[]>([])
   const [connectionsLoading, setConnectionsLoading] = useState(true)
   const [connectingGa4,     setConnectingGa4]     = useState(false)
+  const [connectingMeta,    setConnectingMeta]    = useState(false)
   const [disconnecting,     setDisconnecting]     = useState<string | null>(null)
+
+  // Report configuration
+  const [reportConfig, setReportConfig]   = useState<ReportConfig>(DEFAULT_REPORT_CONFIG)
+  const [savingConfig, setSavingConfig]   = useState(false)
+  const [configSaved, setConfigSaved]     = useState(false)
+
+  // Client logo upload
+  const logoInputRef    = useRef<HTMLInputElement>(null)
+  const [logoUploading, setLogoUploading] = useState(false)
+  const [clientLogo,    setClientLogo]    = useState<string>('')
+
+  // Scheduled reports
+  const [schedule,      setSchedule]      = useState<ScheduledReport | null>(null)
+  const [schedEnabled,  setSchedEnabled]  = useState(false)
+  const [schedForm,     setSchedForm]     = useState<ScheduledReportPayload>({
+    client_id:      clientId,
+    frequency:      'monthly',
+    day_of_month:   1,
+    time_utc:       '09:00',
+    template:       'full',
+    auto_send:      false,
+    send_to_emails: [],
+  })
+  const [savingSched,   setSavingSched]   = useState(false)
+  const [schedSaved,    setSchedSaved]    = useState(false)
 
   // Reports list
   const [reports, setReports]         = useState<Report[]>([])
@@ -68,6 +98,11 @@ export default function ClientDetailPage({ params }: Props) {
         const data = await clientsApi.get(clientId)
         setClient(data)
         setEditValues(data)
+        if (data.logo_url) setClientLogo(data.logo_url as string)
+        // Populate report config from DB (or use defaults if null)
+        if (data.report_config) {
+          setReportConfig({ ...DEFAULT_REPORT_CONFIG, ...data.report_config })
+        }
       } catch {
         setError('Client not found or failed to load.')
       } finally {
@@ -105,6 +140,29 @@ export default function ClientDetailPage({ params }: Props) {
       }
     }
     fetchReports()
+  }, [clientId])
+
+  // Fetch schedule for this client
+  useEffect(() => {
+    scheduledReportsApi.getByClient(clientId)
+      .then((schedules) => {
+        const active = schedules[0] ?? null
+        setSchedule(active)
+        if (active) {
+          setSchedEnabled(active.is_active)
+          setSchedForm({
+            client_id:      clientId,
+            frequency:      active.frequency as ScheduledReportPayload['frequency'],
+            day_of_week:    active.day_of_week ?? undefined,
+            day_of_month:   active.day_of_month ?? 1,
+            time_utc:       active.time_utc,
+            template:       active.template,
+            auto_send:      active.auto_send,
+            send_to_emails: active.send_to_emails,
+          })
+        }
+      })
+      .catch(() => { /* non-fatal */ })
   }, [clientId])
 
   const handleSave = async () => {
@@ -155,6 +213,19 @@ export default function ClientDetailPage({ params }: Props) {
     }
   }
 
+  const handleConnectMeta = async () => {
+    setConnectingMeta(true)
+    try {
+      const { url } = await authApi.getMetaAuthUrl()
+      // Store clientId in sessionStorage so the callback page can retrieve it
+      sessionStorage.setItem('meta_connect_client_id', clientId)
+      window.location.href = url
+    } catch {
+      setConnectingMeta(false)
+      setError('Failed to start Meta Ads authorisation. Please try again.')
+    }
+  }
+
   const handleDisconnect = async (connectionId: string) => {
     if (!window.confirm('Remove this connection? Reports for this client will use mock data until reconnected.')) return
     setDisconnecting(connectionId)
@@ -176,6 +247,8 @@ export default function ClientDetailPage({ params }: Props) {
         client_id:    clientId,
         period_start: periodStart,
         period_end:   periodEnd,
+        template:     selectedTemplate,
+        visual_template: visualTemplate,
       })
       router.push(`/dashboard/reports/${report.id}`)
     } catch (err: unknown) {
@@ -183,6 +256,61 @@ export default function ClientDetailPage({ params }: Props) {
         err instanceof Error ? err.message : 'Failed to generate report. Please try again.'
       setGenError(msg)
       setGenerating(false)
+    }
+  }
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !client) return
+    setLogoUploading(true)
+    try {
+      const { url } = await uploadClientLogo(client.id, file)
+      setClientLogo(url)
+    } catch {
+      setError('Logo upload failed. Max 2 MB, PNG/JPEG/GIF/WebP.')
+    } finally {
+      setLogoUploading(false)
+      if (logoInputRef.current) logoInputRef.current.value = ''
+    }
+  }
+
+  const handleSaveSchedule = async () => {
+    if (!client) return
+    setSavingSched(true)
+    try {
+      if (schedule) {
+        // Update existing schedule
+        const updated = await scheduledReportsApi.update(schedule.id, {
+          ...schedForm,
+          is_active: schedEnabled,
+        })
+        setSchedule(updated)
+      } else if (schedEnabled) {
+        // Create new schedule
+        const created = await scheduledReportsApi.create(schedForm)
+        setSchedule(created)
+      }
+      setSchedSaved(true)
+      setTimeout(() => setSchedSaved(false), 2500)
+    } catch {
+      setError('Failed to save schedule.')
+    } finally {
+      setSavingSched(false)
+    }
+  }
+
+  const handleSaveConfig = async () => {
+    if (!client) return
+    setSavingConfig(true)
+    try {
+      const updated = await clientsApi.update(client.id, { report_config: reportConfig })
+      setClient(updated)
+      setConfigSaved(true)
+      setTimeout(() => setConfigSaved(false), 2500)
+    } catch {
+      setError('Failed to save report configuration.')
+    } finally {
+      setSavingConfig(false)
     }
   }
 
@@ -274,7 +402,29 @@ export default function ClientDetailPage({ params }: Props) {
       {/* ── Client details card ─────────────────────────────────────────── */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base text-slate-700">Client details</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base text-slate-700">Client details</CardTitle>
+            {/* Client logo */}
+            <div className="flex items-center gap-2">
+              {clientLogo ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={clientLogo} alt="Client logo" className="h-10 w-10 object-contain rounded-md border border-slate-200 bg-slate-50 p-0.5" />
+              ) : (
+                <div className="flex h-10 w-10 items-center justify-center rounded-md border-2 border-dashed border-slate-200 bg-slate-50">
+                  <Building2 className="h-4 w-4 text-slate-300" />
+                </div>
+              )}
+              <button
+                onClick={() => logoInputRef.current?.click()}
+                disabled={logoUploading}
+                className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-60"
+              >
+                {logoUploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3" />}
+                {logoUploading ? 'Uploading…' : 'Logo'}
+              </button>
+              <input ref={logoInputRef} type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="space-y-5">
           <Field label="Name">
@@ -425,16 +575,54 @@ export default function ClientDetailPage({ params }: Props) {
                 )
               })()}
 
-              {/* Meta Ads row — coming soon */}
-              <div className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 px-4 py-3 opacity-60">
-                <div className="flex items-center gap-3">
-                  <AlertTriangle className="h-4 w-4 text-slate-400 shrink-0" />
-                  <div>
-                    <p className="text-sm font-medium text-slate-500">Meta Ads</p>
-                    <p className="text-xs text-slate-400">Coming soon</p>
+              {/* Meta Ads row */}
+              {(() => {
+                const meta = connections.find((c) => c.platform === 'meta_ads')
+                return meta ? (
+                  <div className="flex items-center justify-between rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <Megaphone className="h-4 w-4 text-emerald-600 shrink-0" />
+                      <div>
+                        <p className="text-sm font-medium text-slate-800">{meta.account_name}</p>
+                        <p className="text-xs text-slate-400">{meta.account_id}</p>
+                      </div>
+                      <span className="text-xs font-medium text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                        Connected
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => handleDisconnect(meta.id)}
+                      disabled={disconnecting === meta.id}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-60"
+                    >
+                      {disconnecting === meta.id
+                        ? <Loader2 className="h-3 w-3 animate-spin" />
+                        : <Unlink className="h-3 w-3" />}
+                      Disconnect
+                    </button>
                   </div>
-                </div>
-              </div>
+                ) : (
+                  <div className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <Megaphone className="h-4 w-4 text-slate-400 shrink-0" />
+                      <div>
+                        <p className="text-sm font-medium text-slate-700">Meta Ads</p>
+                        <p className="text-xs text-slate-400">Not connected — reports use sample data</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleConnectMeta}
+                      disabled={connectingMeta}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-800 transition-colors disabled:opacity-60"
+                    >
+                      {connectingMeta
+                        ? <Loader2 className="h-3 w-3 animate-spin" />
+                        : <Link2 className="h-3 w-3" />}
+                      Connect Meta Ads
+                    </button>
+                  </div>
+                )
+              })()}
             </div>
           )}
         </CardContent>
@@ -459,6 +647,66 @@ export default function ClientDetailPage({ params }: Props) {
             </div>
           ) : (
             <div className="space-y-4">
+
+              {/* Detail level selector */}
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-2">
+                  Detail level
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {([
+                    { value: 'full',    label: 'Full Report',      desc: '8 slides · complete analysis' },
+                    { value: 'summary', label: 'Summary',          desc: '4 slides · KPIs + highlights' },
+                    { value: 'brief',   label: 'One-Page Brief',   desc: '2 slides · numbers + summary' },
+                  ] as const).map((opt) => (
+                    <button
+                      key={opt.value}
+                      onClick={() => setSelectedTemplate(opt.value)}
+                      className={`flex flex-col items-start px-4 py-2.5 rounded-lg border text-left transition-colors ${
+                        selectedTemplate === opt.value
+                          ? 'bg-indigo-700 border-indigo-700 text-white'
+                          : 'bg-white border-slate-200 text-slate-700 hover:border-indigo-300 hover:bg-indigo-50'
+                      }`}
+                    >
+                      <span className="text-sm font-semibold">{opt.label}</span>
+                      <span className={`text-xs mt-0.5 ${selectedTemplate === opt.value ? 'text-indigo-200' : 'text-slate-400'}`}>
+                        {opt.desc}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Visual style */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+                  Visual Style
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {([
+                    { value: 'modern_clean',    label: 'Modern Clean',    desc: 'Light &amp; minimal' },
+                    { value: 'dark_executive',  label: 'Dark Executive',  desc: 'Bold dark theme' },
+                    { value: 'colorful_agency', label: 'Colorful Agency', desc: 'Vibrant orange accents' },
+                  ] as const).map((opt) => (
+                    <button
+                      key={opt.value}
+                      onClick={() => setVisualTemplate(opt.value)}
+                      className={`flex flex-col items-start px-4 py-2.5 rounded-lg border text-left transition-colors ${
+                        visualTemplate === opt.value
+                          ? 'bg-indigo-700 border-indigo-700 text-white'
+                          : 'bg-white border-slate-200 text-slate-700 hover:border-indigo-300 hover:bg-indigo-50'
+                      }`}
+                    >
+                      <span className="text-sm font-semibold">{opt.label}</span>
+                      <span className={`text-xs mt-0.5 ${visualTemplate === opt.value ? 'text-indigo-200' : 'text-slate-400'}`}>
+                        {opt.desc}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Date range */}
               <div className="flex flex-wrap gap-4">
                 <div className="flex-1 min-w-[160px]">
                   <label className="block text-xs font-medium text-slate-500 mb-1.5">
@@ -498,6 +746,255 @@ export default function ClientDetailPage({ params }: Props) {
               </button>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* ── Report Configuration ─────────────────────────────────────────── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base text-slate-700 flex items-center gap-2">
+            <Settings2 className="h-4 w-4 text-slate-400" />
+            Report Configuration
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-5">
+
+          {/* Default template for automation (scheduled reports) */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+              Default detail level for scheduled reports
+            </label>
+            <select
+              value={reportConfig.template}
+              onChange={(e) =>
+                setReportConfig((c) => ({ ...c, template: e.target.value as ReportConfig['template'] }))
+              }
+              className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="full">Full Report — 8 slides, complete analysis</option>
+              <option value="summary">Summary — 4 slides, KPIs + highlights</option>
+              <option value="brief">One-Page Brief — 2 slides, numbers + summary</option>
+            </select>
+          </div>
+
+          {/* Section toggles */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+              Sections
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {(Object.keys(reportConfig.sections) as Array<keyof ReportConfig['sections']>).map((key) => (
+                <label key={key} className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={reportConfig.sections[key]}
+                    onChange={(e) =>
+                      setReportConfig((c) => ({
+                        ...c,
+                        sections: { ...c.sections, [key]: e.target.checked },
+                      }))
+                    }
+                    className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <span className="text-sm text-slate-700 capitalize">
+                    {key.replace(/_/g, ' ')}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Custom section (shown only when toggled on) */}
+          {reportConfig.sections.custom_section && (
+            <div className="space-y-3 rounded-lg border border-indigo-100 bg-indigo-50 p-4">
+              <p className="text-xs font-semibold text-indigo-700 uppercase tracking-wide">Custom Section</p>
+              <Input
+                value={reportConfig.custom_section_title}
+                onChange={(e) =>
+                  setReportConfig((c) => ({ ...c, custom_section_title: e.target.value }))
+                }
+                placeholder="Section title…"
+              />
+              <Textarea
+                value={reportConfig.custom_section_text}
+                onChange={(e) =>
+                  setReportConfig((c) => ({ ...c, custom_section_text: e.target.value }))
+                }
+                placeholder="Write your custom commentary here — strategic notes, agency analysis, client context…"
+                rows={4}
+              />
+            </div>
+          )}
+
+          {/* Save button */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleSaveConfig}
+              disabled={savingConfig}
+              className="inline-flex items-center gap-2 rounded-lg bg-indigo-700 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-800 transition-colors disabled:opacity-60"
+            >
+              {savingConfig ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Check className="h-4 w-4" />
+              )}
+              {savingConfig ? 'Saving…' : 'Save Configuration'}
+            </button>
+            {configSaved && (
+              <span className="text-sm text-emerald-600 font-medium">
+                ✓ Saved
+              </span>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ── Automated Reports ───────────────────────────────────────────── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base text-slate-700 flex items-center gap-2">
+            <Clock className="h-4 w-4 text-slate-400" />
+            Automated Reports
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Enable toggle */}
+          <label className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3 cursor-pointer hover:bg-slate-50 transition-colors">
+            <div>
+              <p className="text-sm font-medium text-slate-700">Enable automatic report generation</p>
+              <p className="text-xs text-slate-400 mt-0.5">Reports will be generated on the schedule below</p>
+            </div>
+            <div
+              onClick={() => setSchedEnabled(!schedEnabled)}
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${schedEnabled ? 'bg-indigo-700' : 'bg-slate-200'}`}
+            >
+              <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${schedEnabled ? 'translate-x-4' : 'translate-x-1'}`} />
+            </div>
+          </label>
+
+          {schedEnabled && (
+            <div className="space-y-4 rounded-lg border border-slate-100 bg-slate-50 p-4">
+              {/* Frequency */}
+              <div className="flex flex-wrap gap-4 items-end">
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1.5">Frequency</label>
+                  <select
+                    value={schedForm.frequency}
+                    onChange={(e) => setSchedForm((f) => ({ ...f, frequency: e.target.value as ScheduledReportPayload['frequency'] }))}
+                    className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="weekly">Weekly</option>
+                    <option value="biweekly">Bi-weekly</option>
+                    <option value="monthly">Monthly</option>
+                  </select>
+                </div>
+
+                {schedForm.frequency === 'monthly' ? (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1.5">On day</label>
+                    <select
+                      value={schedForm.day_of_month ?? 1}
+                      onChange={(e) => setSchedForm((f) => ({ ...f, day_of_month: +e.target.value }))}
+                      className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1.5">On</label>
+                    <select
+                      value={schedForm.day_of_week ?? 0}
+                      onChange={(e) => setSchedForm((f) => ({ ...f, day_of_week: +e.target.value }))}
+                      className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      {['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map((d, i) => (
+                        <option key={d} value={i}>{d}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1.5">At (UTC)</label>
+                  <Input
+                    type="time"
+                    value={schedForm.time_utc}
+                    onChange={(e) => setSchedForm((f) => ({ ...f, time_utc: e.target.value }))}
+                    className="w-28"
+                  />
+                </div>
+              </div>
+
+              {/* Detail level */}
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1.5">Report detail level</label>
+                <select
+                  value={schedForm.template}
+                  onChange={(e) => setSchedForm((f) => ({ ...f, template: e.target.value }))}
+                  className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="full">Full Report — 8 slides</option>
+                  <option value="summary">Summary — 4 slides</option>
+                  <option value="brief">One-Page Brief — 2 slides</option>
+                </select>
+              </div>
+
+              {/* Auto-send */}
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={schedForm.auto_send}
+                  onChange={(e) => setSchedForm((f) => ({ ...f, auto_send: e.target.checked }))}
+                  className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <span className="text-sm text-slate-700">Auto-send report to client via email</span>
+              </label>
+
+              {schedForm.auto_send && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1.5">Send to (comma-separated emails)</label>
+                  <Input
+                    value={schedForm.send_to_emails?.join(', ') ?? ''}
+                    onChange={(e) =>
+                      setSchedForm((f) => ({
+                        ...f,
+                        send_to_emails: e.target.value.split(',').map((s) => s.trim()).filter(Boolean),
+                      }))
+                    }
+                    placeholder="client@company.com, ceo@company.com"
+                  />
+                </div>
+              )}
+
+              {/* Status info */}
+              {schedule && (
+                <div className="text-xs text-slate-400 space-y-0.5">
+                  {schedule.next_run_at && (
+                    <p>Next report: {new Date(schedule.next_run_at).toLocaleDateString('en-US', { weekday:'short', year:'numeric', month:'short', day:'numeric' })} at {schedule.time_utc} UTC</p>
+                  )}
+                  {schedule.last_generated_at && (
+                    <p>Last generated: {new Date(schedule.last_generated_at).toLocaleDateString('en-US', { weekday:'short', year:'numeric', month:'short', day:'numeric' })}</p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Save button */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleSaveSchedule}
+              disabled={savingSched}
+              className="inline-flex items-center gap-2 rounded-lg bg-indigo-700 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-800 transition-colors disabled:opacity-60"
+            >
+              {savingSched ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              {savingSched ? 'Saving…' : 'Save Schedule'}
+            </button>
+            {schedSaved && <span className="text-sm text-emerald-600 font-medium">✓ Saved</span>}
+          </div>
         </CardContent>
       </Card>
 

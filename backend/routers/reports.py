@@ -17,6 +17,9 @@ from models.schemas import (
     ReportListItem,
     ReportListResponse,
     ReportResponse,
+    ReportSectionRegenerateRequest,
+    ReportSendRequest,
+    ReportUpdateRequest,
 )
 from services.supabase_client import get_supabase_admin
 
@@ -37,20 +40,22 @@ def _map_db_row(row: dict, client_name: str | None = None) -> dict:
     """
     sections = row.get("sections") or {}
     return {
-        "id":           row["id"],
-        "user_id":      row["user_id"],
-        "client_id":    row["client_id"],
-        "client_name":  client_name,
-        "title":        row["title"],
-        "status":       row["status"],
-        "period_start": str(row["period_start"]),
-        "period_end":   str(row["period_end"]),
-        "narrative":    row.get("ai_narrative"),
-        "data_summary": sections.get("data_summary") if isinstance(sections, dict) else None,
-        "pptx_url":     row.get("pptx_file_url"),
-        "pdf_url":      row.get("pdf_file_url"),
-        "created_at":   row["created_at"],
-        "updated_at":   row["updated_at"],
+        "id":            row["id"],
+        "user_id":       row["user_id"],
+        "client_id":     row["client_id"],
+        "client_name":   client_name,
+        "title":         row["title"],
+        "status":        row["status"],
+        "period_start":  str(row["period_start"]),
+        "period_end":    str(row["period_end"]),
+        "narrative":     row.get("ai_narrative"),
+        "data_summary":  sections.get("data_summary") if isinstance(sections, dict) else None,
+        "meta_currency": sections.get("meta_currency", "USD") if isinstance(sections, dict) else "USD",
+        "user_edits":    row.get("user_edits"),
+        "pptx_url":      row.get("pptx_file_url"),
+        "pdf_url":       row.get("pdf_file_url"),
+        "created_at":    row["created_at"],
+        "updated_at":    row["updated_at"],
     }
 
 # Local storage directory — lives inside backend/generated_reports/
@@ -60,26 +65,35 @@ REPORTS_BASE_DIR = os.path.join(_HERE, "generated_reports")
 
 
 # ---------------------------------------------------------------------------
-# POST /generate
+# _generate_report_internal — shared by the API endpoint and the scheduler
 # ---------------------------------------------------------------------------
 
-@router.post("/generate", response_model=ReportResponse, status_code=status.HTTP_201_CREATED)
-async def generate_report(
-    request: ReportGenerateRequest,
-    user_id: str = Depends(get_current_user_id),
-) -> ReportResponse:
+async def _generate_report_internal(
+    *,
+    client_id: str,
+    user_id: str,
+    period_start: str,
+    period_end: str,
+    template: str = "full",
+    visual_template: str = "modern_clean",
+    supabase=None,
+) -> dict:
     """
-    Full report generation pipeline:
-    1. Fetch client  2. Mock data  3. AI narrative  4. Charts
-    5. PPTX + PDF    6. Save to disk  7. Store in Supabase
+    Core report generation pipeline.  Returns the raw DB row dict on success.
+    Raises HTTPException (or any exception) on failure.
+
+    Shared between:
+      • POST /api/reports/generate  (API endpoint)
+      • services/scheduler.py       (automated scheduled reports)
     """
-    supabase = get_supabase_admin()
+    if supabase is None:
+        supabase = get_supabase_admin()
 
     # 1 — Verify client ownership
     client_result = (
         supabase.table("clients")
         .select("*")
-        .eq("id", request.client_id)
+        .eq("id", client_id)
         .eq("user_id", user_id)
         .eq("is_active", True)
         .single()
@@ -89,6 +103,15 @@ async def generate_report(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
     client = client_result.data
 
+    # 1b — Read report_config (section toggles, KPI selection, template, custom section)
+    report_config: dict = client.get("report_config") or {}
+    cfg_sections    = report_config.get("sections", {})     # section toggle dict
+    cfg_template    = template or report_config.get("template", "full")
+    cfg_custom      = {
+        "title": report_config.get("custom_section_title", ""),
+        "text":  report_config.get("custom_section_text",  ""),
+    }
+
     # 2 — Prefer real GA4 data; fall back to mock data
     from services.mock_data import generate_all_mock_data  # noqa: PLC0415
 
@@ -96,7 +119,7 @@ async def generate_report(
     ga4_conn_result = (
         supabase.table("connections")
         .select("id,account_id,access_token_encrypted,refresh_token_encrypted,token_expires_at")
-        .eq("client_id", request.client_id)
+        .eq("client_id", client_id)
         .eq("platform", "ga4")
         .eq("status", "active")
         .limit(1)
@@ -126,24 +149,64 @@ async def generate_report(
                 refresh_token_encrypted=ga4_conn["refresh_token_encrypted"],
                 token_expires_at=token_expires_ts,
                 property_id=ga4_conn["account_id"],
-                period_start=request.period_start,
-                period_end=request.period_end,
+                period_start=period_start,
+                period_end=period_end,
                 connection_id=ga4_conn["id"],
                 supabase=supabase,
             )
-            logger.info("Using real GA4 data for client %s", request.client_id)
+            logger.info("Using real GA4 data for client %s", client_id)
         except Exception:
             logger.exception(
                 "Real GA4 pull failed for client %s — falling back to mock data",
-                request.client_id,
+                client_id,
             )
             ga4_data = None
 
+    # Check for an active Meta Ads connection for this client
+    meta_conn_result = (
+        supabase.table("connections")
+        .select("id,account_id,currency,access_token_encrypted,refresh_token_encrypted,token_expires_at")
+        .eq("client_id", client_id)
+        .eq("platform", "meta_ads")
+        .eq("status", "active")
+        .limit(1)
+        .execute()
+    )
+
+    meta_data = None
+    meta_currency = "USD"  # default; overridden when a real connection exists
+    if meta_conn_result.data:
+        meta_conn = meta_conn_result.data[0]
+        meta_currency = meta_conn.get("currency", "USD") or "USD"
+        try:
+            from services.meta_ads import pull_meta_ads_data  # noqa: PLC0415
+            meta_data = await pull_meta_ads_data(
+                account_id=meta_conn["account_id"],
+                access_token_encrypted=meta_conn["access_token_encrypted"],
+                period_start=period_start,
+                period_end=period_end,
+                connection_id=meta_conn["id"],
+                currency=meta_currency,
+            )
+            logger.info("Using real Meta Ads data for client %s", client_id)
+        except Exception:
+            logger.exception(
+                "Real Meta Ads pull failed for client %s — falling back to mock data",
+                client_id,
+            )
+            meta_data = None
+
     # Build the combined raw_data dict
-    mock_all = generate_all_mock_data(client["name"], request.period_start, request.period_end)
+    mock_all = generate_all_mock_data(client["name"], period_start, period_end)
     if ga4_data is not None:
-        mock_all["ga4"] = ga4_data   # replace only the GA4 section with real data
+        mock_all["ga4"] = ga4_data       # replace GA4 section with real data
+    if meta_data is not None:
+        mock_all["meta_ads"] = meta_data  # replace Meta Ads section with real data
     raw_data = mock_all
+
+    # Always stamp the correct currency on the meta_ads section, even when using mock data,
+    # so charts, AI narrative, and report generators all see the right currency.
+    raw_data.setdefault("meta_ads", {})["currency"] = meta_currency
 
     # 3 — AI narrative (async I/O)
     from services.ai_narrative import generate_narrative  # noqa: PLC0415
@@ -152,25 +215,58 @@ async def generate_report(
         client_name=client["name"],
         client_goals=client.get("goals_context"),
         tone=client.get("ai_tone", "professional"),
+        template=cfg_template,
     )
 
-    # 4 — Generate charts (sync, run in thread pool)
+    # 4 — Fetch agency branding first (needed for branded charts + reports)
+    profile_result = (
+        supabase.table("profiles")
+        .select("agency_name,agency_logo_url,brand_color,sender_name,agency_email")
+        .eq("id", user_id)
+        .maybe_single()
+        .execute()
+    )
+    _profile = profile_result.data or {}
+    branding = {
+        "agency_name":     _profile.get("agency_name") or "Your Agency",
+        "agency_logo_url": _profile.get("agency_logo_url") or "",
+        "brand_color":     _profile.get("brand_color") or "#4338CA",
+        "client_logo_url": client.get("logo_url") or "",
+    }
+
+    # 5 — Generate charts (sync, run in thread pool)
     report_id = str(uuid.uuid4())
     charts_dir = os.path.join(REPORTS_BASE_DIR, report_id, "charts")
 
     from services.chart_generator import generate_all_charts  # noqa: PLC0415
-    charts = await asyncio.to_thread(generate_all_charts, raw_data, charts_dir)
+    charts = await asyncio.to_thread(
+        generate_all_charts, raw_data, charts_dir, branding["brand_color"],
+    )
 
-    # 5 — Build report files (sync, run in thread pool)
     client_info = {
-        "name": client["name"],
-        "agency_name": "Your Agency",  # White-label customisation in a future phase
+        "name":        client["name"],
+        "agency_name": branding["agency_name"],
     }
 
+    # 6 — Build report files (sync, run in thread pool)
     from services.report_generator import generate_pdf_report, generate_pptx_report  # noqa: PLC0415
     pptx_bytes, pdf_bytes = await asyncio.gather(
-        asyncio.to_thread(generate_pptx_report, raw_data, narrative, charts, client_info),
-        asyncio.to_thread(generate_pdf_report,  raw_data, narrative, charts, client_info),
+        asyncio.to_thread(
+            generate_pptx_report, raw_data, narrative, charts, client_info,
+            cfg_sections if cfg_sections else None,
+            cfg_template,
+            cfg_custom if cfg_custom.get("title") else None,
+            branding,
+            visual_template,
+        ),
+        asyncio.to_thread(
+            generate_pdf_report, raw_data, narrative, charts, client_info,
+            cfg_sections if cfg_sections else None,
+            cfg_template,
+            cfg_custom if cfg_custom.get("title") else None,
+            branding,
+            visual_template,
+        ),
     )
 
     # 6 — Save to disk
@@ -212,24 +308,34 @@ async def generate_report(
 
     # 8 — Human-readable title
     try:
-        month_year = datetime.strptime(request.period_start, "%Y-%m-%d").strftime("%B %Y")
+        month_year = datetime.strptime(period_start, "%Y-%m-%d").strftime("%B %Y")
     except ValueError:
-        month_year = request.period_start
+        month_year = period_start
     title = f"{client['name']} — {month_year} Performance Report"
 
     # 9 — Persist report record in Supabase (use actual DB column names)
     insert_payload = {
         "id":            report_id,
         "user_id":       user_id,
-        "client_id":     request.client_id,
+        "client_id":     client_id,
         "title":         title,
         "status":        "draft",           # CHECK: generating|draft|approved|sent|failed
-        "period_start":  request.period_start,
-        "period_end":    request.period_end,
+        "period_start":  period_start,
+        "period_end":    period_end,
         "pptx_file_url": pptx_path,         # actual DB column name
         "pdf_file_url":  pdf_path,          # actual DB column name
         "ai_narrative":  narrative,         # actual DB column name
-        "sections":      {"data_summary": data_summary},  # no data_summary column — store in sections JSONB
+        "sections": {
+            "data_summary":   data_summary,
+            "meta_currency":  meta_currency,
+            # Compact raw_data for section regeneration (daily arrays omitted to save space)
+            "narrative_data": {
+                "ga4": {k: v for k, v in raw_data.get("ga4", {}).items() if k != "daily"},
+                "meta_ads": {k: v for k, v in raw_data.get("meta_ads", {}).items() if k != "daily"},
+                "period_start": raw_data.get("period_start"),
+                "period_end":   raw_data.get("period_end"),
+            },
+        },
     }
     result = supabase.table("reports").insert(insert_payload).execute()
     if not result.data:
@@ -238,7 +344,33 @@ async def generate_report(
             detail="Report generated but failed to save to database",
         )
 
-    return ReportResponse(**_map_db_row(result.data[0], client_name=client["name"]))
+    # Return raw DB row so callers can map it however they need
+    return result.data[0], client["name"]
+
+
+# ---------------------------------------------------------------------------
+# POST /generate  — thin wrapper around _generate_report_internal
+# ---------------------------------------------------------------------------
+
+@router.post("/generate", response_model=ReportResponse, status_code=status.HTTP_201_CREATED)
+async def generate_report(
+    request: ReportGenerateRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> ReportResponse:
+    """
+    Full report generation pipeline:
+    1. Fetch client  2. Data pull (real or mock)  3. AI narrative  4. Charts
+    5. PPTX + PDF    6. Save to disk  7. Store in Supabase
+    """
+    row, client_name = await _generate_report_internal(
+        client_id=request.client_id,
+        user_id=user_id,
+        period_start=request.period_start,
+        period_end=request.period_end,
+        template=request.template,
+        visual_template=request.visual_template,
+    )
+    return ReportResponse(**_map_db_row(row, client_name=client_name))
 
 
 # ---------------------------------------------------------------------------
@@ -412,3 +544,307 @@ async def download_pdf(
 
     safe_title = result.data.get("title", "report").replace(" — ", " - ").replace(" ", "_")[:80]
     return FileResponse(pdf_path, media_type="application/pdf", filename=f"{safe_title}.pdf")
+
+
+# ---------------------------------------------------------------------------
+# PATCH /{report_id}  — save manual user_edits
+# ---------------------------------------------------------------------------
+
+@router.patch("/{report_id}", response_model=ReportResponse)
+async def update_report_edits(
+    report_id: str,
+    payload: ReportUpdateRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> ReportResponse:
+    """
+    Persist manual text edits for one or more narrative sections.
+    Merges the incoming user_edits dict with any existing edits in the DB,
+    so editing section A doesn't wipe a previous edit to section B.
+    """
+    supabase = get_supabase_admin()
+
+    # Fetch existing report (ownership check)
+    existing = (
+        supabase.table("reports")
+        .select("*")
+        .eq("id", report_id)
+        .eq("user_id", user_id)
+        .single()
+        .execute()
+    )
+    if not existing.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
+
+    row = existing.data
+    merged_edits = dict(row.get("user_edits") or {})
+    merged_edits.update(payload.user_edits)
+
+    result = (
+        supabase.table("reports")
+        .update({"user_edits": merged_edits})
+        .eq("id", report_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to save edits",
+        )
+
+    client_result = (
+        supabase.table("clients").select("name").eq("id", row["client_id"]).single().execute()
+    )
+    client_name = client_result.data["name"] if client_result.data else None
+    return ReportResponse(**_map_db_row(result.data[0], client_name=client_name))
+
+
+# ---------------------------------------------------------------------------
+# POST /{report_id}/regenerate-section  — re-run AI for one section
+# ---------------------------------------------------------------------------
+
+@router.post("/{report_id}/regenerate-section", response_model=ReportResponse)
+async def regenerate_section(
+    report_id: str,
+    payload: ReportSectionRegenerateRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> ReportResponse:
+    """
+    Re-run GPT-4o for a single narrative section.
+    Uses the compact narrative_data stored in sections JSONB at generation time.
+    """
+    valid_sections = {
+        "executive_summary", "website_performance", "paid_advertising",
+        "key_wins", "concerns", "next_steps",
+    }
+    if payload.section not in valid_sections:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid section '{payload.section}'. Must be one of: {valid_sections}",
+        )
+
+    supabase = get_supabase_admin()
+
+    # Fetch report + client for context
+    report_result = (
+        supabase.table("reports")
+        .select("*")
+        .eq("id", report_id)
+        .eq("user_id", user_id)
+        .single()
+        .execute()
+    )
+    if not report_result.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
+
+    row = report_result.data
+    sections_json = row.get("sections") or {}
+    narrative_data = sections_json.get("narrative_data")
+
+    if not narrative_data:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="This report does not have stored narrative data for regeneration. "
+                   "Please generate a new report.",
+        )
+
+    client_result = (
+        supabase.table("clients")
+        .select("name,goals_context,ai_tone,report_config")
+        .eq("id", row["client_id"])
+        .single()
+        .execute()
+    )
+    if not client_result.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
+
+    client = client_result.data
+    report_config = client.get("report_config") or {}
+    cfg_template  = report_config.get("template", "monthly")
+
+    # Re-run AI for just this one section
+    from services.ai_narrative import generate_narrative  # noqa: PLC0415
+    new_section_narrative = await generate_narrative(
+        data=narrative_data,
+        client_name=client["name"],
+        client_goals=client.get("goals_context"),
+        tone=client.get("ai_tone", "professional"),
+        template=cfg_template,
+        sections=[payload.section],
+    )
+
+    # Merge new section into existing ai_narrative
+    existing_narrative = dict(row.get("ai_narrative") or {})
+    existing_narrative[payload.section] = new_section_narrative.get(payload.section, "")
+
+    # Clear any user_edit for this section (user requested a fresh AI version)
+    existing_user_edits = dict(row.get("user_edits") or {})
+    existing_user_edits.pop(payload.section, None)
+
+    result = (
+        supabase.table("reports")
+        .update({
+            "ai_narrative": existing_narrative,
+            "user_edits":   existing_user_edits,
+        })
+        .eq("id", report_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to save regenerated section",
+        )
+
+    client_name = client.get("name")
+    return ReportResponse(**_map_db_row(result.data[0], client_name=client_name))
+
+
+# ---------------------------------------------------------------------------
+# POST /{report_id}/send  — deliver report by email
+# ---------------------------------------------------------------------------
+
+@router.post("/{report_id}/send", status_code=status.HTTP_200_OK)
+async def send_report(
+    report_id: str,
+    payload: ReportSendRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> dict:
+    """
+    Send the report to one or more email addresses via Resend.
+    Attaches PDF and/or PPTX depending on payload.attachment.
+    Logs the delivery attempt in the report_deliveries table.
+    """
+    supabase = get_supabase_admin()
+
+    # Fetch report
+    report_result = (
+        supabase.table("reports")
+        .select("*")
+        .eq("id", report_id)
+        .eq("user_id", user_id)
+        .single()
+        .execute()
+    )
+    if not report_result.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
+
+    row = report_result.data
+
+    # Fetch client for contact email fallback
+    client_result = (
+        supabase.table("clients")
+        .select("name,primary_contact_email")
+        .eq("id", row["client_id"])
+        .single()
+        .execute()
+    )
+    client = client_result.data or {}
+    client_name = client.get("name", "Client")
+
+    # Fetch agency/profile settings for sender customisation
+    profile_result = (
+        supabase.table("profiles")
+        .select("agency_name,agency_email,sender_name,reply_to_email,email_footer")
+        .eq("id", user_id)
+        .single()
+        .execute()
+    )
+    profile = profile_result.data or {}
+    agency_name  = profile.get("agency_name")  or "Your Agency"
+    agency_email = profile.get("agency_email") or ""
+    sender_name  = payload.sender_name or profile.get("sender_name") or agency_name
+    reply_to     = payload.reply_to   or profile.get("reply_to_email") or None
+    email_footer = profile.get("email_footer") or ""
+
+    # Resolve files
+    attach = payload.attachment.lower()
+    pptx_path_resolved = os.path.join(REPORTS_BASE_DIR, report_id, "report.pptx")
+    pdf_path_resolved  = os.path.join(REPORTS_BASE_DIR, report_id, "report.pdf")
+    send_pptx = attach in ("pptx", "both") and os.path.exists(pptx_path_resolved)
+    send_pdf  = attach in ("pdf",  "both") and os.path.exists(pdf_path_resolved)
+
+    if not send_pptx and not send_pdf:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="No report files found. Generate the report files first.",
+        )
+
+    # Build email
+    sections_json = row.get("sections") or {}
+    meta_currency = sections_json.get("meta_currency", "USD") if isinstance(sections_json, dict) else "USD"
+
+    # Use user_edits-merged narrative for executive_summary snippet
+    narrative = dict(row.get("ai_narrative") or {})
+    user_edits = row.get("user_edits") or {}
+    merged_narrative = {**narrative, **{k: v for k, v in user_edits.items() if v}}
+    exec_summary = merged_narrative.get("executive_summary", "")
+
+    title = row.get("title", f"{client_name} Performance Report")
+    subject = payload.subject or title
+
+    from services.email_service import build_report_email_html, send_report_email  # noqa: PLC0415
+    html_body = build_report_email_html(
+        client_name=client_name,
+        period_start=str(row.get("period_start", "")),
+        period_end=str(row.get("period_end", "")),
+        report_title=title,
+        executive_summary=exec_summary,
+        agency_name=agency_name,
+        agency_email=agency_email,
+        email_footer=email_footer,
+    )
+
+    try:
+        resend_result = await send_report_email(
+            to_emails=payload.to_emails,
+            subject=subject,
+            html_body=html_body,
+            sender_name=sender_name,
+            reply_to=reply_to,
+            pptx_path=pptx_path_resolved if send_pptx else None,
+            pdf_path=pdf_path_resolved  if send_pdf  else None,
+        )
+    except Exception as exc:
+        logger.error("Email send failed for report %s: %s", report_id, exc)
+        # Log failed delivery
+        supabase.table("report_deliveries").insert({
+            "report_id":       report_id,
+            "user_id":         user_id,
+            "delivery_method": "email",
+            "recipient_emails": payload.to_emails,
+            "status":          "failed",
+            "error_message":   str(exc),
+            "email_subject":   subject,
+        }).execute()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Email delivery failed: {exc}",
+        )
+
+    # Log successful delivery and update report status to "sent"
+    supabase.table("report_deliveries").insert({
+        "report_id":        report_id,
+        "user_id":          user_id,
+        "delivery_method":  "email",
+        "recipient_emails": payload.to_emails,
+        "status":           "sent",
+        "resend_id":        resend_result.get("id"),
+        "email_subject":    subject,
+        "attachment_type":  payload.attachment,
+        "sent_at":          datetime.utcnow().isoformat(),
+    }).execute()
+
+    supabase.table("reports").update({"status": "sent"}).eq("id", report_id).execute()
+
+    logger.info(
+        "Report %s sent to %s (Resend ID: %s)",
+        report_id, payload.to_emails, resend_result.get("id"),
+    )
+    return {
+        "success":   True,
+        "resend_id": resend_result.get("id"),
+        "to":        payload.to_emails,
+        "subject":   subject,
+    }
