@@ -5,7 +5,7 @@ Check subscription status and plan limits before allowing actions.
 import logging
 from datetime import datetime, timezone
 
-from config.plans import get_client_limit, check_feature, get_plan
+from services.plans import get_client_limit, check_feature, get_plan
 from services.supabase_client import get_supabase_admin
 
 logger = logging.getLogger(__name__)
