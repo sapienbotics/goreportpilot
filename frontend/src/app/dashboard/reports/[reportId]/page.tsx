@@ -1,17 +1,34 @@
 'use client'
 
-// Report preview page — shows full AI narrative, KPIs, and download buttons.
+// Report preview page — full AI narrative, KPIs, inline editing, regenerate, and send.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import {
   ArrowLeft, Download, FileText, TrendingUp, TrendingDown,
-  Minus, CheckCircle, AlertTriangle, ChevronRight, Loader2,
+  Minus, Loader2,
+  Pencil, RefreshCw, Check, X as XIcon, Send, Mail,
 } from 'lucide-react'
 import { reportsApi, downloadFileWithAuth } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
 import type { Report } from '@/types'
+
+// ── Currency symbol lookup ──────────────────────────────────────────────────
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: '$',   EUR: '€',   GBP: '£',   INR: '₹',
+  AUD: 'A$',  CAD: 'C$',  JPY: '¥',   CNY: '¥',
+  BRL: 'R$',  MXN: 'Mex$', SGD: 'S$', HKD: 'HK$',
+  CHF: 'CHF ',SEK: 'kr',  NOK: 'kr',  DKK: 'kr',
+  ZAR: 'R',   AED: 'AED ',SAR: 'SAR ',MYR: 'RM',
+}
+
+function getCurrencySymbol(code?: string | null): string {
+  if (!code) return '$'
+  return CURRENCY_SYMBOLS[code.toUpperCase()] ?? code + ' '
+}
 
 // ── KPI display config ──────────────────────────────────────────────────────
 interface KpiConfig {
@@ -22,22 +39,15 @@ interface KpiConfig {
   invertPolarity?: boolean
 }
 
-const KPI_CONFIGS: KpiConfig[] = [
-  { key: 'sessions',    label: 'Sessions',    format: (v) => v.toLocaleString() },
-  { key: 'users',       label: 'Users',       format: (v) => v.toLocaleString() },
-  { key: 'conversions', label: 'Conversions', format: (v) => v.toLocaleString() },
-  { key: 'spend',       label: 'Ad Spend',    format: (v) => `$${v.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` },
-  { key: 'roas',        label: 'ROAS',        format: (v) => `${v.toFixed(1)}x` },
-  { key: 'cost_per_conversion', label: 'Cost / Conv.', format: (v) => `$${v.toFixed(2)}`, invertPolarity: true },
-]
-
-const CHANGE_KEYS: Record<string, string> = {
-  sessions:    'sessions_change',
-  users:       'users_change',
-  conversions: 'conversions_change',
-  spend:       'spend_change',
-  roas:        'roas',   // derive below
-  cost_per_conversion: 'cost_per_conversion', // derive below
+function buildKpiConfigs(currencySymbol: string): KpiConfig[] {
+  return [
+    { key: 'sessions',    label: 'Sessions',    format: (v) => v.toLocaleString() },
+    { key: 'users',       label: 'Users',       format: (v) => v.toLocaleString() },
+    { key: 'conversions', label: 'Conversions', format: (v) => v.toLocaleString() },
+    { key: 'spend',       label: 'Ad Spend',    format: (v) => `${currencySymbol}${v.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` },
+    { key: 'roas',        label: 'ROAS',        format: (v) => `${v.toFixed(1)}x` },
+    { key: 'cost_per_conversion', label: 'Cost / Conv.', format: (v) => `${currencySymbol}${v.toFixed(2)}`, invertPolarity: true },
+  ]
 }
 
 function getChange(
@@ -82,35 +92,145 @@ function toLines(content: any): string[] {
   return []
 }
 
-// ── Narrative section ───────────────────────────────────────────────────────
-function NarrativeSection({ title, content, icon }: {
+// ── Editable narrative card ──────────────────────────────────────────────────
+// Wraps a narrative section with Edit / Save / Cancel / Regenerate controls.
+function EditableNarrativeCard({
+  sectionKey,
+  title,
+  content,
+  cardClassName,
+  titleClassName,
+  children,
+  onSave,
+  onRegenerate,
+  saving,
+  regenerating,
+}: {
+  sectionKey: string
   title: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   content: any
-  icon?: React.ReactNode
+  cardClassName?: string
+  titleClassName?: string
+  children: React.ReactNode
+  onSave: (sectionKey: string, text: string) => Promise<void>
+  onRegenerate: (sectionKey: string) => Promise<void>
+  saving: boolean
+  regenerating: boolean
+}) {
+  const rawText = Array.isArray(content)
+    ? content.join('\n')
+    : typeof content === 'string' ? content : ''
+
+  const [editing, setEditing]   = useState(false)
+  const [editText, setEditText] = useState(rawText)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // Keep editText in sync when parent content changes (e.g. after regenerate)
+  useEffect(() => {
+    if (!editing) setEditText(rawText)
+  }, [rawText, editing])
+
+  const handleEdit = () => {
+    setEditText(rawText)
+    setEditing(true)
+    setTimeout(() => textareaRef.current?.focus(), 50)
+  }
+
+  const handleCancel = () => {
+    setEditText(rawText)
+    setEditing(false)
+  }
+
+  const handleSave = async () => {
+    await onSave(sectionKey, editText)
+    setEditing(false)
+  }
+
+  return (
+    <Card className={cardClassName}>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <CardTitle className={`text-base ${titleClassName ?? 'text-slate-700'}`}>
+            {title}
+          </CardTitle>
+          <div className="flex items-center gap-1.5">
+            {editing ? (
+              <>
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="inline-flex items-center gap-1 rounded-md bg-indigo-700 px-2.5 py-1 text-xs font-semibold text-white hover:bg-indigo-800 transition-colors disabled:opacity-60"
+                >
+                  {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                  Save
+                </button>
+                <button
+                  onClick={handleCancel}
+                  className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50 transition-colors"
+                >
+                  <XIcon className="h-3 w-3" /> Cancel
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={handleEdit}
+                  className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1 text-xs text-slate-500 hover:bg-slate-50 transition-colors"
+                >
+                  <Pencil className="h-3 w-3" /> Edit
+                </button>
+                <button
+                  onClick={() => onRegenerate(sectionKey)}
+                  disabled={regenerating}
+                  title="Re-run AI for this section"
+                  className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1 text-xs text-slate-500 hover:bg-slate-50 transition-colors disabled:opacity-60"
+                >
+                  {regenerating
+                    ? <Loader2 className="h-3 w-3 animate-spin" />
+                    : <RefreshCw className="h-3 w-3" />}
+                  Regenerate
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {editing ? (
+          <Textarea
+            ref={textareaRef}
+            value={editText}
+            onChange={(e) => setEditText(e.target.value)}
+            rows={8}
+            className="text-sm text-slate-700 leading-relaxed font-mono resize-y"
+          />
+        ) : (
+          children
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+// ── Narrative section (read-only inner content) ──────────────────────────────
+function NarrativeSection({ content }: {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  content: any
 }) {
   const paragraphs = toLines(content)
   if (paragraphs.length === 0) return null
   return (
-    <div>
-      <h3 className="text-base font-semibold text-slate-800 flex items-center gap-2 mb-3">
-        {icon}
-        {title}
-      </h3>
-      <div className="space-y-2">
-        {paragraphs.map((p, i) => (
-          <p key={i} className="text-sm text-slate-600 leading-relaxed">
-            {p}
-          </p>
-        ))}
-      </div>
+    <div className="space-y-2">
+      {paragraphs.map((p, i) => (
+        <p key={i} className="text-sm text-slate-600 leading-relaxed">{p}</p>
+      ))}
     </div>
   )
 }
 
 // ── Bullet-list section (wins / concerns / next steps) ──────────────────────
-function BulletSection({ title, content, color }: {
-  title: string
+function BulletSection({ content, color }: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   content: any
   color: 'emerald' | 'amber' | 'indigo'
@@ -125,18 +245,157 @@ function BulletSection({ title, content, color }: {
   }[color]
 
   return (
-    <div>
-      <h3 className="text-base font-semibold text-slate-800 mb-3">{title}</h3>
-      <ul className="space-y-2">
-        {lines.map((line, i) => (
-          <li key={i} className="flex items-start gap-2.5">
-            <span className={`mt-0.5 text-base leading-none ${dotClass}`}>•</span>
-            <span className="text-sm text-slate-600 leading-relaxed">
-              {line.replace(/^[✓⚠•\d.]\s*/, '')}
-            </span>
-          </li>
-        ))}
-      </ul>
+    <ul className="space-y-2">
+      {lines.map((line, i) => (
+        <li key={i} className="flex items-start gap-2.5">
+          <span className={`mt-0.5 text-base leading-none ${dotClass}`}>•</span>
+          <span className="text-sm text-slate-600 leading-relaxed">
+            {line.replace(/^[✓⚠•\d.]\s*/, '')}
+          </span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+// ── Send Report dialog ───────────────────────────────────────────────────────
+function SendReportDialog({
+  report,
+  onClose,
+}: {
+  report: Report
+  onClose: () => void
+}) {
+  const [toEmails, setToEmails]     = useState(report.client_id ? '' : '')  // pre-fill if available
+  const [subject, setSubject]       = useState(report.title)
+  const [attachment, setAttachment] = useState<'both' | 'pdf' | 'pptx'>('both')
+  const [sending, setSending]       = useState(false)
+  const [sent, setSent]             = useState(false)
+  const [sendError, setSendError]   = useState<string | null>(null)
+
+  const handleSend = async () => {
+    const emails = toEmails.split(',').map((e) => e.trim()).filter(Boolean)
+    if (emails.length === 0) {
+      setSendError('Please enter at least one recipient email.')
+      return
+    }
+    setSending(true)
+    setSendError(null)
+    try {
+      await reportsApi.send(report.id, {
+        to_emails:  emails,
+        subject:    subject || report.title,
+        attachment,
+      })
+      setSent(true)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to send email.'
+      setSendError(msg)
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="w-full max-w-md rounded-xl bg-white shadow-2xl border border-slate-200 p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <Mail className="h-5 w-5 text-indigo-600" />
+            Send to Client
+          </h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
+            <XIcon className="h-5 w-5" />
+          </button>
+        </div>
+
+        {sent ? (
+          <div className="text-center py-6 space-y-2">
+            <div className="text-4xl">✅</div>
+            <p className="font-semibold text-slate-800">Email sent!</p>
+            <p className="text-sm text-slate-500">
+              The report has been delivered to {toEmails}.
+            </p>
+            <button
+              onClick={onClose}
+              className="mt-4 inline-flex items-center gap-2 rounded-lg bg-indigo-700 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-800 transition-colors"
+            >
+              Done
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">
+                  To (comma-separated)
+                </label>
+                <Input
+                  type="text"
+                  value={toEmails}
+                  onChange={(e) => setToEmails(e.target.value)}
+                  placeholder="client@example.com, contact@example.com"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">
+                  Subject
+                </label>
+                <Input
+                  type="text"
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">
+                  Attachment
+                </label>
+                <div className="flex gap-2">
+                  {(['both', 'pdf', 'pptx'] as const).map((opt) => (
+                    <button
+                      key={opt}
+                      onClick={() => setAttachment(opt)}
+                      className={`flex-1 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
+                        attachment === opt
+                          ? 'bg-indigo-700 border-indigo-700 text-white'
+                          : 'border-slate-200 text-slate-600 hover:border-indigo-300'
+                      }`}
+                    >
+                      {opt === 'both' ? 'PDF + PPTX' : opt.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {sendError && (
+                <p className="text-xs text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
+                  {sendError}
+                </p>
+              )}
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={handleSend}
+                disabled={sending}
+                className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-800 transition-colors disabled:opacity-60"
+              >
+                {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                {sending ? 'Sending…' : 'Send Report'}
+              </button>
+              <button
+                onClick={onClose}
+                className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   )
 }
@@ -146,11 +405,14 @@ export default function ReportDetailPage() {
   const params  = useParams<{ reportId: string }>()
   const reportId = params.reportId
 
-  const [report,   setReport]  = useState<Report | null>(null)
-  const [loading,  setLoading] = useState(true)
-  const [error,    setError]   = useState<string | null>(null)
-  const [dlPptx,   setDlPptx]  = useState(false)
-  const [dlPdf,    setDlPdf]   = useState(false)
+  const [report,          setReport]        = useState<Report | null>(null)
+  const [loading,         setLoading]       = useState(true)
+  const [error,           setError]         = useState<string | null>(null)
+  const [dlPptx,          setDlPptx]        = useState(false)
+  const [dlPdf,           setDlPdf]         = useState(false)
+  const [savingSection,   setSavingSection]  = useState<string | null>(null)
+  const [regenSection,    setRegenSection]   = useState<string | null>(null)
+  const [showSendDialog,  setShowSendDialog] = useState(false)
 
   useEffect(() => {
     const fetch = async () => {
@@ -165,6 +427,32 @@ export default function ReportDetailPage() {
     }
     fetch()
   }, [reportId])
+
+  const handleSaveEdit = async (sectionKey: string, text: string) => {
+    if (!report) return
+    setSavingSection(sectionKey)
+    try {
+      const updated = await reportsApi.update(report.id, { [sectionKey]: text })
+      setReport(updated)
+    } catch {
+      setError('Failed to save edit. Please try again.')
+    } finally {
+      setSavingSection(null)
+    }
+  }
+
+  const handleRegenerate = async (sectionKey: string) => {
+    if (!report) return
+    setRegenSection(sectionKey)
+    try {
+      const updated = await reportsApi.regenerateSection(report.id, sectionKey)
+      setReport(updated)
+    } catch {
+      setError('Failed to regenerate section. Please try again.')
+    } finally {
+      setRegenSection(null)
+    }
+  }
 
   const handleDownloadPptx = async () => {
     if (!report) return
@@ -210,7 +498,7 @@ export default function ReportDetailPage() {
     )
   }
 
-  if (error || !report) {
+  if (!report) {
     return (
       <div className="max-w-4xl mx-auto">
         <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
@@ -221,10 +509,24 @@ export default function ReportDetailPage() {
   }
 
   const summary = report.data_summary ?? {}
-  const narrative = report.narrative ?? {}
+  // Merge user_edits over ai_narrative so manual edits take priority in the UI
+  const baseNarrative = report.narrative ?? {}
+  const userEdits     = report.user_edits ?? {}
+  const narrative     = { ...baseNarrative, ...Object.fromEntries(
+    Object.entries(userEdits).filter(([, v]) => v)
+  )}
+  const KPI_CONFIGS = buildKpiConfigs(getCurrencySymbol(report.meta_currency))
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
+
+      {/* ── Send dialog (rendered at top level so it overlays everything) ── */}
+      {showSendDialog && (
+        <SendReportDialog
+          report={report}
+          onClose={() => setShowSendDialog(false)}
+        />
+      )}
 
       {/* ── Header ───────────────────────────────────────────────────────── */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -246,7 +548,9 @@ export default function ReportDetailPage() {
             {report.period_start} → {report.period_end}
             <span
               className={`ml-3 rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                report.status === 'draft' || report.status === 'approved'
+                report.status === 'sent'
+                  ? 'bg-indigo-50 text-indigo-700'
+                  : report.status === 'draft' || report.status === 'approved'
                   ? 'bg-emerald-50 text-emerald-700'
                   : 'bg-slate-100 text-slate-500'
               }`}
@@ -256,15 +560,22 @@ export default function ReportDetailPage() {
           </p>
         </div>
 
-        {/* Download buttons */}
-        <div className="flex gap-2 shrink-0">
+        {/* Action buttons */}
+        <div className="flex gap-2 shrink-0 flex-wrap">
+          <button
+            onClick={() => setShowSendDialog(true)}
+            className="inline-flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100 transition-colors"
+          >
+            <Send className="h-4 w-4" />
+            Send to Client
+          </button>
           <button
             onClick={handleDownloadPptx}
             disabled={dlPptx}
             className="inline-flex items-center gap-2 rounded-lg bg-indigo-700 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-800 transition-colors disabled:opacity-60"
           >
             {dlPptx ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-            Download PPTX
+            PPTX
           </button>
           <button
             onClick={handleDownloadPdf}
@@ -272,10 +583,16 @@ export default function ReportDetailPage() {
             className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-60"
           >
             {dlPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-            Download PDF
+            PDF
           </button>
         </div>
       </div>
+
+      {error && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          {error}
+        </div>
+      )}
 
       {/* ── KPI scorecard ─────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -300,73 +617,88 @@ export default function ReportDetailPage() {
       </div>
 
       {/* ── Executive Summary ─────────────────────────────────────────────── */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base text-indigo-700">Executive Summary</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <NarrativeSection
-            title=""
-            content={narrative['executive_summary']}
-          />
-        </CardContent>
-      </Card>
+      <EditableNarrativeCard
+        sectionKey="executive_summary"
+        title="Executive Summary"
+        content={narrative['executive_summary']}
+        titleClassName="text-indigo-700"
+        onSave={handleSaveEdit}
+        onRegenerate={handleRegenerate}
+        saving={savingSection === 'executive_summary'}
+        regenerating={regenSection === 'executive_summary'}
+      >
+        <NarrativeSection content={narrative['executive_summary']} />
+      </EditableNarrativeCard>
 
       {/* ── Website & Paid Advertising ────────────────────────────────────── */}
       <div className="grid md:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base text-slate-700">Website Performance</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <NarrativeSection title="" content={narrative['website_performance']} />
-          </CardContent>
-        </Card>
+        <EditableNarrativeCard
+          sectionKey="website_performance"
+          title="Website Performance"
+          content={narrative['website_performance']}
+          onSave={handleSaveEdit}
+          onRegenerate={handleRegenerate}
+          saving={savingSection === 'website_performance'}
+          regenerating={regenSection === 'website_performance'}
+        >
+          <NarrativeSection content={narrative['website_performance']} />
+        </EditableNarrativeCard>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base text-slate-700">Paid Advertising</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <NarrativeSection title="" content={narrative['paid_advertising']} />
-          </CardContent>
-        </Card>
+        <EditableNarrativeCard
+          sectionKey="paid_advertising"
+          title="Paid Advertising"
+          content={narrative['paid_advertising']}
+          onSave={handleSaveEdit}
+          onRegenerate={handleRegenerate}
+          saving={savingSection === 'paid_advertising'}
+          regenerating={regenSection === 'paid_advertising'}
+        >
+          <NarrativeSection content={narrative['paid_advertising']} />
+        </EditableNarrativeCard>
       </div>
 
       {/* ── Wins / Concerns / Next Steps ──────────────────────────────────── */}
       <div className="grid md:grid-cols-3 gap-4">
-        <Card className="border-emerald-100">
-          <CardHeader>
-            <CardTitle className="text-base text-emerald-700 flex items-center gap-2">
-              <CheckCircle className="h-4 w-4" /> Key Wins
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <BulletSection title="" content={narrative['key_wins']} color="emerald" />
-          </CardContent>
-        </Card>
+        <EditableNarrativeCard
+          sectionKey="key_wins"
+          title="Key Wins"
+          content={narrative['key_wins']}
+          cardClassName="border-emerald-100"
+          titleClassName="text-emerald-700"
+          onSave={handleSaveEdit}
+          onRegenerate={handleRegenerate}
+          saving={savingSection === 'key_wins'}
+          regenerating={regenSection === 'key_wins'}
+        >
+          <BulletSection content={narrative['key_wins']} color="emerald" />
+        </EditableNarrativeCard>
 
-        <Card className="border-amber-100">
-          <CardHeader>
-            <CardTitle className="text-base text-amber-700 flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4" /> Concerns
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <BulletSection title="" content={narrative['concerns']} color="amber" />
-          </CardContent>
-        </Card>
+        <EditableNarrativeCard
+          sectionKey="concerns"
+          title="Concerns"
+          content={narrative['concerns']}
+          cardClassName="border-amber-100"
+          titleClassName="text-amber-700"
+          onSave={handleSaveEdit}
+          onRegenerate={handleRegenerate}
+          saving={savingSection === 'concerns'}
+          regenerating={regenSection === 'concerns'}
+        >
+          <BulletSection content={narrative['concerns']} color="amber" />
+        </EditableNarrativeCard>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base text-indigo-700 flex items-center gap-2">
-              <ChevronRight className="h-4 w-4" /> Next Steps
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <BulletSection title="" content={narrative['next_steps']} color="indigo" />
-          </CardContent>
-        </Card>
+        <EditableNarrativeCard
+          sectionKey="next_steps"
+          title="Next Steps"
+          content={narrative['next_steps']}
+          titleClassName="text-indigo-700"
+          onSave={handleSaveEdit}
+          onRegenerate={handleRegenerate}
+          saving={savingSection === 'next_steps'}
+          regenerating={regenSection === 'next_steps'}
+        >
+          <BulletSection content={narrative['next_steps']} color="indigo" />
+        </EditableNarrativeCard>
       </div>
 
     </div>

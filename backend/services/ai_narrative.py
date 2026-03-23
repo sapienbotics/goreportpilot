@@ -80,16 +80,48 @@ FALLBACK_NARRATIVE: Dict[str, str] = {
 }
 
 
+_SECTION_INSTRUCTIONS: Dict[str, str] = {
+    "executive_summary":  '"{key}" — 3-4 paragraphs (max 200 words) overview of the period',
+    "website_performance": '"{key}" — 2-3 paragraphs analyzing website traffic and engagement',
+    "paid_advertising":   '"{key}" — 2-3 paragraphs analyzing Meta Ads performance',
+    "key_wins":           '"{key}" — 3-5 bullet points of wins (start each with "✓ ")',
+    "concerns":           '"{key}" — 2-3 bullet points of concerns with recommendations (start each with "⚠ ")',
+    "next_steps":         '"{key}" — 3-5 numbered action items for the next period',
+}
+
+
+def _build_section_instructions(sections: list[str]) -> str:
+    """Build the numbered section list for the GPT-4o prompt."""
+    lines = []
+    for i, key in enumerate(sections, start=1):
+        template = _SECTION_INSTRUCTIONS.get(key, f'"{key}" — narrative for this section')
+        lines.append(f'{i}. {template.format(key=key)}')
+    return "\n".join(lines)
+
+
 async def generate_narrative(
     data: Dict[str, Any],
     client_name: str,
     client_goals: Optional[str],
     tone: str = "professional",
+    template: str = "full",
+    sections: Optional[list[str]] = None,
 ) -> Dict[str, str]:
     """
     Generate AI narrative sections for a report.
 
-    Returns a dict with keys:
+    Args:
+        data:          Combined GA4 + Meta Ads data dict.
+        client_name:   Client display name.
+        client_goals:  Free-text goals/context from client record.
+        tone:          AI tone preset (professional / conversational / executive / data_heavy).
+        template:      Report template — "full" | "summary" | "brief".
+                       Controls which sections are generated and their length.
+        sections:      If provided, generate only these section keys.
+                       Useful for regenerating a single section without calling
+                       GPT-4o for the full report.
+
+    Returns a dict with a subset of these keys depending on template/sections:
         executive_summary, website_performance, paid_advertising,
         key_wins, concerns, next_steps
     """
@@ -99,10 +131,53 @@ async def generate_narrative(
 
     tone_modifier = TONE_MODIFIERS.get(tone, TONE_MODIFIERS["professional"])
 
+    # ── Determine which sections to request based on template ────────────────
+    if sections:
+        # Caller specified exact sections (e.g. regenerate-section endpoint)
+        requested_sections = sections
+    elif template == "summary":
+        # Summary: concise 4-slide report — exec summary, wins, next steps
+        requested_sections = ["executive_summary", "key_wins", "next_steps"]
+    elif template == "brief":
+        # One-Page Brief: 2-slide ultra-concise — exec summary + next steps only
+        requested_sections = ["executive_summary", "next_steps"]
+    else:
+        # Full (default): all 6 sections
+        requested_sections = [
+            "executive_summary", "website_performance", "paid_advertising",
+            "key_wins", "concerns", "next_steps",
+        ]
+
+    # ── Template-specific tone modifier ─────────────────────────────────────
+    if template == "brief":
+        tone_modifier = (
+            "Write an ultra-concise executive brief. Every sentence must contain "
+            "a data point or action item. Maximum 80 words for executive_summary. "
+            "next_steps should be 3 bullet points maximum."
+        )
+    elif template == "summary" and tone == "professional":
+        tone_modifier = (
+            "Write a crisp summary report. Focus on the headline numbers and "
+            "what changed this period. Keep each section to 2-3 sentences."
+        )
+
     ga4 = data.get("ga4", {}).get("summary", {})
     meta = data.get("meta_ads", {}).get("summary", {})
     campaigns = data.get("meta_ads", {}).get("campaigns", [])
     traffic_sources = data.get("ga4", {}).get("traffic_sources", [])
+
+    # Determine currency for the Meta Ads section so the AI uses the right symbol
+    _currency_symbols: Dict[str, str] = {
+        "USD": "$",    "EUR": "€",    "GBP": "£",    "INR": "₹",
+        "AUD": "A$",   "CAD": "C$",   "JPY": "¥",    "CNY": "¥",
+        "BRL": "R$",   "MXN": "Mex$", "SGD": "S$",   "HKD": "HK$",
+        "CHF": "CHF ", "SEK": "kr",   "NOK": "kr",   "DKK": "kr",
+        "ZAR": "R",    "AED": "AED ", "SAR": "SAR ",  "MYR": "RM",
+    }
+    currency_code = (data.get("meta_ads", {}).get("currency") or "USD").upper()
+    cur_sym = _currency_symbols.get(currency_code, currency_code + " ")
+
+    section_instructions = _build_section_instructions(requested_sections)
 
     user_prompt = f"""CLIENT CONTEXT:
 Name: {client_name}
@@ -116,28 +191,26 @@ Pageviews: {ga4.get('pageviews', 'N/A')} (prev: {ga4.get('prev_pageviews', 'N/A'
 Bounce Rate: {ga4.get('bounce_rate', 'N/A')}% (prev: {ga4.get('prev_bounce_rate', 'N/A')}%)
 Avg Session Duration: {ga4.get('avg_session_duration', 'N/A')}s (prev: {ga4.get('prev_avg_duration', 'N/A')}s)
 Conversions: {ga4.get('conversions', 'N/A')} (prev: {ga4.get('prev_conversions', 'N/A')}, change: {ga4.get('conversions_change', 'N/A')}%)
-Traffic Sources: {json.dumps(traffic_sources[:5]) if traffic_sources else 'N/A'}
+Traffic Sources: {json.dumps(list(traffic_sources)[:5] if isinstance(traffic_sources, list) else traffic_sources) if traffic_sources else 'N/A'}
 
-META ADS DATA:
-Total Spend: ${meta.get('spend', 'N/A')} (prev: ${meta.get('prev_spend', 'N/A')}, change: {meta.get('spend_change', 'N/A')}%)
+META ADS DATA (Currency: {currency_code}):
+Total Spend: {cur_sym}{meta.get('spend', 'N/A')} (prev: {cur_sym}{meta.get('prev_spend', 'N/A')}, change: {meta.get('spend_change', 'N/A')}%)
 Impressions: {meta.get('impressions', 'N/A')} (prev: {meta.get('prev_impressions', 'N/A')})
 Clicks: {meta.get('clicks', 'N/A')} (prev: {meta.get('prev_clicks', 'N/A')})
 CTR: {meta.get('ctr', 'N/A')}% (prev: {meta.get('prev_ctr', 'N/A')}%)
-CPC: ${meta.get('cpc', 'N/A')} (prev: ${meta.get('prev_cpc', 'N/A')})
+CPC: {cur_sym}{meta.get('cpc', 'N/A')} (prev: {cur_sym}{meta.get('prev_cpc', 'N/A')})
 Conversions: {meta.get('conversions', 'N/A')} (prev: {meta.get('prev_conversions', 'N/A')}, change: {meta.get('conversions_change', 'N/A')}%)
-Cost Per Conversion: ${meta.get('cost_per_conversion', 'N/A')} (prev: ${meta.get('prev_cost_per_conversion', 'N/A')})
+Cost Per Conversion: {cur_sym}{meta.get('cost_per_conversion', 'N/A')} (prev: {cur_sym}{meta.get('prev_cost_per_conversion', 'N/A')})
 ROAS: {meta.get('roas', 'N/A')}x (prev: {meta.get('prev_roas', 'N/A')}x)
 Top Campaigns: {json.dumps(campaigns[:3]) if campaigns else 'N/A'}
 
 TONE: {tone_modifier}
 
-Generate the following sections as a JSON object with these exact keys:
-1. "executive_summary" — 3-4 paragraphs (max 200 words) overview of the month
-2. "website_performance" — 2-3 paragraphs analyzing website traffic and engagement
-3. "paid_advertising" — 2-3 paragraphs analyzing Meta Ads performance
-4. "key_wins" — 3-5 bullet points of wins (start each with "✓ ")
-5. "concerns" — 2-3 bullet points of concerns with recommendations (start each with "⚠ ")
-6. "next_steps" — 3-5 numbered action items for the next period
+IMPORTANT — CURRENCY: All monetary amounts for Meta Ads must use the {currency_code} currency symbol ({cur_sym}). \
+Never use "$" for Meta Ads figures unless the currency is USD.
+
+Generate ONLY the following sections as a JSON object (include only these keys, nothing else):
+{section_instructions}
 
 Return ONLY valid JSON, no markdown code blocks, no explanation outside the JSON."""
 

@@ -41,7 +41,7 @@ const PLATFORMS: Platform[] = [
     description:
       'Import spend, impressions, clicks, ROAS, and campaign performance from Facebook and Instagram ad accounts.',
     icon: <Megaphone className="h-6 w-6 text-blue-500" />,
-    status: 'coming_soon',
+    status: 'available',
   },
   {
     id: 'google_ads',
@@ -88,7 +88,7 @@ export default function IntegrationsPage() {
         <div className="flex items-start gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3">
           <AlertTriangle className="h-4 w-4 text-rose-500 shrink-0 mt-0.5" />
           <p className="text-sm text-rose-700">
-            Google authorisation was cancelled or failed ({oauthError}). You can
+            Authorisation was cancelled or failed ({oauthError}). You can
             try again from the client detail page.
           </p>
         </div>

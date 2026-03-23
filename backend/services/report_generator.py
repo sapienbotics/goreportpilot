@@ -322,8 +322,9 @@ def _replace_placeholders_in_slide(slide: Any, replacements: dict[str, str]) -> 
 def _replace_charts(prs: Any, charts: Dict[str, str]) -> None:
     """Replace chart placeholder text boxes with actual chart PNG images.
 
-    Matches placeholders by checking if the shape text contains a chart
-    placeholder key (handles leading/trailing whitespace or formatting).
+    When a chart file exists: embeds the PNG and clears the placeholder text.
+    When no chart is available: replaces the placeholder with a subtle
+    "No data available for this period" message so raw {{…}} never leaks.
     """
     chart_mapping = {
         "{{chart_sessions}}":  charts.get("sessions"),
@@ -332,40 +333,52 @@ def _replace_charts(prs: Any, charts: Dict[str, str]) -> None:
         "{{chart_campaigns}}": charts.get("campaigns"),
     }
 
-    logger.debug("_replace_charts called with %d chart paths: %s",
-                 len([v for v in chart_mapping.values() if v]), list(charts.keys()))
+    available = [v for v in chart_mapping.values() if v]
+    logger.debug("_replace_charts: %d chart paths available: %s",
+                 len(available), list(charts.keys()))
 
     replaced = 0
     for slide in prs.slides:
-        shapes_to_process = []
+        shapes_to_process: list[tuple] = []
         for shape in slide.shapes:
             if not shape.has_text_frame:
                 continue
             text = shape.text_frame.text.strip()
-            # Match if the shape text IS or CONTAINS a chart placeholder
             for placeholder, chart_path in chart_mapping.items():
-                if placeholder in text and chart_path:
+                if placeholder in text:
                     shapes_to_process.append((shape, chart_path, placeholder))
                     break
 
         for shape, chart_path, placeholder in shapes_to_process:
-            if not os.path.exists(chart_path):
-                logger.warning("Chart file does not exist: %s", chart_path)
+            # ── Chart file exists → embed image ──────────────────────────
+            if chart_path and os.path.exists(chart_path):
+                slide.shapes.add_picture(
+                    chart_path,
+                    shape.left, shape.top,
+                    shape.width, shape.height,
+                )
+                for para in shape.text_frame.paragraphs:
+                    for run in para.runs:
+                        run.text = ""
+                replaced += 1
+                logger.debug("Replaced %s with image %s", placeholder, chart_path)
                 continue
-            # Add chart image at the same position/size as the placeholder shape
-            slide.shapes.add_picture(
-                chart_path,
-                shape.left, shape.top,
-                shape.width, shape.height,
-            )
-            # Clear the placeholder text completely
+
+            # ── No chart data → show fallback message ────────────────────
+            logger.info("No chart file for %s — showing fallback text", placeholder)
             for para in shape.text_frame.paragraphs:
                 for run in para.runs:
                     run.text = ""
-            replaced += 1
-            logger.debug("Replaced %s with image %s", placeholder, chart_path)
+            p = shape.text_frame.paragraphs[0]
+            p.alignment = PP_ALIGN.CENTER
+            run = p.add_run()
+            run.text = "No data available for this period"
+            run.font.size = Pt(11)
+            run.font.color.rgb = _SLATE_400
+            run.font.italic = True
 
-    logger.info("_replace_charts: %d/%d chart placeholders replaced", replaced, len([v for v in chart_mapping.values() if v]))
+    logger.info("_replace_charts: %d/%d chart placeholders replaced with images",
+                replaced, len(available))
 
 
 def _colorize_kpi_changes(prs: Any, data: Dict[str, Any]) -> None:

@@ -33,6 +33,7 @@ build/
 
 # Generated reports (local dev)
 backend/generated_reports/
+test_generated_pptx/
 
 # Supabase
 supabase/.temp/

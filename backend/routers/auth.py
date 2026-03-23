@@ -6,11 +6,14 @@ See docs/reportpilot-auth-integration-deepdive.md for full specification.
 Endpoints:
     GET  /api/auth/google/url       — Build and return the Google OAuth consent URL
     POST /api/auth/google/callback  — Exchange auth code for tokens, list GA4 properties
+    GET  /api/auth/meta/url         — Build and return the Meta OAuth authorization URL
+    POST /api/auth/meta/callback    — Exchange auth code for tokens, list Meta ad accounts
 """
 import json
 import logging
 import secrets
-from datetime import datetime, timezone
+import urllib.parse
+from datetime import datetime, timedelta, timezone
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -22,6 +25,10 @@ from models.schemas import (
     GoogleAuthUrlResponse,
     GoogleCallbackRequest,
     GoogleCallbackResponse,
+    MetaAdAccount,
+    MetaAuthUrlResponse,
+    MetaCallbackRequest,
+    MetaCallbackResponse,
 )
 from services.encryption import encrypt_token
 
@@ -171,4 +178,171 @@ async def google_callback(
     return GoogleCallbackResponse(
         properties=properties,
         token_handle=token_handle,
+    )
+
+
+# ── Meta OAuth constants ─────────────────────────────────────────────────────
+_GRAPH_API_VERSION = "v21.0"
+_META_AUTH_BASE    = f"https://www.facebook.com/{_GRAPH_API_VERSION}/dialog/oauth"
+_META_TOKEN_URL    = f"https://graph.facebook.com/{_GRAPH_API_VERSION}/oauth/access_token"
+_META_ME_ACCOUNTS  = f"https://graph.facebook.com/{_GRAPH_API_VERSION}/me/adaccounts"
+
+
+# ---------------------------------------------------------------------------
+# GET /api/auth/meta/url
+# ---------------------------------------------------------------------------
+
+@router.get("/meta/url", response_model=MetaAuthUrlResponse)
+async def get_meta_auth_url(
+    _user_id: str = Depends(get_current_user_id),
+) -> MetaAuthUrlResponse:
+    """
+    Generate a Meta OAuth authorization URL.
+    The `state` parameter is a CSRF token the frontend must echo back in the callback.
+    """
+    if not settings.META_APP_ID:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Meta OAuth is not configured on this server.",
+        )
+
+    state = secrets.token_urlsafe(32)
+
+    params = {
+        "client_id":     settings.META_APP_ID,
+        "redirect_uri":  settings.META_REDIRECT_URI,
+        "scope":         "ads_read",
+        "response_type": "code",
+        "state":         state,
+    }
+    url = f"{_META_AUTH_BASE}?{urllib.parse.urlencode(params)}"
+
+    return MetaAuthUrlResponse(url=url, state=state)
+
+
+# ---------------------------------------------------------------------------
+# POST /api/auth/meta/callback
+# ---------------------------------------------------------------------------
+
+@router.post("/meta/callback", response_model=MetaCallbackResponse)
+async def meta_callback(
+    body: MetaCallbackRequest,
+    _user_id: str = Depends(get_current_user_id),
+) -> MetaCallbackResponse:
+    """
+    Exchange the Meta authorization code for tokens, then list ad accounts.
+
+    1. Exchange code for short-lived token.
+    2. Exchange short-lived token for long-lived token (~60 days).
+    3. List available ad accounts.
+    4. Encrypt tokens into an opaque handle — never returned raw to the frontend.
+    """
+    if not settings.META_APP_ID or not settings.META_APP_SECRET:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Meta OAuth is not configured on this server.",
+        )
+
+    # 1 — Exchange code for short-lived token
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        token_resp = await client.get(
+            _META_TOKEN_URL,
+            params={
+                "client_id":     settings.META_APP_ID,
+                "client_secret": settings.META_APP_SECRET,
+                "redirect_uri":  settings.META_REDIRECT_URI,
+                "code":          body.code,
+            },
+        )
+
+    if token_resp.status_code != 200:
+        logger.warning("Meta token exchange failed: %s", token_resp.status_code)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to exchange authorization code with Meta.",
+        )
+
+    token_data = token_resp.json()
+    if "error" in token_data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Token exchange failed: {token_data['error'].get('message', 'Unknown error')}",
+        )
+
+    short_lived_token = token_data["access_token"]
+
+    # 2 — Exchange short-lived token for long-lived token (~60 days)
+    access_token = short_lived_token
+    expires_in   = token_data.get("expires_in", 3600)
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        ll_resp = await client.get(
+            _META_TOKEN_URL,
+            params={
+                "grant_type":       "fb_exchange_token",
+                "client_id":        settings.META_APP_ID,
+                "client_secret":    settings.META_APP_SECRET,
+                "fb_exchange_token": short_lived_token,
+            },
+        )
+
+    if ll_resp.status_code == 200:
+        ll_data = ll_resp.json()
+        if "error" not in ll_data:
+            access_token = ll_data["access_token"]
+            expires_in   = ll_data.get("expires_in", 5184000)  # ~60 days
+        else:
+            logger.warning("Long-lived token exchange failed — using short-lived token")
+    else:
+        logger.warning("Long-lived token exchange HTTP %s — using short-lived token", ll_resp.status_code)
+
+    # 3 — List available ad accounts
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        accounts_resp = await client.get(
+            _META_ME_ACCOUNTS,
+            params={
+                "access_token": access_token,
+                "fields":       "id,name,account_status,currency,amount_spent",
+            },
+        )
+
+    if accounts_resp.status_code != 200:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to list Meta ad accounts.",
+        )
+
+    accounts_data = accounts_resp.json()
+    if "error" in accounts_data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to list ad accounts: {accounts_data['error'].get('message', 'Unknown error')}",
+        )
+
+    ad_accounts: list[MetaAdAccount] = []
+    for acct in accounts_data.get("data", []):
+        ad_accounts.append(MetaAdAccount(
+            account_id=acct["id"],  # e.g. "act_123456789"
+            account_name=acct.get("name", "Unnamed Account"),
+            currency=acct.get("currency", "USD"),
+            status=acct.get("account_status", 0),
+        ))
+
+    # 4 — Encrypt tokens into opaque handle (never log raw values)
+    token_expires_at = (
+        datetime.now(tz=timezone.utc).timestamp() + expires_in
+    )
+    # Meta doesn't have separate refresh tokens — the long-lived token IS the token.
+    # Store same token in both fields for compatibility with the connections schema.
+    token_payload = json.dumps({
+        "access_token":     access_token,
+        "refresh_token":    access_token,
+        "token_expires_at": token_expires_at,
+    })
+    token_handle = encrypt_token(token_payload)
+
+    return MetaCallbackResponse(
+        ad_accounts=ad_accounts,
+        token_handle=token_handle,
+        expires_in=expires_in,
     )
