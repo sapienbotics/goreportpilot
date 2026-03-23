@@ -523,8 +523,8 @@ export default function LandingPage() {
                   { label: 'About', href: '#' },
                   { label: 'Blog', href: '#' },
                   { label: 'Contact', href: 'mailto:hello@reportpilot.co' },
-                  { label: 'Privacy Policy', href: '#' },
-                  { label: 'Terms of Service', href: '#' },
+                  { label: 'Privacy Policy', href: '/privacy' },
+                  { label: 'Terms of Service', href: '/terms' },
                 ].map(({ label, href }) => (
                   <li key={label}>
                     <a

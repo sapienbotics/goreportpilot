@@ -101,7 +101,7 @@ async def get_dashboard_stats(user_id: str = Depends(get_current_user_id)) -> di
     # ── Connection health ─────────────────────────────────────────────────────
     connections_result = (
         supabase.table("connections")
-        .select("platform, is_active, token_expires_at")
+        .select("platform, status, token_expires_at")
         .in_("client_id", [c["id"] for c in clients] if clients else ["none"])
         .execute()
     )
@@ -112,7 +112,8 @@ async def get_dashboard_stats(user_id: str = Depends(get_current_user_id)) -> di
         if platform not in health:
             health[platform] = {"connected": 0, "healthy": 0, "issues": 0}
         health[platform]["connected"] += 1
-        # Check expiry
+        # A connection is healthy when status == 'active' and token not expired
+        conn_status = conn.get("status", "")
         expires_at = conn.get("token_expires_at")
         is_expired = False
         if expires_at:
@@ -121,7 +122,7 @@ async def get_dashboard_stats(user_id: str = Depends(get_current_user_id)) -> di
                 is_expired = now > exp_dt
             except Exception:
                 pass
-        if conn.get("is_active") and not is_expired:
+        if conn_status == "active" and not is_expired:
             health[platform]["healthy"] += 1
         else:
             health[platform]["issues"] += 1

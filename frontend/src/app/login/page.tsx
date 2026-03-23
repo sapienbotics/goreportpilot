@@ -125,6 +125,11 @@ function LoginForm() {
                 Sign up
               </Link>
             </p>
+            <p className="mt-3 text-center text-xs text-slate-400">
+              <Link href="/terms" className="hover:underline">Terms</Link>
+              {' · '}
+              <Link href="/privacy" className="hover:underline">Privacy</Link>
+            </p>
           </CardContent>
         </Card>
       </div>
