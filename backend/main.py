@@ -77,7 +77,7 @@ async def health_check():
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 
-from routers import auth, clients, connections, reports, settings as settings_router, scheduled_reports, billing  # noqa: E402
+from routers import auth, clients, connections, reports, settings as settings_router, scheduled_reports, billing, dashboard  # noqa: E402
 
 app.include_router(clients.router,            prefix="/api/clients",            tags=["clients"])
 app.include_router(reports.router,            prefix="/api/reports",            tags=["reports"])
@@ -86,4 +86,4 @@ app.include_router(connections.router,        prefix="/api/connections",        
 app.include_router(settings_router.router,    prefix="/api/settings",           tags=["settings"])
 app.include_router(scheduled_reports.router,  prefix="/api/scheduled-reports",  tags=["scheduled-reports"])
 app.include_router(billing.router,            prefix="/api/billing",            tags=["billing"])
-# Razorpay webhook registered separately — no /api prefix, uses /api/billing/webhooks/razorpay path via billing router
+app.include_router(dashboard.router,          prefix="/api/dashboard",          tags=["dashboard"])

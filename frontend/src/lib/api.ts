@@ -341,6 +341,12 @@ export async function uploadClientLogo(clientId: string, file: File): Promise<{ 
 }
 
 // ---------------------------------------------------------------------------
+// Dashboard API
+// ---------------------------------------------------------------------------
+// Note: dashboard page calls api.get('/api/dashboard/stats') directly
+// to avoid circular type deps — no wrapper needed here.
+
+// ---------------------------------------------------------------------------
 // Billing API
 // ---------------------------------------------------------------------------
 

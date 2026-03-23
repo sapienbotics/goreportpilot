@@ -8,6 +8,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { X } from 'lucide-react'
+import { toast } from 'sonner'
 import { clientsApi } from '@/lib/api'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -50,9 +51,12 @@ export default function AddClientDialog({ open, onOpenChange, onClientAdded }: P
       }
       const client = await clientsApi.create(payload)
       reset()
+      toast.success('Client created successfully')
       onClientAdded(client)
-    } catch {
-      setServerError('Failed to create client. Please try again.')
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setServerError(msg || 'Failed to create client. Please try again.')
+      toast.error(msg || 'Failed to create client. Please try again.')
     }
   }
 
