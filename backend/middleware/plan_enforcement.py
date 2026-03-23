@@ -16,35 +16,42 @@ def get_user_subscription(user_id: str) -> dict:
     Return the user's active subscription row, auto-creating a trial if none exists.
     Also checks whether a trial has expired and updates the status accordingly.
     """
-    supabase = get_supabase_admin()
-    result = (
-        supabase.table("subscriptions")
-        .select("*")
-        .eq("user_id", user_id)
-        .maybe_single()
-        .execute()
-    )
+    from datetime import timedelta
 
-    if not result.data:
+    supabase = get_supabase_admin()
+
+    # maybe_single() returns None (not a result object) when no row is found
+    # in some supabase-py versions — guard against that explicitly.
+    existing: dict | None = None
+    try:
+        result = (
+            supabase.table("subscriptions")
+            .select("*")
+            .eq("user_id", user_id)
+            .maybe_single()
+            .execute()
+        )
+        existing = result.data if result else None
+    except Exception as exc:
+        logger.error("Subscription query failed: %s", exc)
+        existing = None
+
+    if not existing:
         # Auto-create a 14-day trial subscription
         trial_sub = {
             "user_id": user_id,
             "plan": "trial",
             "status": "trialing",
-            "trial_ends_at": (
-                datetime.now(timezone.utc).replace(tzinfo=None)
-                # Use raw ISO string — Supabase handles timezones
-            ).isoformat() + "Z",
+            "trial_ends_at": (datetime.now(timezone.utc) + timedelta(days=14)).isoformat(),
         }
-        # Recalculate with timedelta
-        from datetime import timedelta
-        trial_end = datetime.now(timezone.utc) + timedelta(days=14)
-        trial_sub["trial_ends_at"] = trial_end.isoformat()
+        try:
+            ins = supabase.table("subscriptions").insert(trial_sub).execute()
+            return ins.data[0] if (ins and ins.data) else trial_sub
+        except Exception as exc:
+            logger.error("Trial subscription creation failed: %s", exc)
+            return trial_sub
 
-        ins = supabase.table("subscriptions").insert(trial_sub).execute()
-        return ins.data[0] if ins.data else trial_sub
-
-    sub = result.data
+    sub = existing
 
     # Check if trial has expired
     if sub.get("status") == "trialing" and sub.get("trial_ends_at"):
