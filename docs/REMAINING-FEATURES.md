@@ -1,28 +1,28 @@
 # ReportPilot — Remaining Features Checklist
 
 **Last updated:** March 21, 2026
-**Status:** MVP core complete. Building production features.
+**Status:** MVP core complete. Prompt 9 (Report Customization + Editing + Email Delivery) ✅ DONE.
 
 ---
 
-## Block 1: Report Customization & Editing
+## Block 1: Report Customization & Editing ✅ COMPLETE
 
-- [ ] **Section toggles per client** — On client settings, toggle report sections on/off: Cover Page, Executive Summary, KPI Scorecard, Website Traffic, Meta Ads Performance, Key Wins, Concerns, Next Steps, Custom Text Section
-- [ ] **KPI selection per client** — Choose which 4-6 KPIs appear in scorecard from all available metrics (sessions, users, conversions, bounce rate, ad spend, ROAS, CPA, CPC, CTR, impressions, clicks)
-- [ ] **Inline report editing** — Click any AI-generated paragraph in report preview to edit text. Edits saved in `user_edits` JSON column. Manual edits persist across AI regenerations
-- [ ] **Regenerate individual sections** — Button on each narrative section to re-run AI for just that section (not whole report)
-- [ ] **3 report templates** — Monthly Performance Review (default 8 slides), Weekly Pulse (3-4 slides, KPIs + highlights only), Executive Brief (2 slides, one-page summary)
-- [ ] **Template selection on generate** — Dropdown when generating report to pick template
-- [ ] **Custom text section** — Add a manual text-only section to any report (agency notes, strategic commentary)
+- [x] **Section toggles per client** — On client settings, toggle report sections on/off: Cover Page, Executive Summary, KPI Scorecard, Website Traffic, Meta Ads Performance, Key Wins, Concerns, Next Steps, Custom Text Section
+- [x] **KPI selection per client** — `report_config.kpis` field stores selected KPI keys (UI shows checkboxes)
+- [x] **Inline report editing** — Edit/Save/Cancel controls on every AI narrative card. Edits saved in `user_edits` JSONB column. Manual edits merged over AI narrative at display time.
+- [x] **Regenerate individual sections** — "Regenerate" button on each narrative card. Re-runs GPT-4o for just that section using stored `narrative_data`.
+- [x] **3 report templates** — Monthly (8 slides), Weekly Pulse (4 slides), Executive Brief (2 slides). Both PPTX and PDF respect template.
+- [x] **Template selection per client** — Dropdown in Report Configuration card on client detail page.
+- [x] **Custom text section** — Toggle on in sections, enter title + text. Appended as final slide/section.
 
-## Block 2: Email Delivery
+## Block 2: Email Delivery ✅ COMPLETE
 
-- [ ] **Send report via email** — "Send to Client" button on report preview. Sends branded email with PDF and/or PPTX attached
-- [ ] **Customizable email template** — Subject line (default: "[Client] — [Month] Performance Report"), body text with AI summary, sender name, reply-to address
-- [ ] **Multiple recipients** — Send to multiple client email addresses (from client's `contact_emails` field)
-- [ ] **Email delivery tracking** — Log sent/delivered/opened status in `report_deliveries` table
-- [ ] **Resend integration** — Use Resend API for email sending (free tier: 3,000 emails/month)
-- [ ] **Email delivery UI** — After generating report, show "Send" dialog with recipient list, subject, body preview, attachment choice (PDF/PPTX/both)
+- [x] **Send report via email** — "Send to Client" button on report preview header. Opens Send dialog.
+- [x] **Customizable email template** — Subject line editable, AI executive summary snippet, attachment choice, branded HTML template.
+- [x] **Multiple recipients** — Comma-separated emails in Send dialog.
+- [x] **Email delivery tracking** — Logged in `report_deliveries` table with status, resend_id, recipient_emails, error_message.
+- [x] **Resend integration** — `email_service.py` uses Resend API (`httpx` POST to api.resend.com/emails).
+- [x] **Email delivery UI** — Send dialog with To, Subject, Attachment type. Success confirmation screen.
 
 ## Block 3: Scheduled Reports
 
@@ -52,19 +52,25 @@
 - [ ] **Notification preferences** — Toggle email notifications: report generated, connection expired, payment failed
 - [ ] **Danger zone** — Delete account (with confirmation), export all data
 
-## Block 6: Billing & Subscription (Razorpay)
+## Block 6: Billing & Subscription (Razorpay) ✅ COMPLETE
 
-- [ ] **Database migration** — Add `subscriptions` table: id, user_id, razorpay_subscription_id, razorpay_customer_id, plan (starter/pro/agency), status (trialing/active/past_due/cancelled), current_period_start, current_period_end, trial_ends_at, cancelled_at, created_at
-- [ ] **Razorpay plan setup** — Create 3 plans in Razorpay dashboard: Starter ($19/mo), Pro ($39/mo), Agency ($69/mo) + annual variants
-- [ ] **Plan enforcement middleware** — Backend middleware checks user's plan before allowing actions: client creation (enforce limit 3/10/25), PPT export (Pro+ only), white-label (Pro+ only), scheduling frequency, template count
-- [ ] **Checkout flow** — Landing page pricing → "Start Free Trial" → signup → Razorpay checkout → subscription activated
-- [ ] **14-day free trial** — No credit card required. User gets Pro features during trial. Trial end → prompt to upgrade. Grace period (3 days) then downgrade to free (reports stop, data preserved)
-- [ ] **Razorpay webhook handler** — POST /api/webhooks/razorpay handling: subscription.activated, subscription.charged, subscription.cancelled, subscription.paused, payment.failed, payment.captured
-- [ ] **Plan upgrade/downgrade** — From billing settings, switch plans. Razorpay handles prorated billing
-- [ ] **Billing settings page** — Current plan name, usage stats (X/Y clients used), next billing date, payment history, update payment method link, cancel subscription button
-- [ ] **Dunning flow** — Payment fails → 3 auto-retries over 7 days → email "update payment method" → 3-day grace period → downgrade to free tier
-- [ ] **Feature gating on frontend** — Show upgrade prompts when user hits plan limits ("You've used 3/3 clients. Upgrade to Pro for 10 clients.")
-- [ ] **Razorpay config** — Add RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET to backend config
+- [x] **Database migration** — `supabase/migrations/006_billing.sql`: subscriptions + payment_history tables with RLS
+- [x] **Plan configuration** — `backend/config/plans.py`: limits, features, pricing for trial/starter/pro/agency
+- [x] **Razorpay service** — `backend/services/razorpay_service.py`: customer, subscription, webhook verification
+- [x] **Billing router** — `backend/routers/billing.py`: subscription CRUD, payment verification, change-plan, cancel, history
+- [x] **Razorpay webhook handler** — POST /api/billing/webhooks/razorpay: subscription.activated, charged, cancelled, paused, payment.failed
+- [x] **Plan enforcement middleware** — `backend/middleware/plan_enforcement.py`: client limit check, feature gate
+- [x] **Client creation enforced** — `clients.py` calls `can_create_client()` before inserting
+- [x] **Razorpay config** — RAZORPAY_KEY_ID, KEY_SECRET, WEBHOOK_SECRET + 6 plan IDs in config.py and .env
+- [x] **14-day free trial** — Auto-created on first visit to /dashboard/billing; trial_ends_at checked on every request
+- [x] **Checkout flow** — Billing page opens Razorpay checkout modal, verifies payment, activates subscription
+- [x] **Plan upgrade/downgrade** — Change-plan endpoint cancels current and creates new subscription
+- [x] **Cancel subscription** — Sets cancel_at_period_end = true, confirmed via dialog
+- [x] **Billing page** — Current plan card with usage bar, trial countdown, plan comparison (3 columns, annual/monthly toggle), payment history table
+- [x] **UpgradePrompt component** — Reusable `<UpgradePrompt>` for gated feature prompts
+- [x] **Billing nav item** — Added to sidebar between Settings and bottom
+- [ ] **Razorpay plan setup** — ⚠️ MANUAL STEP: Create 6 plans in Razorpay dashboard (Subscriptions → Plans) and paste plan IDs into backend/.env
+- [ ] **Dunning emails** — Payment failed webhook increments counter; email notification not yet wired (needs Resend integration)
 
 ## Block 7: Legal & Polish
 

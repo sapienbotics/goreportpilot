@@ -6,10 +6,22 @@ RLS is enforced in PostgreSQL, but we also scope every query to user_id
 for defence-in-depth.
 """
 import logging
-from fastapi import APIRouter, Depends, HTTPException, status
+import os
+import uuid
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+
+from config import settings as app_settings
 from middleware.auth import get_current_user_id
+from middleware.plan_enforcement import can_create_client
 from models.schemas import ClientCreate, ClientUpdate, ClientResponse, ClientListResponse
 from services.supabase_client import get_supabase_admin
+
+_BACKEND_DIR    = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_CLIENT_LOGOS   = os.path.join(_BACKEND_DIR, "static", "logos", "clients")
+_ALLOWED_TYPES  = {"image/png", "image/jpeg", "image/gif", "image/webp"}
+_MAX_SIZE_BYTES = 2 * 1024 * 1024  # 2 MB
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -37,6 +49,10 @@ async def create_client(
     user_id: str = Depends(get_current_user_id),
 ) -> ClientResponse:
     """Create a new client for the authenticated user."""
+    allowed, msg = can_create_client(user_id)
+    if not allowed:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=msg)
+
     supabase = get_supabase_admin()
     data = {
         "user_id": user_id,
@@ -114,3 +130,68 @@ async def delete_client(
     )
     if not result.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
+
+
+# ---------------------------------------------------------------------------
+# POST /{client_id}/upload-logo
+# ---------------------------------------------------------------------------
+
+@router.post("/{client_id}/upload-logo")
+async def upload_client_logo(
+    client_id: str,
+    file: UploadFile = File(...),
+    user_id: str = Depends(get_current_user_id),
+) -> dict:
+    """
+    Upload a client logo image.
+    Saves to backend/static/logos/clients/{client_id}/ and serves via /static.
+    Updates clients.logo_url with the public URL.
+    """
+    # Verify ownership first
+    supabase = get_supabase_admin()
+    check = (
+        supabase.table("clients")
+        .select("id")
+        .eq("id", client_id)
+        .eq("user_id", user_id)
+        .eq("is_active", True)
+        .single()
+        .execute()
+    )
+    if not check.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
+
+    if file.content_type not in _ALLOWED_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Unsupported file type '{file.content_type}'. "
+                   "Allowed: image/png, image/jpeg, image/gif, image/webp",
+        )
+
+    contents = await file.read()
+    if len(contents) > _MAX_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="File too large. Maximum allowed size is 2 MB.",
+        )
+
+    ext = (file.filename or "logo").rsplit(".", 1)[-1].lower()
+    if ext not in ("png", "jpg", "jpeg", "gif", "webp"):
+        ext = "png"
+    filename  = f"{uuid.uuid4().hex[:12]}.{ext}"
+    save_dir  = os.path.join(_CLIENT_LOGOS, client_id)
+    os.makedirs(save_dir, exist_ok=True)
+    save_path = os.path.join(save_dir, filename)
+
+    with open(save_path, "wb") as f:
+        f.write(contents)
+
+    public_url = f"{app_settings.BACKEND_URL}/static/logos/clients/{client_id}/{filename}"
+
+    supabase.table("clients").update({
+        "logo_url":   public_url,
+        "updated_at": datetime.utcnow().isoformat(),
+    }).eq("id", client_id).eq("user_id", user_id).execute()
+
+    logger.info("Client logo uploaded for client %s → %s", client_id, public_url)
+    return {"url": public_url}

@@ -45,8 +45,21 @@ class Settings(BaseSettings):
     STRIPE_PRICE_PRO: str = ""
     STRIPE_PRICE_AGENCY: str = ""
 
+    # Razorpay
+    RAZORPAY_KEY_ID: str = ""
+    RAZORPAY_KEY_SECRET: str = ""
+    RAZORPAY_WEBHOOK_SECRET: str = ""
+    # Razorpay plan IDs — create these in Razorpay dashboard, then fill in
+    RAZORPAY_PLAN_STARTER_MONTHLY: str = ""
+    RAZORPAY_PLAN_STARTER_ANNUAL: str = ""
+    RAZORPAY_PLAN_PRO_MONTHLY: str = ""
+    RAZORPAY_PLAN_PRO_ANNUAL: str = ""
+    RAZORPAY_PLAN_AGENCY_MONTHLY: str = ""
+    RAZORPAY_PLAN_AGENCY_ANNUAL: str = ""
+
     # Resend
     RESEND_API_KEY: str = ""
+    EMAIL_FROM_DOMAIN: str = "reportpilot.co"   # Domain for report delivery emails
 
     # App
     FRONTEND_URL: str = "http://localhost:3000"

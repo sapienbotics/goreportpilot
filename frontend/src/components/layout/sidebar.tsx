@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Users, FileText, Link2, Settings } from 'lucide-react'
+import { LayoutDashboard, Users, FileText, Link2, Settings, CreditCard } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const navItems = [
@@ -11,6 +11,7 @@ const navItems = [
   { href: '/dashboard/reports', label: 'Reports', icon: FileText },
   { href: '/dashboard/integrations', label: 'Integrations', icon: Link2 },
   { href: '/dashboard/settings', label: 'Settings', icon: Settings },
+  { href: '/dashboard/billing', label: 'Billing', icon: CreditCard },
 ]
 
 export function Sidebar() {

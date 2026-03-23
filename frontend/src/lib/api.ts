@@ -340,6 +340,70 @@ export async function uploadClientLogo(clientId: string, file: File): Promise<{ 
   return res.json()
 }
 
+// ---------------------------------------------------------------------------
+// Billing API
+// ---------------------------------------------------------------------------
+
+export interface SubscriptionStatus {
+  plan: string
+  display_name: string
+  status: string
+  billing_cycle: string
+  client_count: number
+  client_limit: number
+  current_period_start: string | null
+  current_period_end: string | null
+  trial_ends_at: string | null
+  trial_days_remaining: number | null
+  cancelled_at: string | null
+  cancel_at_period_end: boolean
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  features: Record<string, any>
+  can_create_client: boolean
+  razorpay_subscription_id: string | null
+}
+
+export interface CreateSubscriptionResponse {
+  subscription_id: string
+  razorpay_key_id: string
+}
+
+export const billingApi = {
+  getSubscription: async (): Promise<SubscriptionStatus> => {
+    const { data } = await api.get('/api/billing/subscription')
+    return data
+  },
+
+  createSubscription: async (payload: { plan: string; billing_cycle: string }): Promise<CreateSubscriptionResponse> => {
+    const { data } = await api.post('/api/billing/create-subscription', payload)
+    return data
+  },
+
+  verifyPayment: async (payload: {
+    razorpay_payment_id: string
+    razorpay_subscription_id: string
+    razorpay_signature: string
+  }): Promise<{ success: boolean; status: string }> => {
+    const { data } = await api.post('/api/billing/verify-payment', payload)
+    return data
+  },
+
+  changePlan: async (payload: { plan: string; billing_cycle: string }): Promise<CreateSubscriptionResponse> => {
+    const { data } = await api.post('/api/billing/change-plan', payload)
+    return data
+  },
+
+  cancel: async (): Promise<{ success: boolean; cancel_at_period_end: boolean }> => {
+    const { data } = await api.post('/api/billing/cancel')
+    return data
+  },
+
+  getPaymentHistory: async (): Promise<{ payments: Record<string, unknown>[] }> => {
+    const { data } = await api.get('/api/billing/payment-history')
+    return data
+  },
+}
+
 export const reportsApi = {
   generate: async (payload: ReportGeneratePayload): Promise<Report> => {
     const { data } = await api.post('/api/reports/generate', payload)
