@@ -346,3 +346,180 @@ async def meta_callback(
         token_handle=token_handle,
         expires_in=expires_in,
     )
+
+
+# ── Google Ads + Search Console OAuth ────────────────────────────────────────
+# Uses the same Google OAuth flow but requests additional scopes.
+# Clients must separately initiate a Google Ads / GSC OAuth to grant these scopes.
+
+_GOOGLE_ADS_SCOPES = " ".join([
+    "https://www.googleapis.com/auth/adwords",
+    "openid",
+    "email",
+])
+
+_SEARCH_CONSOLE_SCOPES = " ".join([
+    "https://www.googleapis.com/auth/webmasters.readonly",
+    "openid",
+    "email",
+])
+
+
+# ---------------------------------------------------------------------------
+# GET /api/auth/google-ads/url
+# ---------------------------------------------------------------------------
+
+@router.get("/google-ads/url")
+async def get_google_ads_auth_url(
+    _user_id: str = Depends(get_current_user_id),
+) -> dict:
+    """Generate a Google OAuth URL requesting Google Ads scopes."""
+    if not settings.GOOGLE_CLIENT_ID:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail="Google OAuth is not configured.")
+
+    state = secrets.token_urlsafe(32)
+    params = {
+        "client_id":     settings.GOOGLE_CLIENT_ID,
+        "redirect_uri":  settings.GOOGLE_REDIRECT_URI,
+        "response_type": "code",
+        "scope":         _GOOGLE_ADS_SCOPES,
+        "access_type":   "offline",
+        "prompt":        "consent",
+        "state":         state,
+    }
+    url = _GOOGLE_AUTH_BASE + "?" + "&".join(f"{k}={urllib.parse.quote(str(v))}" for k, v in params.items())
+    return {"url": url, "state": state}
+
+
+# ---------------------------------------------------------------------------
+# POST /api/auth/google-ads/callback
+# ---------------------------------------------------------------------------
+
+@router.post("/google-ads/callback")
+async def google_ads_callback(
+    body: GoogleCallbackRequest,
+    _user_id: str = Depends(get_current_user_id),
+) -> dict:
+    """Exchange auth code for Google Ads tokens and list accessible accounts."""
+    # Token exchange (same as GA4)
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        token_resp = await client.post(_GOOGLE_TOKEN_URL, data={
+            "code":          body.code,
+            "client_id":     settings.GOOGLE_CLIENT_ID,
+            "client_secret": settings.GOOGLE_CLIENT_SECRET,
+            "redirect_uri":  settings.GOOGLE_REDIRECT_URI,
+            "grant_type":    "authorization_code",
+        })
+    if token_resp.status_code != 200:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Failed to exchange Google Ads auth code.")
+    token_data = token_resp.json()
+    access_token  = token_data.get("access_token", "")
+    refresh_token = token_data.get("refresh_token", "")
+    expires_in    = int(token_data.get("expires_in", 3600))
+
+    # List accessible Google Ads accounts
+    try:
+        from services.google_ads import list_accessible_accounts  # noqa: PLC0415
+        from services.encryption import encrypt_token as _enc  # noqa: PLC0415
+        import json as _json  # noqa: PLC0415
+        # Temporarily encrypt tokens to pass to service
+        _payload = _json.dumps({
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "token_expires_at": (datetime.now(tz=timezone.utc).timestamp() + expires_in),
+        })
+        _handle = encrypt_token(_payload)
+        accounts = await list_accessible_accounts(_handle, _handle)
+    except Exception as exc:
+        logger.warning("Could not list Google Ads accounts: %s", exc)
+        accounts = []
+
+    token_payload = json.dumps({
+        "access_token":     access_token,
+        "refresh_token":    refresh_token,
+        "token_expires_at": datetime.now(tz=timezone.utc).timestamp() + expires_in,
+    })
+    token_handle = encrypt_token(token_payload)
+
+    return {
+        "accounts":     accounts,
+        "token_handle": token_handle,
+        "expires_in":   expires_in,
+    }
+
+
+# ---------------------------------------------------------------------------
+# GET /api/auth/search-console/url
+# ---------------------------------------------------------------------------
+
+@router.get("/search-console/url")
+async def get_search_console_auth_url(
+    _user_id: str = Depends(get_current_user_id),
+) -> dict:
+    """Generate a Google OAuth URL requesting Search Console scopes."""
+    if not settings.GOOGLE_CLIENT_ID:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail="Google OAuth is not configured.")
+
+    state = secrets.token_urlsafe(32)
+    params = {
+        "client_id":     settings.GOOGLE_CLIENT_ID,
+        "redirect_uri":  settings.GOOGLE_REDIRECT_URI,
+        "response_type": "code",
+        "scope":         _SEARCH_CONSOLE_SCOPES,
+        "access_type":   "offline",
+        "prompt":        "consent",
+        "state":         state,
+    }
+    url = _GOOGLE_AUTH_BASE + "?" + "&".join(f"{k}={urllib.parse.quote(str(v))}" for k, v in params.items())
+    return {"url": url, "state": state}
+
+
+# ---------------------------------------------------------------------------
+# POST /api/auth/search-console/callback
+# ---------------------------------------------------------------------------
+
+@router.post("/search-console/callback")
+async def search_console_callback(
+    body: GoogleCallbackRequest,
+    _user_id: str = Depends(get_current_user_id),
+) -> dict:
+    """Exchange auth code for Search Console tokens and list verified sites."""
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        token_resp = await client.post(_GOOGLE_TOKEN_URL, data={
+            "code":          body.code,
+            "client_id":     settings.GOOGLE_CLIENT_ID,
+            "client_secret": settings.GOOGLE_CLIENT_SECRET,
+            "redirect_uri":  settings.GOOGLE_REDIRECT_URI,
+            "grant_type":    "authorization_code",
+        })
+    if token_resp.status_code != 200:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Failed to exchange Search Console auth code.")
+    token_data    = token_resp.json()
+    access_token  = token_data.get("access_token", "")
+    refresh_token = token_data.get("refresh_token", "")
+    expires_in    = int(token_data.get("expires_in", 3600))
+
+    # List verified sites
+    try:
+        from services.search_console import list_verified_sites  # noqa: PLC0415
+        sites = await list_verified_sites(access_token)
+    except Exception as exc:
+        logger.warning("Could not list Search Console sites: %s", exc)
+        sites = []
+
+    token_payload = json.dumps({
+        "access_token":     access_token,
+        "refresh_token":    refresh_token,
+        "token_expires_at": datetime.now(tz=timezone.utc).timestamp() + expires_in,
+    })
+    token_handle = encrypt_token(token_payload)
+
+    return {
+        "sites":        sites,
+        "token_handle": token_handle,
+        "expires_in":   expires_in,
+    }

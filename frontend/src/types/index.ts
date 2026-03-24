@@ -22,6 +22,7 @@ export interface ReportConfig {
   template: 'full' | 'summary' | 'brief'
   custom_section_title: string
   custom_section_text: string
+  custom_section_image_url?: string | null
 }
 
 export const DEFAULT_REPORT_CONFIG: ReportConfig = {
@@ -58,6 +59,7 @@ export interface Client {
   notes?: string | null
   is_active: boolean
   report_config?: ReportConfig | null
+  report_language?: string | null  // 'en' | 'es' | 'fr' | etc.
   created_at: string
   updated_at: string
 }
@@ -65,7 +67,7 @@ export interface Client {
 export interface Connection {
   id: string
   client_id: string
-  platform: 'ga4' | 'meta_ads' | 'google_ads' | 'search_console' | 'linkedin_ads'
+  platform: string  // 'ga4' | 'meta_ads' | 'google_ads' | 'search_console' | csv_*
   account_id: string
   account_name: string
   currency: string  // Ad account billing currency, e.g. "INR", "USD"
@@ -100,4 +102,13 @@ export interface DataSnapshot {
   snapshot_date: string
   data: Record<string, unknown>
   created_at: string
+}
+
+export interface ShareLink {
+  share_hash: string
+  share_url: string
+  expires_at: string | null
+  has_password: boolean
+  created_at: string
+  is_active: boolean
 }

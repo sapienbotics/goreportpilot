@@ -193,6 +193,7 @@ from services.slide_selector import (
     select_slides, select_kpis, get_slides_to_delete,
     SLIDE_INDEX, TOTAL_TEMPLATE_SLIDES,
 )
+from services.text_formatter import parse_structured_text
 
 _TEMPLATES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                               "templates", "pptx")
@@ -573,6 +574,50 @@ def _embed_logos(prs: Any, branding: dict | None) -> None:
             _delete_shape(cover, client_logo_shape)
 
 
+def _embed_custom_section_image(prs: Any, custom_section: dict | None, slide_index: int) -> None:
+    """
+    Embed an uploaded image on the custom section slide.
+    Adjusts text area width if image is present.
+    """
+    if not custom_section:
+        return
+    image_url = custom_section.get("image_url", "")
+    if not image_url:
+        return
+
+    # Get the custom section slide
+    if slide_index >= len(prs.slides):
+        return
+    slide = prs.slides[slide_index]
+
+    img_data = _download_image(image_url)
+    if not img_data:
+        return
+
+    try:
+        img_data.seek(0)
+        # Place image on right side (35% of slide width)
+        slide_w = prs.slide_width
+        slide_h = prs.slide_height
+        img_w = int(slide_w * 0.35)
+        img_x = slide_w - img_w - Inches(0.3)
+        img_y = Inches(1.5)
+        img_h = int(slide_h * 0.55)
+        slide.shapes.add_picture(img_data, img_x, img_y, width=img_w, height=img_h)
+
+        # Narrow the text area on this slide to avoid overlap
+        for shape in slide.shapes:
+            if shape.has_text_frame:
+                text = shape.text_frame.text
+                if "custom_section_text" in text or (shape.left < Inches(1) and shape.top > Inches(1.2)):
+                    # Limit width to 60% of slide
+                    shape.width = int(slide_w * 0.60)
+                    break
+        logger.info("Custom section image embedded successfully")
+    except Exception as e:
+        logger.warning("Could not embed custom section image: %s", e)
+
+
 def _populate_text_frame_formatted(
     text_frame: Any,
     content: str,
@@ -816,11 +861,18 @@ def generate_pptx_report(
     else:
         # New 19-slide mapping
         _NARRATIVE_SLIDES = {
-            SLIDE_INDEX["executive_summary"]: "{{executive_summary}}",
-            SLIDE_INDEX["website_traffic"]:   "{{website_narrative}}",
-            SLIDE_INDEX["meta_ads_overview"]: "{{ads_narrative}}",
+            SLIDE_INDEX["executive_summary"]:   "{{executive_summary}}",
+            SLIDE_INDEX["website_traffic"]:     "{{website_narrative}}",
+            SLIDE_INDEX["meta_ads_overview"]:   "{{ads_narrative}}",
             SLIDE_INDEX["google_ads_overview"]: "{{google_ads_narrative}}",
-            SLIDE_INDEX["seo_overview"]:      "{{seo_narrative}}",
+            SLIDE_INDEX["seo_overview"]:        "{{seo_narrative}}",
+            SLIDE_INDEX.get("website_engagement", 4):   "{{website_narrative}}",
+            SLIDE_INDEX.get("website_audience", 5):     "{{website_narrative}}",
+            SLIDE_INDEX.get("bounce_rate_analysis", 6): "{{website_narrative}}",
+            SLIDE_INDEX.get("meta_ads_audience", 8):    "{{ads_narrative}}",
+            SLIDE_INDEX.get("meta_ads_creative", 9):    "{{ads_narrative}}",
+            SLIDE_INDEX.get("google_ads_keywords", 11): "{{google_ads_narrative}}",
+            SLIDE_INDEX.get("conversion_funnel", 14):   "{{website_narrative}}",
         }
         _LIST_SLIDES = {
             SLIDE_INDEX["key_wins"]:   ("{{key_wins}}",    "\u2713", RGBColor(0x05, 0x96, 0x69)),
@@ -853,6 +905,52 @@ def generate_pptx_report(
                                       prefix=prefix, prefix_color=prefix_color)
                 break
 
+    # ── Custom section rich formatting ─────────────────────────────────────────
+    cs = custom_section or {}
+    cs_text = cs.get("text", "")
+    if cs_text:
+        cs_slide_idx = SLIDE_INDEX.get("custom_section", 18) if not use_legacy else 8
+        if cs_slide_idx < len(prs.slides):
+            cs_slide = prs.slides[cs_slide_idx]
+            for shape in cs_slide.shapes:
+                if shape.has_text_frame and "{{custom_section_text}}" in shape.text_frame.text:
+                    # Apply rich formatting using text_formatter
+                    from services.text_formatter import parse_structured_text as _parse
+                    blocks = _parse(cs_text)
+                    tf = shape.text_frame
+                    tf.clear()
+                    brand_color = _hex_to_rgb((branding or {}).get("brand_color") or "#4338CA")
+                    for block in blocks:
+                        p = tf.add_paragraph()
+                        p.space_after = Pt(4)
+                        if block["type"] == "header":
+                            run = p.add_run()
+                            run.text = block["text"]
+                            run.font.bold = True
+                            run.font.size = Pt(14)
+                            run.font.color.rgb = brand_color
+                        elif block["type"] == "bullet":
+                            pr = p.add_run()
+                            pr.text = "•  "
+                            pr.font.bold = True
+                            pr.font.color.rgb = brand_color
+                            cr = p.add_run()
+                            cr.text = block["text"]
+                            cr.font.size = Pt(11)
+                        elif block["type"] == "numbered":
+                            pr = p.add_run()
+                            pr.text = f"{block['number']}.  "
+                            pr.font.bold = True
+                            pr.font.color.rgb = brand_color
+                            cr = p.add_run()
+                            cr.text = block["text"]
+                            cr.font.size = Pt(11)
+                        else:
+                            run = p.add_run()
+                            run.text = block["text"]
+                            run.font.size = Pt(11)
+                    break
+
     # ── Charts ────────────────────────────────────────────────────────────────
     _replace_charts(prs, charts)
 
@@ -861,6 +959,13 @@ def generate_pptx_report(
 
     # ── Logos ─────────────────────────────────────────────────────────────────
     _embed_logos(prs, branding)
+
+    # ── Custom section image ─────────────────────────────────────────────────
+    if not use_legacy:
+        custom_slide_idx = SLIDE_INDEX.get("custom_section", 18)
+        _embed_custom_section_image(prs, custom_section, custom_slide_idx)
+    else:
+        _embed_custom_section_image(prs, custom_section, 8)  # legacy index
 
     # ── Smart slide deletion ──────────────────────────────────────────────────
     if use_legacy:

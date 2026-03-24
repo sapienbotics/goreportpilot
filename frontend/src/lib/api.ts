@@ -341,6 +341,60 @@ export async function uploadClientLogo(clientId: string, file: File): Promise<{ 
 }
 
 // ---------------------------------------------------------------------------
+// CSV Upload API
+// ---------------------------------------------------------------------------
+export const csvApi = {
+  upload: async (file: File, clientId: string, sourceName?: string) => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('client_id', clientId)
+    if (sourceName) form.append('source_name', sourceName)
+    const { data } = await api.post('/api/connections/csv-upload', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return data
+  },
+  getTemplates: () => `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/connections/csv-templates`,
+  getTemplateUrl: (name: string) => `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/connections/csv-templates/${name}`,
+}
+
+// ---------------------------------------------------------------------------
+// Share API
+// ---------------------------------------------------------------------------
+export const shareApi = {
+  create: async (reportId: string, payload: { password?: string; expires_days?: number }) => {
+    const { data } = await api.post(`/api/reports/${reportId}/share`, payload)
+    return data
+  },
+  list: async (reportId: string) => {
+    const { data } = await api.get(`/api/reports/${reportId}/share`)
+    return data
+  },
+  revoke: async (reportId: string, hash: string) => {
+    const { data } = await api.delete(`/api/reports/${reportId}/share/${hash}`)
+    return data
+  },
+  getAnalytics: async (reportId: string) => {
+    const { data } = await api.get(`/api/reports/${reportId}/analytics`)
+    return data
+  },
+}
+
+// ---------------------------------------------------------------------------
+// Custom Section Image Upload
+// ---------------------------------------------------------------------------
+export const customSectionApi = {
+  uploadImage: async (clientId: string, file: File) => {
+    const form = new FormData()
+    form.append('image', file)
+    const { data } = await api.post(`/api/clients/${clientId}/custom-section-image`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return data  // Returns { url: string }
+  },
+}
+
+// ---------------------------------------------------------------------------
 // Dashboard API
 // ---------------------------------------------------------------------------
 // Note: dashboard page calls api.get('/api/dashboard/stats') directly
@@ -446,6 +500,12 @@ export const reportsApi = {
   /** Send the report to one or more email addresses. */
   send: async (id: string, payload: ReportSendPayload): Promise<ReportSendResult> => {
     const { data } = await api.post(`/api/reports/${id}/send`, payload)
+    return data
+  },
+
+  /** Create a shareable public link for this report. */
+  share: async (reportId: string, payload: { password?: string; expires_days?: number }) => {
+    const { data } = await api.post(`/api/reports/${reportId}/share`, payload)
     return data
   },
 }

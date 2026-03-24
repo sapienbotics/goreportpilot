@@ -1,0 +1,11 @@
+# TikTok Ads Report Template — Fill in your data and upload to ReportPilot
+# Delete this comment row before uploading
+metric_name,current_value,previous_value,unit
+Impressions,125000,98000,number
+Video Views,87000,62000,number
+Clicks,2400,1800,number
+Spend,1950,1600,currency
+Conversions,48,35,number
+CTR,1.92,1.84,percent
+CPM,15.60,16.33,currency
+Cost per Conversion,40.63,45.71,currency

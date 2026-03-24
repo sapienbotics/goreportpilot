@@ -1,5 +1,5 @@
 /**
- * ReportPilot — "Modern Clean" PPTX template
+ * ReportPilot — "Modern Clean" PPTX template (19 slides)
  * Light, professional, corporate — consulting-firm quality.
  *
  * Background: #FAFAFA (off-white)
@@ -62,6 +62,18 @@ function addTitle(slide, title, opts = {}) {
   });
 }
 
+// Helper: draw a chart card (background rect + placeholder text)
+function addChartCard(slide, x, y, w, h, placeholder) {
+  slide.addShape("rect", {
+    x, y, w, h,
+    fill: { color: C.card }, shadow: shadow(),
+  });
+  slide.addText(placeholder, {
+    x, y, w, h,
+    fontSize: 10, fontFace: FONT_BODY, color: C.light, align: "center", valign: "middle",
+  });
+}
+
 // ── Build ────────────────────────────────────────────────────────────────────
 async function build() {
   const pres = new pptxgen();
@@ -70,7 +82,7 @@ async function build() {
   pres.title  = "Performance Report";
 
   // ══════════════════════════════════════════════════════════════════════════
-  // SLIDE 1 — COVER
+  // SLIDE 0 — COVER
   // ══════════════════════════════════════════════════════════════════════════
   {
     const s = pres.addSlide();
@@ -131,7 +143,7 @@ async function build() {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // SLIDE 2 — EXECUTIVE SUMMARY
+  // SLIDE 1 — EXECUTIVE SUMMARY
   // ══════════════════════════════════════════════════════════════════════════
   {
     const s = pres.addSlide();
@@ -150,7 +162,7 @@ async function build() {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // SLIDE 3 — KPI SCORECARD
+  // SLIDE 2 — KPI SCORECARD
   // ══════════════════════════════════════════════════════════════════════════
   {
     const s = pres.addSlide();
@@ -204,7 +216,7 @@ async function build() {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // SLIDE 4 — WEBSITE PERFORMANCE
+  // SLIDE 3 — WEBSITE TRAFFIC
   // ══════════════════════════════════════════════════════════════════════════
   {
     const s = pres.addSlide();
@@ -212,27 +224,9 @@ async function build() {
     addAccentBar(s);
     addTitle(s, "Website Performance");
 
-    // Left chart area
-    s.addShape("rect", {
-      x: 0.8, y: 1.5, w: 5.6, h: 3.0,
-      fill: { color: C.card }, shadow: shadow(),
-    });
-    s.addText("{{chart_sessions}}", {
-      x: 0.8, y: 1.5, w: 5.6, h: 3.0,
-      fontSize: 10, fontFace: FONT_BODY, color: C.light, align: "center", valign: "middle",
-    });
+    addChartCard(s, 0.8, 1.5, 5.6, 3.0, "{{chart_sessions}}");
+    addChartCard(s, 6.8, 1.5, 5.7, 3.0, "{{chart_traffic}}");
 
-    // Right chart area
-    s.addShape("rect", {
-      x: 6.8, y: 1.5, w: 5.7, h: 3.0,
-      fill: { color: C.card }, shadow: shadow(),
-    });
-    s.addText("{{chart_traffic}}", {
-      x: 6.8, y: 1.5, w: 5.7, h: 3.0,
-      fontSize: 10, fontFace: FONT_BODY, color: C.light, align: "center", valign: "middle",
-    });
-
-    // Narrative
     s.addText("{{website_narrative}}", {
       x: 0.8, y: 4.8, w: W - 1.6, h: 2.0,
       fontSize: 12, fontFace: FONT_BODY, color: C.text,
@@ -243,33 +237,18 @@ async function build() {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // SLIDE 5 — META ADS PERFORMANCE
+  // SLIDE 4 — WEBSITE ENGAGEMENT
   // ══════════════════════════════════════════════════════════════════════════
   {
     const s = pres.addSlide();
     s.background = { color: C.bg };
     addAccentBar(s);
-    addTitle(s, "Paid Advertising \u2014 Meta Ads");
+    addTitle(s, "Website Engagement");
 
-    s.addShape("rect", {
-      x: 0.8, y: 1.5, w: 5.6, h: 3.0,
-      fill: { color: C.card }, shadow: shadow(),
-    });
-    s.addText("{{chart_spend}}", {
-      x: 0.8, y: 1.5, w: 5.6, h: 3.0,
-      fontSize: 10, fontFace: FONT_BODY, color: C.light, align: "center", valign: "middle",
-    });
+    addChartCard(s, 0.8, 1.5, 5.6, 3.0, "{{chart_device_breakdown}}");
+    addChartCard(s, 6.8, 1.5, 5.7, 3.0, "{{chart_top_pages}}");
 
-    s.addShape("rect", {
-      x: 6.8, y: 1.5, w: 5.7, h: 3.0,
-      fill: { color: C.card }, shadow: shadow(),
-    });
-    s.addText("{{chart_campaigns}}", {
-      x: 6.8, y: 1.5, w: 5.7, h: 3.0,
-      fontSize: 10, fontFace: FONT_BODY, color: C.light, align: "center", valign: "middle",
-    });
-
-    s.addText("{{ads_narrative}}", {
+    s.addText("{{website_narrative}}", {
       x: 0.8, y: 4.8, w: W - 1.6, h: 2.0,
       fontSize: 12, fontFace: FONT_BODY, color: C.text,
       lineSpacingMultiple: 1.35, valign: "top",
@@ -279,7 +258,242 @@ async function build() {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // SLIDE 6 — KEY WINS
+  // SLIDE 5 — AUDIENCE INSIGHTS
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    const s = pres.addSlide();
+    s.background = { color: C.bg };
+    addAccentBar(s);
+    addTitle(s, "Audience Insights");
+
+    addChartCard(s, 0.8, 1.5, 5.6, 3.0, "{{chart_new_vs_returning}}");
+    addChartCard(s, 6.8, 1.5, 5.7, 3.0, "{{chart_top_countries}}");
+
+    s.addText("{{website_narrative}}", {
+      x: 0.8, y: 4.8, w: W - 1.6, h: 2.0,
+      fontSize: 12, fontFace: FONT_BODY, color: C.text,
+      lineSpacingMultiple: 1.35, valign: "top",
+    });
+
+    addFooter(s, 6);
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // SLIDE 6 — BOUNCE RATE ANALYSIS
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    const s = pres.addSlide();
+    s.background = { color: C.bg };
+    addAccentBar(s);
+    addTitle(s, "Bounce Rate Analysis");
+
+    addChartCard(s, 0.8, 1.5, W - 1.6, 4.0, "{{chart_bounce_rate}}");
+
+    s.addText("{{website_narrative}}", {
+      x: 0.8, y: 5.75, w: W - 1.6, h: 1.2,
+      fontSize: 12, fontFace: FONT_BODY, color: C.text,
+      lineSpacingMultiple: 1.35, valign: "top",
+    });
+
+    addFooter(s, 7);
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // SLIDE 7 — META ADS OVERVIEW
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    const s = pres.addSlide();
+    s.background = { color: C.bg };
+    addAccentBar(s);
+    addTitle(s, "Paid Advertising \u2014 Meta Ads");
+
+    addChartCard(s, 0.8, 1.5, 5.6, 3.0, "{{chart_spend}}");
+    addChartCard(s, 6.8, 1.5, 5.7, 3.0, "{{chart_campaigns}}");
+
+    s.addText("{{ads_narrative}}", {
+      x: 0.8, y: 4.8, w: W - 1.6, h: 2.0,
+      fontSize: 12, fontFace: FONT_BODY, color: C.text,
+      lineSpacingMultiple: 1.35, valign: "top",
+    });
+
+    addFooter(s, 8);
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // SLIDE 8 — META ADS AUDIENCE
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    const s = pres.addSlide();
+    s.background = { color: C.bg };
+    addAccentBar(s);
+    addTitle(s, "Meta Ads \u2014 Audience");
+
+    addChartCard(s, 0.8, 1.5, 5.6, 3.0, "{{chart_demographics}}");
+    addChartCard(s, 6.8, 1.5, 5.7, 3.0, "{{chart_placements}}");
+
+    s.addText("{{ads_narrative}}", {
+      x: 0.8, y: 4.8, w: W - 1.6, h: 2.0,
+      fontSize: 12, fontFace: FONT_BODY, color: C.text,
+      lineSpacingMultiple: 1.35, valign: "top",
+    });
+
+    addFooter(s, 9);
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // SLIDE 9 — META ADS TOP ADS
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    const s = pres.addSlide();
+    s.background = { color: C.bg };
+    addAccentBar(s);
+    addTitle(s, "Meta Ads \u2014 Top Ads");
+
+    addChartCard(s, 0.8, 1.5, W - 1.6, 4.0, "{{chart_campaigns}}");
+
+    s.addText("{{ads_narrative}}", {
+      x: 0.8, y: 5.75, w: W - 1.6, h: 1.2,
+      fontSize: 12, fontFace: FONT_BODY, color: C.text,
+      lineSpacingMultiple: 1.35, valign: "top",
+    });
+
+    addFooter(s, 10);
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // SLIDE 10 — GOOGLE ADS OVERVIEW
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    const s = pres.addSlide();
+    s.background = { color: C.bg };
+    addAccentBar(s);
+    addTitle(s, "Search Advertising \u2014 Google Ads");
+
+    addChartCard(s, 0.8, 1.5, 5.6, 3.0, "{{chart_gads_spend}}");
+    addChartCard(s, 6.8, 1.5, 5.7, 3.0, "{{chart_gads_campaigns}}");
+
+    s.addText("{{google_ads_narrative}}", {
+      x: 0.8, y: 4.8, w: W - 1.6, h: 2.0,
+      fontSize: 12, fontFace: FONT_BODY, color: C.text,
+      lineSpacingMultiple: 1.35, valign: "top",
+    });
+
+    addFooter(s, 11);
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // SLIDE 11 — SEARCH TERMS PERFORMANCE
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    const s = pres.addSlide();
+    s.background = { color: C.bg };
+    addAccentBar(s);
+    addTitle(s, "Search Terms Performance");
+
+    addChartCard(s, 0.8, 1.5, W - 1.6, 4.0, "{{chart_search_terms}}");
+
+    s.addText("{{google_ads_narrative}}", {
+      x: 0.8, y: 5.75, w: W - 1.6, h: 1.2,
+      fontSize: 12, fontFace: FONT_BODY, color: C.text,
+      lineSpacingMultiple: 1.35, valign: "top",
+    });
+
+    addFooter(s, 12);
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // SLIDE 12 — SEO OVERVIEW
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    const s = pres.addSlide();
+    s.background = { color: C.bg };
+    addAccentBar(s);
+    addTitle(s, "Organic Search \u2014 SEO");
+
+    addChartCard(s, 0.8, 1.5, 5.6, 3.0, "{{chart_seo_trend}}");
+    addChartCard(s, 6.8, 1.5, 5.7, 3.0, "{{chart_top_queries}}");
+
+    s.addText("{{seo_narrative}}", {
+      x: 0.8, y: 4.8, w: W - 1.6, h: 2.0,
+      fontSize: 12, fontFace: FONT_BODY, color: C.text,
+      lineSpacingMultiple: 1.35, valign: "top",
+    });
+
+    addFooter(s, 13);
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // SLIDE 13 — CSV DATA
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    const s = pres.addSlide();
+    s.background = { color: C.bg };
+    addAccentBar(s);
+
+    // Dynamic title from CSV source name
+    s.addText("{{csv_source_name}}", {
+      x: 0.8, y: 0.45, w: W - 1.6, h: 0.7,
+      fontSize: 28, fontFace: FONT, bold: true, color: C.dark,
+      margin: 0,
+    });
+
+    // CSV KPI grid — 3 rows x 2 columns
+    const kpiPairs = [
+      { row: 0, leftIdx: 0, rightIdx: 1, y: 1.6 },
+      { row: 1, leftIdx: 2, rightIdx: 3, y: 2.5 },
+      { row: 2, leftIdx: 4, rightIdx: 5, y: 3.4 },
+    ];
+
+    for (const pair of kpiPairs) {
+      // Left KPI
+      s.addText(`{{csv_kpi_${pair.leftIdx}_label}}`, {
+        x: 0.8, y: pair.y, w: 5.5, h: 0.3,
+        fontSize: 9, fontFace: FONT, bold: true, color: C.muted, charSpacing: 1,
+      });
+      s.addText(`{{csv_kpi_${pair.leftIdx}_value}}`, {
+        x: 0.8, y: pair.y + 0.3, w: 5.5, h: 0.5,
+        fontSize: 22, fontFace: FONT, bold: true, color: C.dark,
+      });
+
+      // Right KPI
+      s.addText(`{{csv_kpi_${pair.rightIdx}_label}}`, {
+        x: 7.2, y: pair.y, w: 5.3, h: 0.3,
+        fontSize: 9, fontFace: FONT, bold: true, color: C.muted, charSpacing: 1,
+      });
+      s.addText(`{{csv_kpi_${pair.rightIdx}_value}}`, {
+        x: 7.2, y: pair.y + 0.3, w: 5.3, h: 0.5,
+        fontSize: 22, fontFace: FONT, bold: true, color: C.dark,
+      });
+    }
+
+    // Full-width chart below KPI grid
+    addChartCard(s, 0.8, 4.0, W - 1.6, 2.6, "{{chart_csv_data}}");
+
+    addFooter(s, 14);
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // SLIDE 14 — CONVERSION FUNNEL
+  // ══════════════════════════════════════════════════════════════════════════
+  {
+    const s = pres.addSlide();
+    s.background = { color: C.bg };
+    addAccentBar(s);
+    addTitle(s, "Conversion Funnel");
+
+    addChartCard(s, 0.8, 1.5, W - 1.6, 4.0, "{{chart_conversion_funnel}}");
+
+    s.addText("{{website_narrative}}", {
+      x: 0.8, y: 5.75, w: W - 1.6, h: 1.2,
+      fontSize: 12, fontFace: FONT_BODY, color: C.text,
+      lineSpacingMultiple: 1.35, valign: "top",
+    });
+
+    addFooter(s, 15);
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // SLIDE 15 — KEY WINS
   // ══════════════════════════════════════════════════════════════════════════
   {
     const s = pres.addSlide();
@@ -302,11 +516,11 @@ async function build() {
       lineSpacingMultiple: 1.5, valign: "top",
     });
 
-    addFooter(s, 6);
+    addFooter(s, 16);
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // SLIDE 7 — CONCERNS
+  // SLIDE 16 — CONCERNS
   // ══════════════════════════════════════════════════════════════════════════
   {
     const s = pres.addSlide();
@@ -329,11 +543,11 @@ async function build() {
       lineSpacingMultiple: 1.5, valign: "top",
     });
 
-    addFooter(s, 7);
+    addFooter(s, 17);
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // SLIDE 8 — NEXT STEPS
+  // SLIDE 17 — NEXT STEPS
   // ══════════════════════════════════════════════════════════════════════════
   {
     const s = pres.addSlide();
@@ -363,7 +577,7 @@ async function build() {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // SLIDE 9 — CUSTOM SECTION
+  // SLIDE 18 — CUSTOM SECTION
   // ══════════════════════════════════════════════════════════════════════════
   {
     const s = pres.addSlide();
@@ -381,7 +595,7 @@ async function build() {
       lineSpacingMultiple: 1.4, valign: "top",
     });
 
-    addFooter(s, 9);
+    addFooter(s, 19);
   }
 
   await pres.writeFile({ fileName: OUT });

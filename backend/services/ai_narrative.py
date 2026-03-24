@@ -77,6 +77,9 @@ FALLBACK_NARRATIVE: Dict[str, str] = {
     "key_wins": "✓ Data collected successfully\n✓ Report generated without errors",
     "concerns": "⚠ AI narrative generation is unavailable. Check your OPENAI_API_KEY and regenerate.",
     "next_steps": "1. Configure OPENAI_API_KEY in backend/.env\n2. Regenerate this report",
+    "google_ads_performance": "Google Ads data collected. AI narrative pending.",
+    "seo_performance": "SEO data collected. AI narrative pending.",
+    "csv_performance": "Custom data collected. AI narrative pending.",
 }
 
 
@@ -87,6 +90,9 @@ _SECTION_INSTRUCTIONS: Dict[str, str] = {
     "key_wins":           '"{key}" — 3-5 bullet points of wins (start each with "✓ ")',
     "concerns":           '"{key}" — 2-3 bullet points of concerns with recommendations (start each with "⚠ ")',
     "next_steps":         '"{key}" — 3-5 numbered action items for the next period',
+    "google_ads_performance": '"{key}" — 2-3 paragraphs analyzing Google Ads search campaign performance',
+    "seo_performance": '"{key}" — 2-3 paragraphs analyzing organic search performance from Google Search Console',
+    "csv_performance": '"{key}" — 2 paragraphs summarizing the custom data source metrics',
 }
 
 
@@ -106,6 +112,7 @@ async def generate_narrative(
     tone: str = "professional",
     template: str = "full",
     sections: Optional[list[str]] = None,
+    language: str = "en",
 ) -> Dict[str, str]:
     """
     Generate AI narrative sections for a report.
@@ -142,11 +149,20 @@ async def generate_narrative(
         # One-Page Brief: 2-slide ultra-concise — exec summary + next steps only
         requested_sections = ["executive_summary", "next_steps"]
     else:
-        # Full (default): all 6 sections
+        # Full (default): all 6 core sections + data-available sections
         requested_sections = [
             "executive_summary", "website_performance", "paid_advertising",
             "key_wins", "concerns", "next_steps",
         ]
+        # Add Google Ads section if data present
+        if data.get("google_ads", {}).get("summary"):
+            requested_sections.insert(-3, "google_ads_performance")
+        # Add SEO section if data present
+        if data.get("search_console", {}).get("summary"):
+            requested_sections.insert(-3, "seo_performance")
+        # Add CSV section if data present
+        if data.get("csv_sources"):
+            requested_sections.insert(-3, "csv_performance")
 
     # ── Template-specific tone modifier ─────────────────────────────────────
     if template == "brief":
@@ -179,6 +195,27 @@ async def generate_narrative(
 
     section_instructions = _build_section_instructions(requested_sections)
 
+    # Language instruction
+    language_instruction = ""
+    if language and language != "en":
+        language_names = {
+            "es": "Spanish", "pt": "Portuguese", "fr": "French",
+            "de": "German", "hi": "Hindi", "ar": "Arabic",
+            "ja": "Japanese", "it": "Italian", "ko": "Korean",
+            "zh": "Chinese (Simplified)", "nl": "Dutch", "tr": "Turkish",
+        }
+        lang_name = language_names.get(language, language)
+        language_instruction = (
+            f"\n\nCRITICAL: Write ALL narrative content in {lang_name}. "
+            f"Use natural, professional {lang_name} — not machine-translated English. "
+            f"Keep metric names and abbreviations in English (KPI, CTR, CPC, ROAS, ROI, SEO) "
+            f"but write all commentary, analysis, and recommendations in {lang_name}."
+        )
+
+    google_ads = data.get("google_ads", {}).get("summary", {})
+    search_console = data.get("search_console", {}).get("summary", {})
+    csv_sources = data.get("csv_sources", [])
+
     user_prompt = f"""CLIENT CONTEXT:
 Name: {client_name}
 Goals: {client_goals or 'Not specified'}
@@ -204,6 +241,19 @@ Cost Per Conversion: {cur_sym}{meta.get('cost_per_conversion', 'N/A')} (prev: {c
 ROAS: {meta.get('roas', 'N/A')}x (prev: {meta.get('prev_roas', 'N/A')}x)
 Top Campaigns: {json.dumps(campaigns[:3]) if campaigns else 'N/A'}
 
+GOOGLE ADS DATA (if available):
+Spend: {cur_sym}{google_ads.get('spend', 'N/A')} (prev: {cur_sym}{google_ads.get('prev_spend', 'N/A')})
+Clicks: {google_ads.get('clicks', 'N/A')} | Conversions: {google_ads.get('conversions', 'N/A')}
+CTR: {google_ads.get('ctr', 'N/A')}% | Cost/Conv: {cur_sym}{google_ads.get('cost_per_conversion', 'N/A')}
+ROAS: {google_ads.get('roas', 'N/A')}x
+
+SEO DATA (Google Search Console):
+Clicks: {search_console.get('clicks', 'N/A')} (prev: {search_console.get('prev_clicks', 'N/A')})
+Impressions: {search_console.get('impressions', 'N/A')}
+CTR: {search_console.get('ctr', 'N/A')}% | Avg Position: {search_console.get('avg_position', 'N/A')}
+
+CSV SOURCES: {len(csv_sources)} additional data source(s) connected
+
 TONE: {tone_modifier}
 
 IMPORTANT — CURRENCY: All monetary amounts for Meta Ads must use the {currency_code} currency symbol ({cur_sym}). \
@@ -219,7 +269,7 @@ Return ONLY valid JSON, no markdown code blocks, no explanation outside the JSON
         response = await ai.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": SYSTEM_PROMPT + language_instruction},
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.7,

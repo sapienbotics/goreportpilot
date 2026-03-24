@@ -1,0 +1,11 @@
+# Shopify / E-commerce Template — Fill in your data and upload to ReportPilot
+# Delete this comment row before uploading
+metric_name,current_value,previous_value,unit
+Total Revenue,52400,44800,currency
+Orders,620,530,number
+Average Order Value,84.5,84.5,currency
+New Customers,285,240,number
+Returning Customers,335,290,number
+Conversion Rate,3.2,2.9,percent
+Cart Abandonment Rate,68.4,71.2,percent
+Refund Rate,2.1,2.4,percent

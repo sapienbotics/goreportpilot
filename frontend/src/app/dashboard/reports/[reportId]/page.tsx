@@ -8,13 +8,15 @@ import Link from 'next/link'
 import {
   ArrowLeft, Download, FileText, TrendingUp, TrendingDown,
   Minus, Loader2,
-  Pencil, RefreshCw, Check, X as XIcon, Send, Mail,
+  Pencil, RefreshCw, Check, X as XIcon, Send, Mail, Share2,
 } from 'lucide-react'
 import { reportsApi, downloadFileWithAuth } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import type { Report } from '@/types'
+import ShareReportDialog from '@/components/reports/ShareReportDialog'
+import ViewAnalytics from '@/components/reports/ViewAnalytics'
 
 // ── Currency symbol lookup ──────────────────────────────────────────────────
 const CURRENCY_SYMBOLS: Record<string, string> = {
@@ -413,6 +415,7 @@ export default function ReportDetailPage() {
   const [savingSection,   setSavingSection]  = useState<string | null>(null)
   const [regenSection,    setRegenSection]   = useState<string | null>(null)
   const [showSendDialog,  setShowSendDialog] = useState(false)
+  const [showShare,       setShowShare]      = useState(false)
 
   useEffect(() => {
     const fetch = async () => {
@@ -528,6 +531,11 @@ export default function ReportDetailPage() {
         />
       )}
 
+      {/* ── Share dialog ──────────────────────────────────────────────────── */}
+      {showShare && (
+        <ShareReportDialog reportId={report.id} onClose={() => setShowShare(false)} />
+      )}
+
       {/* ── Header ───────────────────────────────────────────────────────── */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
@@ -568,6 +576,13 @@ export default function ReportDetailPage() {
           >
             <Send className="h-4 w-4" />
             Send to Client
+          </button>
+          <button
+            onClick={() => setShowShare(true)}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+          >
+            <Share2 className="h-4 w-4" />
+            Share
           </button>
           <button
             onClick={handleDownloadPptx}
@@ -700,6 +715,9 @@ export default function ReportDetailPage() {
           <BulletSection content={narrative['next_steps']} color="indigo" />
         </EditableNarrativeCard>
       </div>
+
+      {/* ── View Analytics ─────────────────────────────────────────────────── */}
+      <ViewAnalytics reportId={report.id} />
 
     </div>
   )

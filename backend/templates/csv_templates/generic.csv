@@ -1,0 +1,12 @@
+# Generic Data Source Template — Fill in your metrics and upload to ReportPilot
+# Delete this comment row before uploading
+# metric_name: Name of your metric (required)
+# current_value: Value for the current period (required) — numbers only, no symbols
+# previous_value: Value for the previous period (for change calculation)
+# unit: number | percent | currency
+metric_name,current_value,previous_value,unit
+Metric 1,1000,850,number
+Metric 2,42.5,38.2,percent
+Metric 3,5200,4800,currency
+Metric 4,320,290,number
+Metric 5,12.8,14.2,percent

@@ -216,6 +216,7 @@ async def _generate_report_internal(
         client_goals=client.get("goals_context"),
         tone=client.get("ai_tone", "professional"),
         template=cfg_template,
+        language=client.get("report_language", "en") or "en",
     )
 
     # 4 — Fetch agency branding first (needed for branded charts + reports)

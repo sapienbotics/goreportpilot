@@ -200,3 +200,63 @@ async def upload_client_logo(
 
     logger.info("Client logo uploaded for client %s → %s (bg_removed=%s)", client_id, public_url, bg_removed)
     return {"url": public_url, "bg_removed": bg_removed}
+
+
+# ---------------------------------------------------------------------------
+# POST /{client_id}/custom-section-image
+# ---------------------------------------------------------------------------
+
+_CUSTOM_SECTIONS_DIR = os.path.join(_BACKEND_DIR, "static", "custom_sections")
+_MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5 MB
+
+@router.post("/{client_id}/custom-section-image")
+async def upload_custom_section_image(
+    client_id: str,
+    image: UploadFile = File(...),
+    user_id: str = Depends(get_current_user_id),
+) -> dict:
+    """
+    Upload an image for the custom section slide.
+    Saves to backend/static/custom_sections/{client_id}/ and returns the URL.
+    """
+    supabase = get_supabase_admin()
+    check = (
+        supabase.table("clients")
+        .select("id")
+        .eq("id", client_id)
+        .eq("user_id", user_id)
+        .eq("is_active", True)
+        .single()
+        .execute()
+    )
+    if not check.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
+
+    if image.content_type not in {"image/png", "image/jpeg", "image/jpg", "image/webp"}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Unsupported file type. Allowed: PNG, JPEG, WEBP",
+        )
+
+    contents = await image.read()
+    if len(contents) > _MAX_IMAGE_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Image too large. Maximum 5MB.",
+        )
+
+    ext = (image.filename or "image").rsplit(".", 1)[-1].lower()
+    if ext not in ("png", "jpg", "jpeg", "webp"):
+        ext = "png"
+
+    filename = f"{uuid.uuid4().hex[:12]}.{ext}"
+    save_dir = os.path.join(_CUSTOM_SECTIONS_DIR, client_id)
+    os.makedirs(save_dir, exist_ok=True)
+    save_path = os.path.join(save_dir, filename)
+
+    with open(save_path, "wb") as f:
+        f.write(contents)
+
+    public_url = f"{app_settings.BACKEND_URL}/static/custom_sections/{client_id}/{filename}"
+    logger.info("Custom section image uploaded for client %s: %s", client_id, public_url)
+    return {"url": public_url}

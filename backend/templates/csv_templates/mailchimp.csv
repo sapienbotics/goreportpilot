@@ -1,0 +1,11 @@
+# Mailchimp / Email Marketing Template — Fill in your data and upload to ReportPilot
+# Delete this comment row before uploading
+metric_name,current_value,previous_value,unit
+Subscribers,8240,7950,number
+Campaigns Sent,4,3,number
+Emails Delivered,32800,23820,number
+Open Rate,24.5,22.1,percent
+Click Rate,3.8,3.2,percent
+Unsubscribes,28,35,number
+Revenue,4250,3180,currency
+Avg Order Value,85,79,currency

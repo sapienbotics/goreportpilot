@@ -78,12 +78,21 @@ async def health_check():
 # ── Routers ───────────────────────────────────────────────────────────────────
 
 from routers import auth, clients, connections, reports, settings as settings_router, scheduled_reports, billing, dashboard  # noqa: E402
+from routers import csv_upload  # noqa: E402
+from routers.shared import reports_router as shared_reports_router, public_router as shared_public_router  # noqa: E402
+
+# Create custom_sections static dir if not exists
+os.makedirs(os.path.join(_STATIC_DIR, "custom_sections"), exist_ok=True)
 
 app.include_router(clients.router,            prefix="/api/clients",            tags=["clients"])
 app.include_router(reports.router,            prefix="/api/reports",            tags=["reports"])
 app.include_router(auth.router,               prefix="/api/auth",               tags=["auth"])
 app.include_router(connections.router,        prefix="/api/connections",        tags=["connections"])
+app.include_router(csv_upload.router,         prefix="/api/connections",        tags=["csv"])
 app.include_router(settings_router.router,    prefix="/api/settings",           tags=["settings"])
 app.include_router(scheduled_reports.router,  prefix="/api/scheduled-reports",  tags=["scheduled-reports"])
 app.include_router(billing.router,            prefix="/api/billing",            tags=["billing"])
 app.include_router(dashboard.router,          prefix="/api/dashboard",          tags=["dashboard"])
+# Sharing: authenticated endpoints under /api/reports, public under /api/shared
+app.include_router(shared_reports_router,     prefix="/api/reports",            tags=["sharing"])
+app.include_router(shared_public_router,      prefix="/api/shared",             tags=["shared-public"])

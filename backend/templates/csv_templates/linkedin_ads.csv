@@ -1,0 +1,12 @@
+# LinkedIn Ads Report Template — Fill in your data and upload to ReportPilot
+# Delete this comment row before uploading
+# Columns: metric_name (required), current_value (required), previous_value (optional), unit (optional: number/percent/currency)
+metric_name,current_value,previous_value,unit
+Impressions,45000,38000,number
+Clicks,1200,980,number
+Spend,2800,2400,currency
+Leads,85,62,number
+CTR,2.67,2.58,percent
+Cost per Lead,32.94,38.71,currency
+Follows,340,280,number
+Engagement Rate,1.8,1.5,percent
