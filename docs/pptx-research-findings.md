@@ -8,75 +8,81 @@
 ## 1. Marketing/Reporting Tools with PPTX Export
 
 ### NinjaCat
-- **Approach:** Template-based generation. Users create or select PowerPoint templates, and the system populates them with campaign data.
-- **Design:** Pre-designed templates with placeholder regions. Output is fully editable PPTX.
-- **Charts:** Embedded as images from their visualization engine.
-- **Branding:** Custom templates uploaded by agencies — full white-label control.
-- **Unique feature:** One-click export — agency can go from dashboard to client-ready PPTX instantly.
-- **Pricing:** Enterprise-only, not published publicly.
-- Source: [NinjaCat Reporting](https://www.ninjacat.io/resources/optimized-client-reporting-for-agencies)
+- **Approach:** Widget-based WYSIWYG template builder (Shinobi). Agencies drag/arrange widgets (charts, tables, KPI cards, text, AI insights) onto a canvas. Templates are reused across hundreds of client accounts with dynamic per-client placeholders.
+- **Design:** Pre-designed templates with live data preview during editing. Multi-data-source widgets allow mixing platforms (e.g., Bing + GA) in one table.
+- **Branding:** Full white-label. Branding applies globally to reports, dashboards, and emails with one click.
+- **Charts:** First-class widget types. Multi-source tables are a differentiator.
+- **Unique features:** (1) One template, many accounts via dynamic placeholders. (2) AI Insights Generator widget auto-writes commentary. (3) Report status lifecycle (Running → Ready → Delivered → Error).
+- Sources: [NinjaCat Template Builder](https://docs.ninjacat.io/docs/accessing-the-ninjacat-template-builder), [NinjaCat AI Insights](https://docs.ninjacat.io/docs/using-the-text-heading-ai-insights-generator-widgets)
 
-### TapClicks (Report Studio)
-- **Approach:** Template-based with "pixel perfect" editable PPTX output. Users can upload their own PowerPoint templates.
-- **Design:** Supports custom PPT templates — agencies design in PowerPoint, then TapClicks fills in the data.
-- **Charts:** Generated server-side, embedded as images.
-- **Branding:** Full white-label via custom templates. Upload your PPT with your brand, fonts, layout.
-- **Unique feature:** The template approach means agencies get exactly the design they want — no compromise.
-- Source: [TapClicks Report Studio](https://www.tapclicks.com/tapclicks-report-studio)
+### TapClicks (Report Studio + SmartSlides)
+- **Approach:** Two systems: (1) Report Studio for dashboard-to-PPTX, (2) SmartSlides for AI-powered slide deck generation. Agencies upload .potx templates — system fills data into pre-designed layouts.
+- **Design:** "Pixel perfect and completely editable" PPTX output. Inherits agency's uploaded PowerPoint design.
+- **Branding:** Multi-tier: global templates at platform level + per-business-unit templates for sub-brands.
+- **Charts:** Dashboard widgets rendered into export. "Hide Empty Widgets" prevents blank sections.
+- **Unique features:** (1) .potx template upload system. (2) SmartReports2 AI agent (Oct 2025) auto-generates full decks. (3) Per-business-unit branding. (4) Hide Empty Widgets in exports.
+- Sources: [TapClicks SmartSlides](https://support.tapclicks.com/hc/en-us/articles/41624880687259), [TapClicks PPT Templates](https://support.tapclicks.com/hc/en-us/articles/360039914014)
 
 ### Rollstack
-- **Approach:** Template-based with live data binding. Users map BI data (Tableau, Power BI, Looker) to pre-designed PPTX templates. Slides refresh on schedule.
-- **Design:** Centralized template governance — brand controls are locked. Design consistency comes from the template, not the tool.
-- **Charts:** Screenshots/exports from BI tools, auto-embedded in designated template regions.
-- **Branding:** Agency-managed templates with locked brand elements.
-- **Unique feature:** LLM layer generates executive summaries and anomaly flags from the live data. Scheduled auto-refresh means reports are always current.
-- **Pricing:** Starts at $750/month — enterprise tier.
-- Source: [Rollstack Product](https://www.rollstack.com/product)
+- **Approach:** Template-to-data pipeline. Create a PPTX/Google Slides template, Rollstack populates it with BI data (Tableau, Power BI, Looker, Metabase, Snowflake). Auto-refreshes on schedule.
+- **Design:** Output inherits BI tool's chart styling exactly. Centralized template governance with locked brand controls.
+- **Branding:** Agency-managed templates with slide governance controls for distributed teams.
+- **Unique features:** (1) BI-tool-native chart embedding (Tableau chart IS the chart, not a re-rendering). (2) Slide governance for template version management. (3) LLM layer generates executive summaries + anomaly flags. (4) Bulk generation.
+- **Pricing:** $750/month — enterprise tier.
+- Sources: [Rollstack Product](https://www.rollstack.com/product), [Rollstack AI Guide](https://www.rollstack.com/articles/best-powerpoint-ai-tools-2025-guide-for-ai-reporting-in-powerpoint)
 
 ### Slideform
-- **Approach:** Pure template-based mail-merge. Upload a standard PPTX as template, insert placeholders, connect SQL/data sources (HubSpot, Google Sheets), and Slideform populates each placeholder.
-- **Design:** 100% controlled by the user's template. Slideform adds zero design — it's a pure data population engine.
-- **Charts:** Generated from data and embedded as images in template placeholder regions.
+- **Approach:** Pure template-based mail-merge. Upload a standard PPTX, insert `{{placeholder}}` pragmas, connect SQL/data sources (HubSpot, Google Sheets, Looker Studio, Metabase), system fills each placeholder.
+- **Design:** 100% controlled by the user's template. Slideform adds zero design — pure data population engine.
 - **Branding:** The user's template IS the brand. No Slideform branding appears.
-- **Unique feature:** Bulk generation — produce hundreds of client-specific reports from one template in a single run. Agency sends one template, gets 50 client reports back.
-- Source: [Slideform Marketing Reports](https://slideform.co/blog/automate-marketing-reports-with-slideform-ai)
+- **Unique features:** (1) SQL-query-per-placeholder architecture for maximum flexibility. (2) Bulk Mode — generate hundreds of client reports from one template. (3) Standard PPTX as template (no vendor lock-in). (4) Data mapping UI shows pragmas as visual blue boxes.
+- Sources: [Slideform Data Mapping](https://helpcenter.slideform.co/data-mapping), [Slideform Data Warehouse](https://slideform.co/blog/automate-powerpoint-reports-from-a-data-warehouse)
 
 ### Social Status
-- **Approach:** Pre-built report templates optimized for social media metrics. One-click PPTX download.
-- **Design:** Pre-designed templates with social-media-specific layouts (engagement cards, reach charts).
-- **Unique feature:** Competitor benchmarking slides included automatically.
+- **Approach:** Pre-designed social-media-specific templates. Download default PPTX, modify in PowerPoint, re-upload for custom branding.
+- **Design:** "Boardroom-ready" templates with social-specific layouts (engagement cards, reach charts).
+- **Export formats:** PPTX, PDF, Google Slides, CSV, XLSX from a single data source.
+- **Unique features:** (1) Multi-format export. (2) Bring-your-own-template model. (3) White-label on PPTX/PDF only (practical — clients only see exports).
+- Sources: [Social Status Reports](https://www.socialstatus.io/reports/)
 
 ---
 
 ## 2. AI Presentation Generators (Cross-Pollination)
 
 ### Gamma.app
-- **Approach:** Fully AI-generated from prompts. NOT template-based. Runs 20+ AI models simultaneously for text, images, layout, and brand consistency.
-- **Design:** AI selects layout, typography, color, and imagery. Output is web-native (not PPTX-first). PPTX export is secondary.
-- **What makes it look professional:** Constraint-based layout AI that enforces spacing, alignment, and visual hierarchy rules automatically.
-- **Unique insight for ReportPilot:** Their multi-model approach is overkill for reports, but the concept of design-rule enforcement (auto-spacing, auto-alignment) is valuable. We could add basic layout validation in our population engine.
-- Source: [Gamma.app Review](https://skywork.ai/skypage/en/Gamma-App-In-Depth-Review-2025-The-Ultimate-Guide-to-AI-Presentations/1973913493482172416)
+- **Approach:** Fully AI-generated from prompts. 20+ AI models simultaneously handle text, images, layout, and brand consistency. Card-based scrollable format (web-native, not PPTX-first).
+- **What makes it professional:** Constraint-based layout AI auto-enforces spacing, alignment, visual hierarchy.
+- **PPTX export quality:** Generally good but complex card layouts may need manual adjustment. Fonts may substitute. Interactive elements don't translate.
+- **Key insight:** Multi-model architecture (specialized models per concern) > single monolithic AI. Design-rule enforcement is the valuable concept.
+- Sources: [Gamma Help - Export](https://help.gamma.app/en/articles/8022861), [Gamma AI Presentation Generator](https://gamma.app/ai-presentation-generator)
 
 ### Beautiful.ai
-- **Approach:** "Smart Slides" — 60+ layout templates with embedded design-rule engines. Each Smart Slide auto-adjusts spacing, alignment, and chart sizing as content changes.
-- **Design:** Built-in layout logic enforces design principles in real-time. Users cannot break the design — the engine maintains visual hierarchy no matter what content is added.
-- **Key insight for ReportPilot:** The concept of Smart Slides — where the layout adapts to content length — is powerful. Our PPTX templates currently have fixed-size text boxes. If narrative text is too long, it gets cut off. We should consider auto-sizing text or splitting long content across slides.
-- Source: [Beautiful.ai Smart Slides](https://www.beautiful.ai/smart-slides)
+- **Approach:** "Smart Slides" — 300+ intelligent layout templates with embedded design-rule engines. Auto-adjusts spacing, alignment, hierarchy, and chart sizing as content changes. Acts as "your own personal creative director."
+- **What makes it professional:** Design guardrails prevent bad slides. Users cannot freely position elements — the system controls layout logic. Content-aware reflow when text is added/removed.
+- **Key insight:** The concept of content-adaptive layouts is powerful. Our fixed-size text boxes should implement auto-sizing when content is too long.
+- Sources: [Beautiful.ai Smart Slides](https://www.beautiful.ai/smart-slides), [Beautiful.ai Blog](https://www.beautiful.ai/blog/what-the-heck-are-smart-slides)
 
-### Tome
-- **Approach:** AI-first document creation. Users provide a prompt and Tome generates a complete "tome" (a hybrid of slides + documents). Web-native format with PPTX export.
-- **Design:** Clean, modern layouts with generous whitespace. Layouts are dynamic — they flex based on content.
-- **Key insight:** Their "document + slides" hybrid format is interesting. For long narratives, a document-style page might work better than cramming text into a slide.
+### Tome (DEFUNCT — March 2025)
+- **What happened:** Pivoted away from presentations. Team became Lightfield (sales CRM). AngelList acquired the "Tome" brand for legal document summarization.
+- **Key lesson:** Pure AI-generated presentations without strong data integration and professional workflow were not a sustainable business. Presentations need real data and a clear business workflow (like client reporting) to succeed.
+- Sources: [Tome Pivot Analysis](https://skywork.ai/skypage/en/Tome-AI:-A-2025-Deep-Dive), [Tome Review - Why It Failed](https://slidepeak.com/blog/tome-ai-review)
 
 ### SlidesAI
-- **Approach:** Google Slides add-on. Users provide text, SlidesAI generates a presentation from it.
-- **Design:** Template-based — users select a theme, then AI populates slides.
-- **Limited control:** The output quality depends heavily on the input text quality.
+- **Approach:** Google Slides add-on. Enter text → select presentation type (General, Educational, Sales, Conference) → AI generates slides.
+- **Unique features:** (1) Outline preview step before generation. (2) Presentation type presets that adapt AI behavior. (3) Works within Google Slides (familiar environment).
+- Sources: [SlidesAI Help](https://help.slidesai.io/articles/0023417), [SlidesAI Homepage](https://www.slidesai.io/)
 
 ### Canva
-- **Approach:** Design-first platform with programmatic export via API. Templates are designed by professionals, users customize via drag-and-drop.
-- **PPTX export:** Available but lossy — some Canva-specific effects (animations, custom fonts) don't survive PPTX conversion.
-- **Key insight:** Canva's strength is having thousands of professionally-designed templates. For ReportPilot, having MORE template variety (6+ options) gives users the feeling of a premium tool.
+- **Approach:** Design-first platform with 12-column grid system. Layouts snap to grid automatically. API supports async PPTX export.
+- **PPTX via API:** Async export (start job → poll → download). Rate limits: 750 exports/5min per integration. URLs valid 24 hours.
+- **Key insight:** Grid-based constraint system ensures layout quality. Async export pattern is a good API design for batch generation.
+- Sources: [Canva Connect API - Exports](https://www.canva.dev/docs/connect/api-reference/exports/), [Canva Design System](https://www.canva.dev/blog/engineering/adding-responsiveness-to-canvas-design-system/)
+
+### Presenton (Open-Source Reference)
+- **Approach:** Uses HTML + Tailwind CSS for template design, converts to PPTX at export time. Decouples design system from PPTX format constraints.
+- **Features:** Custom themes (classic, modern, professional), local execution, API for programmatic generation, multiple LLM providers.
+- **Key insight:** HTML/CSS → PPTX conversion decouples design from format. Worth monitoring for ideas but adds conversion complexity.
+- Sources: [Presenton GitHub](https://github.com/presenton/presenton), [Presenton Docs](https://docs.presenton.ai)
 
 ---
 
@@ -84,99 +90,101 @@
 
 ### Template-First vs Code-Generated
 
-**Template-first (recommended — what we use):**
-- Create a fully designed PPTX in PowerPoint or pptxgenjs
-- Load it as the starting point in python-pptx
-- Replace placeholders with data
-- **Pro:** Professional design quality, easy to iterate on visuals
-- **Con:** Fixed layouts — doesn't adapt to variable content length
-- **Who uses this:** TapClicks, Slideform, Rollstack, NinjaCat, ReportPilot
+| Approach | Pros | Cons | Who Uses It |
+|----------|------|------|-------------|
+| **Template-first** (upload .pptx, fill placeholders) | Professional design quality, easy visual iteration, no design-in-code | Fixed layouts, doesn't adapt to content length | TapClicks, Slideform, Rollstack, NinjaCat, **ReportPilot** |
+| **Code-generated** (build shapes from scratch) | Full programmatic control, dynamic layouts | Very hard to make look professional | Nobody at premium tier |
+| **Hybrid** (design in pptxgenjs, populate in python-pptx) | Design control + data flexibility | Two-step process | **ReportPilot** |
+| **AI-generated** (prompt → slides) | Fastest creation, no template needed | Unpredictable output, inconsistent quality | Gamma, Beautiful.ai (with guardrails) |
 
-**Code-generated:**
-- Build every shape, text box, and image from scratch in code
-- **Pro:** Full programmatic control, dynamic layouts
-- **Con:** Very difficult to make look professional — design is in code
-- **Who uses this:** Nobody at the premium tier. It's used for quick/dirty generation only.
+**Our hybrid approach (pptxgenjs → python-pptx) is confirmed as the strongest approach** because:
+1. pptxgenjs generates cleaner XML than PowerPoint's save format
+2. Full control over shape positions via code
+3. No dependency on unpredictable placeholder IDs from slide masters
+4. Easier to maintain and version-control than binary .pptx files
+5. No format conversion artifacts (unlike Gamma's card-to-PPTX)
 
-**Hybrid (our approach):**
-- Templates designed in pptxgenjs (code, but design-focused code)
-- Population via python-pptx (data insertion)
-- Charts via matplotlib (image generation)
-- This is the right approach — keep it.
+### python-pptx Advanced Capabilities
 
-### python-pptx Best Practices
+- **Gradient fills:** `shape.fill.gradient()` → configure stops with position (0.0-1.0) and color. Linear path supported.
+- **Shadow effects:** `shape.shadow` → ShadowFormat. If `p:spPr/a:effectLst` is present, ALL effects must be explicit.
+- **Rounded rectangles:** `MSO_SHAPE.ROUNDED_RECTANGLE` auto shape.
+- **Theme colors:** `MSO_THEME_COLOR` constants (Accent 1-6, Background, Text) with brightness adjustable -1.0 to 1.0.
+- **Text autofit:** `text_frame.auto_size` can shrink text to fit containers.
+- Sources: [python-pptx Gradient](https://python-pptx.readthedocs.io/en/latest/dev/analysis/dml-gradient.html), [python-pptx Shadow](https://python-pptx.readthedocs.io/en/latest/dev/analysis/shp-shadow.html)
 
-**Slide Master approach:**
-- Create a PPTX in PowerPoint with slide masters containing all brand elements (logos, colors, fonts)
-- Delete all slides, save as template
-- In python-pptx, use `prs.slide_layouts[n]` to add slides with the correct master layout
-- Placeholders in slide masters have predictable IDs — use them for data population
-- **Key limitation:** python-pptx's slide master API is limited. Complex masters with custom placeholders can be fragile.
+### pptxgenjs Capabilities & Limitations
 
-**Our approach (pptxgenjs → python-pptx) is actually better because:**
-- pptxgenjs generates cleaner XML than PowerPoint's save format
-- We have full control over shape positions via code
-- No dependency on unpredictable placeholder IDs from slide masters
-- Easier to maintain and version-control than binary .pptx template files
-
-### pptxgenjs Capabilities
-
-**What it can do well:**
-- Shapes with fills, shadows, rounded corners
-- Text boxes with precise positioning, font control, line spacing
-- Tables with cell-level styling
-- Charts (native OOXML charts — live, editable in PowerPoint)
-- Images (embedded PNGs)
-- Slide backgrounds (solid color)
-
-**What it can't do:**
-- True gradient fills on shapes (workaround: overlapping semi-transparent shapes)
-- Embedded videos (technically possible but fragile)
-- Complex animations/transitions
-- Font embedding (uses system fonts only)
+- **Can do:** Shapes with fills/shadows/rounded corners, text boxes with precise positioning, tables, charts (native OOXML), images, slide backgrounds
+- **Cannot do:** True gradient fills on shapes (workaround: overlapping semi-transparent shapes or gradient PNG backgrounds), font embedding, complex animations
+- **Slide Masters:** Supports master slide definitions with placeholders for consistent styles and static elements
+- Sources: [PptxGenJS GitHub](https://github.com/gitbrent/PptxGenJS), [PptxGenJS Demos](https://gitbrent.github.io/PptxGenJS/demos/)
 
 ---
 
-## 4. Key Takeaways for ReportPilot
+## 4. Key Patterns Across All Tools
 
-### What We Should Copy
+### Pattern 1: Template-First is Universal
+Every successful reporting tool uses pre-designed templates. Code populates data — it never builds layouts from scratch.
 
-1. **Slideform's bulk generation concept.** When we add scheduled reports, generating 10-50 client reports in one batch is a clear value proposition.
+### Pattern 2: AI for Narrative, Not Layout
+Best tools use AI for textual insights/commentary, not layout decisions. Layout should be deterministic from templates.
 
-2. **Beautiful.ai's content-adaptive layouts.** Our current templates have fixed text boxes. We should add auto-text-size reduction when content is too long (python-pptx can set `autofit` on text frames).
+### Pattern 3: Placeholder/Pragma Systems
+Slideform's `{{ }}` pragmas and python-pptx's placeholder indices are the most practical for template-to-data binding.
 
-3. **Rollstack's AI summary layer.** We already do this with GPT-4o. We're ahead of most competitors here.
+### Pattern 4: Two-Tier Architecture
+Separate the design system (template) from the data engine (population code). Agencies own visual brand; tool handles automation.
 
-4. **TapClicks' user-uploadable templates.** Future feature: let agencies upload their own PPTX template and map our placeholders to it. This is the ultimate white-label feature.
+### Pattern 5: Building in PPTX > Converting to PPTX
+Direct PPTX generation (python-pptx) avoids conversion artifacts that plague tools converting from proprietary formats.
 
-5. **More template variety.** Canva wins partly because they have thousands of templates. Going from 3 to 6 is good. Going to 10-12 would be better for marketing.
+---
 
-### What We Should NOT Copy
+## 5. What ReportPilot Should Copy
 
-1. **Gamma/Tome's AI-generated-from-scratch approach.** Too unpredictable for client reports where consistency matters.
+1. **Slideform's bulk generation** — batch 10-50 client reports from one template (for scheduled reports)
+2. **Beautiful.ai's content-adaptive layouts** — auto-shrink text when narrative is too long (`text_frame.auto_size`)
+3. **TapClicks' user-uploadable templates** (future) — let agencies upload their own .pptx
+4. **NinjaCat's report lifecycle** — status tracking (Generating → Ready → Delivered → Error)
+5. **Social Status' multi-format export** — PPTX + PDF + Google Slides from one data source
+6. **SlidesAI's outline preview** — show report structure before generating
+7. **More template variety** — 6 templates is good, 10-12 is better for marketing
 
-2. **Web-native formats.** Our PPTX-first approach is the differentiator. Don't dilute it with a web viewer.
+## 6. What ReportPilot Should NOT Copy
 
-3. **Native OOXML charts in pptxgenjs.** While technically possible, matplotlib charts rendered as high-res PNGs give us more styling control and consistent rendering across platforms.
+1. **Gamma/Tome's AI-generated-from-scratch** — too unpredictable for client reports
+2. **Web-native formats** — PPTX-first is our differentiator
+3. **Native OOXML charts** — matplotlib PNGs give more styling control and consistent rendering
 
-### Our Competitive Advantages (Confirmed)
+## 7. Confirmed Competitive Advantages
 
-1. **AI narrative + PPTX in one tool** — No competitor combines GPT-4o-quality narrative with branded editable PowerPoint at $19-69/month.
-2. **6 diverse templates** — More visual variety than any affordable reporting tool.
-3. **Template + populate approach** — Produces cleaner, more consistent output than AI-generated-from-scratch tools.
-4. **Charts as images** — Renders identically on every system, unlike native OOXML charts which can look different depending on the PowerPoint version.
+1. **AI narrative + PPTX in one tool** at $19-69/month — no competitor combines this
+2. **6 diverse templates** — more visual variety than any affordable reporting tool
+3. **Template + populate approach** — produces cleaner output than AI-generated-from-scratch
+4. **Charts as images** — render identically on every system, unlike native OOXML charts
 
 ---
 
 ## Sources
 
-- [NinjaCat Reporting](https://www.ninjacat.io/resources/optimized-client-reporting-for-agencies)
-- [TapClicks Report Studio](https://www.tapclicks.com/tapclicks-report-studio)
+- [NinjaCat Template Builder](https://docs.ninjacat.io/docs/accessing-the-ninjacat-template-builder)
+- [NinjaCat AI Insights Widgets](https://docs.ninjacat.io/docs/using-the-text-heading-ai-insights-generator-widgets)
+- [TapClicks SmartSlides](https://support.tapclicks.com/hc/en-us/articles/41624880687259)
+- [TapClicks PPT Templates](https://support.tapclicks.com/hc/en-us/articles/360039914014)
 - [Rollstack Product](https://www.rollstack.com/product)
 - [Rollstack AI Reporting Guide](https://www.rollstack.com/articles/best-powerpoint-ai-tools-2025-guide-for-ai-reporting-in-powerpoint)
-- [Slideform Marketing Reports](https://slideform.co/blog/automate-marketing-reports-with-slideform-ai)
-- [Slideform Scheduled Generation](https://slideform.co/blog/autogenerate-slides-on-a-schedule)
-- [Gamma.app Review](https://skywork.ai/skypage/en/Gamma-App-In-Depth-Review-2025-The-Ultimate-Guide-to-AI-Presentations/1973913493482172416)
+- [Slideform Data Mapping](https://helpcenter.slideform.co/data-mapping)
+- [Slideform Data Warehouse](https://slideform.co/blog/automate-powerpoint-reports-from-a-data-warehouse)
+- [Social Status Reports](https://www.socialstatus.io/reports/)
+- [Gamma Help - Export](https://help.gamma.app/en/articles/8022861)
 - [Beautiful.ai Smart Slides](https://www.beautiful.ai/smart-slides)
+- [Beautiful.ai Blog](https://www.beautiful.ai/blog/what-the-heck-are-smart-slides)
+- [Tome Pivot Analysis](https://skywork.ai/skypage/en/Tome-AI:-A-2025-Deep-Dive)
+- [SlidesAI Help](https://help.slidesai.io/articles/0023417)
+- [Canva Connect API - Exports](https://www.canva.dev/docs/connect/api-reference/exports/)
+- [Canva Design System](https://www.canva.dev/blog/engineering/adding-responsiveness-to-canvas-design-system/)
+- [Presenton GitHub](https://github.com/presenton/presenton)
 - [python-pptx Documentation](https://python-pptx.readthedocs.io/en/latest/)
-- [python-pptx Slide Layouts](https://python-pptx.readthedocs.io/en/latest/user/slides.html)
+- [PptxGenJS GitHub](https://github.com/gitbrent/PptxGenJS)
+- [PptxGenJS Demos](https://gitbrent.github.io/PptxGenJS/demos/)
