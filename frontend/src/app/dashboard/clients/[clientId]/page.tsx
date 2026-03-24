@@ -10,12 +10,15 @@ import {
   Globe, Mail, Building2, Pencil, Trash2, Check, X as XIcon,
   FileText, Sparkles, ChevronRight, Calendar, BarChart2,
   Link2, Unlink, Loader2, Megaphone, Settings2, Upload, Clock,
+  TrendingUp, Search, Image as ImageIcon, Database,
 } from 'lucide-react'
-import { clientsApi, reportsApi, connectionsApi, authApi, scheduledReportsApi, uploadClientLogo } from '@/lib/api'
+import { clientsApi, reportsApi, connectionsApi, authApi, scheduledReportsApi, uploadClientLogo, customSectionApi } from '@/lib/api'
 import type { ScheduledReport, ScheduledReportPayload } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
+import LanguageSelector from '@/components/clients/LanguageSelector'
+import RichTextEditor from '@/components/clients/RichTextEditor'
+import CSVUploadDialog from '@/components/clients/CSVUploadDialog'
 import type { Client, Report, Connection, ReportConfig } from '@/types'
 import { DEFAULT_REPORT_CONFIG } from '@/types'
 
@@ -56,11 +59,20 @@ export default function ClientDetailPage({ params }: Props) {
   const [genError,          setGenError]          = useState<string | null>(null)
 
   // Connections
-  const [connections,       setConnections]       = useState<Connection[]>([])
+  const [connections,        setConnections]        = useState<Connection[]>([])
   const [connectionsLoading, setConnectionsLoading] = useState(true)
-  const [connectingGa4,     setConnectingGa4]     = useState(false)
-  const [connectingMeta,    setConnectingMeta]    = useState(false)
-  const [disconnecting,     setDisconnecting]     = useState<string | null>(null)
+  const [connectingGa4,      setConnectingGa4]      = useState(false)
+  const [connectingMeta,     setConnectingMeta]     = useState(false)
+  const [connectingGads,     setConnectingGads]     = useState(false)
+  const [connectingGsc,      setConnectingGsc]      = useState(false)
+  const [disconnecting,      setDisconnecting]      = useState<string | null>(null)
+
+  // CSV Upload dialog
+  const [showCsvUpload,      setShowCsvUpload]      = useState(false)
+
+  // Custom section image
+  const customImgInputRef     = useRef<HTMLInputElement>(null)
+  const [customImgUploading,  setCustomImgUploading] = useState(false)
 
   // Report configuration
   const [reportConfig, setReportConfig]   = useState<ReportConfig>(DEFAULT_REPORT_CONFIG)
@@ -176,6 +188,7 @@ export default function ClientDetailPage({ params }: Props) {
         primary_contact_email: editValues.primary_contact_email ?? undefined,
         goals_context:         editValues.goals_context         ?? undefined,
         notes:                 editValues.notes                 ?? undefined,
+        report_language:       editValues.report_language       ?? 'en',
       })
       setClient(updated)
       setEditing(false)
@@ -223,6 +236,45 @@ export default function ClientDetailPage({ params }: Props) {
     } catch {
       setConnectingMeta(false)
       setError('Failed to start Meta Ads authorisation. Please try again.')
+    }
+  }
+
+  const handleConnectGoogleAds = async () => {
+    setConnectingGads(true)
+    try {
+      const { url } = await authApi.getGoogleAdsAuthUrl()
+      sessionStorage.setItem('gads_connect_client_id', clientId)
+      window.location.href = url
+    } catch {
+      setConnectingGads(false)
+      setError('Failed to start Google Ads authorisation. Please try again.')
+    }
+  }
+
+  const handleConnectSearchConsole = async () => {
+    setConnectingGsc(true)
+    try {
+      const { url } = await authApi.getSearchConsoleAuthUrl()
+      sessionStorage.setItem('gsc_connect_client_id', clientId)
+      window.location.href = url
+    } catch {
+      setConnectingGsc(false)
+      setError('Failed to start Search Console authorisation. Please try again.')
+    }
+  }
+
+  const handleCustomSectionImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !client) return
+    setCustomImgUploading(true)
+    try {
+      const { url } = await customSectionApi.uploadImage(client.id, file)
+      setReportConfig((c) => ({ ...c, custom_section_image_url: url }))
+    } catch {
+      setError('Image upload failed. Max 5 MB, PNG/JPEG/WebP.')
+    } finally {
+      setCustomImgUploading(false)
+      if (customImgInputRef.current) customImgInputRef.current.value = ''
     }
   }
 
@@ -498,15 +550,31 @@ export default function ClientDetailPage({ params }: Props) {
 
           <Field label="Goals & context">
             {editing ? (
-              <Textarea
+              <textarea
                 value={editValues.goals_context ?? ''}
                 onChange={(e) => setEditValues((v) => ({ ...v, goals_context: e.target.value }))}
                 placeholder="Goals, KPIs, context for AI reports…"
                 rows={4}
+                className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
               />
             ) : (
               <span className="whitespace-pre-wrap">
                 {client.goals_context ?? <span className="text-slate-400">—</span>}
+              </span>
+            )}
+          </Field>
+
+          <Field label="Report language">
+            {editing ? (
+              <LanguageSelector
+                value={editValues.report_language ?? 'en'}
+                onChange={(lang) => setEditValues((v) => ({ ...v, report_language: lang }))}
+              />
+            ) : (
+              <span className="text-slate-700">
+                {client.report_language && client.report_language !== 'en'
+                  ? client.report_language.toUpperCase()
+                  : 'English (default)'}
               </span>
             )}
           </Field>
@@ -641,10 +709,163 @@ export default function ClientDetailPage({ params }: Props) {
                   </div>
                 )
               })()}
+
+              {/* Google Ads row */}
+              {(() => {
+                const gads = connections.find((c) => c.platform === 'google_ads')
+                const gadsHealthy = gads?.status === 'active'
+                return gads ? (
+                  <div className={`flex items-center justify-between rounded-lg border px-4 py-3 ${gadsHealthy ? 'border-emerald-100 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
+                    <div className="flex items-center gap-3">
+                      <TrendingUp className={`h-4 w-4 shrink-0 ${gadsHealthy ? 'text-emerald-600' : 'text-amber-500'}`} />
+                      <div>
+                        <p className="text-sm font-medium text-slate-800">{gads.account_name}</p>
+                        <p className="text-xs text-slate-400">{gads.account_id}</p>
+                      </div>
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${gadsHealthy ? 'text-emerald-700 bg-emerald-100' : 'text-amber-700 bg-amber-100'}`}>
+                        {gadsHealthy ? 'Active' : gads.status === 'error' ? 'Error' : 'Expired'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {!gadsHealthy && (
+                        <button
+                          onClick={handleConnectGoogleAds}
+                          disabled={connectingGads}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 transition-colors disabled:opacity-60"
+                        >
+                          {connectingGads ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2 className="h-3 w-3" />}
+                          Reconnect
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleDisconnect(gads.id)}
+                        disabled={disconnecting === gads.id}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-60"
+                      >
+                        {disconnecting === gads.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unlink className="h-3 w-3" />}
+                        Disconnect
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <TrendingUp className="h-4 w-4 text-slate-400 shrink-0" />
+                      <div>
+                        <p className="text-sm font-medium text-slate-700">Google Ads</p>
+                        <p className="text-xs text-slate-400">Not connected — reports use sample data</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleConnectGoogleAds}
+                      disabled={connectingGads}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-800 transition-colors disabled:opacity-60"
+                    >
+                      {connectingGads ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2 className="h-3 w-3" />}
+                      Connect Google Ads
+                    </button>
+                  </div>
+                )
+              })()}
+
+              {/* Search Console row */}
+              {(() => {
+                const gsc = connections.find((c) => c.platform === 'search_console')
+                const gscHealthy = gsc?.status === 'active'
+                return gsc ? (
+                  <div className={`flex items-center justify-between rounded-lg border px-4 py-3 ${gscHealthy ? 'border-emerald-100 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
+                    <div className="flex items-center gap-3">
+                      <Search className={`h-4 w-4 shrink-0 ${gscHealthy ? 'text-emerald-600' : 'text-amber-500'}`} />
+                      <div>
+                        <p className="text-sm font-medium text-slate-800">{gsc.account_name}</p>
+                        <p className="text-xs text-slate-400">{gsc.account_id}</p>
+                      </div>
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${gscHealthy ? 'text-emerald-700 bg-emerald-100' : 'text-amber-700 bg-amber-100'}`}>
+                        {gscHealthy ? 'Active' : gsc.status === 'error' ? 'Error' : 'Expired'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {!gscHealthy && (
+                        <button
+                          onClick={handleConnectSearchConsole}
+                          disabled={connectingGsc}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 transition-colors disabled:opacity-60"
+                        >
+                          {connectingGsc ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2 className="h-3 w-3" />}
+                          Reconnect
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleDisconnect(gsc.id)}
+                        disabled={disconnecting === gsc.id}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-60"
+                      >
+                        {disconnecting === gsc.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unlink className="h-3 w-3" />}
+                        Disconnect
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <Search className="h-4 w-4 text-slate-400 shrink-0" />
+                      <div>
+                        <p className="text-sm font-medium text-slate-700">Google Search Console</p>
+                        <p className="text-xs text-slate-400">Not connected — SEO slides use sample data</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleConnectSearchConsole}
+                      disabled={connectingGsc}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-800 transition-colors disabled:opacity-60"
+                    >
+                      {connectingGsc ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2 className="h-3 w-3" />}
+                      Connect Search Console
+                    </button>
+                  </div>
+                )
+              })()}
+
+              {/* CSV / Manual data row */}
+              <div className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <Database className="h-4 w-4 text-slate-400 shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-slate-700">CSV / Manual Data</p>
+                    <p className="text-xs text-slate-400">
+                      {connections.filter((c) => c.platform.startsWith('csv_')).length > 0
+                        ? `${connections.filter((c) => c.platform.startsWith('csv_')).length} CSV source(s) connected`
+                        : 'Upload LinkedIn Ads, TikTok, Shopify, or custom metrics'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowCsvUpload(true)}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-800 transition-colors"
+                >
+                  <Upload className="h-3 w-3" />
+                  Upload CSV
+                </button>
+              </div>
             </div>
           )}
         </CardContent>
       </Card>
+
+      {/* CSV Upload dialog */}
+      {showCsvUpload && (
+        <CSVUploadDialog
+          clientId={clientId}
+          onClose={() => setShowCsvUpload(false)}
+          onSuccess={() => {
+            // Refresh connections list so new CSV source appears
+            connectionsApi.listByClient(clientId)
+              .then(({ connections: data }) => setConnections(data))
+              .catch(() => {/* non-fatal */})
+            setShowCsvUpload(false)
+          }}
+        />
+      )}
 
       {/* ── Generate Report ─────────────────────────────────────────────── */}
       <Card>
@@ -843,14 +1064,54 @@ export default function ClientDetailPage({ params }: Props) {
                 }
                 placeholder="Section title…"
               />
-              <Textarea
+              <RichTextEditor
                 value={reportConfig.custom_section_text}
-                onChange={(e) =>
-                  setReportConfig((c) => ({ ...c, custom_section_text: e.target.value }))
+                onChange={(val) =>
+                  setReportConfig((c) => ({ ...c, custom_section_text: val }))
                 }
-                placeholder="Write your custom commentary here — strategic notes, agency analysis, client context…"
-                rows={4}
+                placeholder="Write your custom commentary — use **bold**, ## headings, - bullets, 1. numbered lists…"
+                rows={6}
               />
+
+              {/* Custom section image */}
+              <div className="flex items-center gap-3">
+                {reportConfig.custom_section_image_url && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={reportConfig.custom_section_image_url}
+                    alt="Custom section"
+                    className="h-16 w-24 object-cover rounded-md border border-indigo-200"
+                  />
+                )}
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => customImgInputRef.current?.click()}
+                    disabled={customImgUploading}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-indigo-200 bg-white px-3 py-1.5 text-xs text-indigo-700 hover:bg-indigo-50 transition-colors disabled:opacity-60"
+                  >
+                    {customImgUploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <ImageIcon className="h-3 w-3" />}
+                    {customImgUploading ? 'Uploading…' : reportConfig.custom_section_image_url ? 'Replace image' : 'Add image'}
+                  </button>
+                  {reportConfig.custom_section_image_url && (
+                    <button
+                      type="button"
+                      onClick={() => setReportConfig((c) => ({ ...c, custom_section_image_url: undefined }))}
+                      className="ml-2 text-xs text-rose-500 hover:text-rose-700"
+                    >
+                      Remove
+                    </button>
+                  )}
+                  <p className="mt-1 text-[11px] text-slate-400">PNG / JPEG / WebP · max 5 MB · shown on slide right</p>
+                </div>
+                <input
+                  ref={customImgInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={handleCustomSectionImageUpload}
+                  className="hidden"
+                />
+              </div>
             </div>
           )}
 

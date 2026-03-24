@@ -62,6 +62,7 @@ export interface ClientCreatePayload {
 
 export interface ClientUpdatePayload extends Partial<ClientCreatePayload> {
   is_active?: boolean
+  report_language?: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   report_config?: any  // ReportConfig — use any to avoid circular import
 }
@@ -166,6 +167,16 @@ export const authApi = {
 
   metaCallback: async (code: string): Promise<MetaCallbackResponse> => {
     const { data } = await api.post('/api/auth/meta/callback', { code })
+    return data
+  },
+
+  getGoogleAdsAuthUrl: async (): Promise<{ url: string }> => {
+    const { data } = await api.get('/api/auth/google-ads/url')
+    return data
+  },
+
+  getSearchConsoleAuthUrl: async (): Promise<{ url: string }> => {
+    const { data } = await api.get('/api/auth/search-console/url')
     return data
   },
 }

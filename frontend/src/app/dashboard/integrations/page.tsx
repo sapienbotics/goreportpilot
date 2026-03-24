@@ -9,7 +9,7 @@ import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import {
   BarChart2, TrendingUp, Megaphone, CheckCircle,
-  ArrowRight, AlertTriangle, ExternalLink,
+  ArrowRight, AlertTriangle, ExternalLink, Search, FileText,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { clientsApi } from '@/lib/api'
@@ -49,7 +49,23 @@ const PLATFORMS: Platform[] = [
     description:
       'Connect Google Ads accounts to include search, display, and shopping campaign data in your reports.',
     icon: <TrendingUp className="h-6 w-6 text-green-500" />,
-    status: 'coming_soon',
+    status: 'available',
+  },
+  {
+    id: 'search_console',
+    name: 'Google Search Console',
+    description:
+      'Import organic search impressions, clicks, average position, and top queries to power the SEO slides in your reports.',
+    icon: <Search className="h-6 w-6 text-purple-500" />,
+    status: 'available',
+  },
+  {
+    id: 'csv_upload',
+    name: 'CSV / Manual Data',
+    description:
+      'Upload data from LinkedIn Ads, TikTok Ads, Mailchimp, Shopify, or any custom source using a simple CSV template.',
+    icon: <FileText className="h-6 w-6 text-slate-500" />,
+    status: 'available',
   },
 ]
 
