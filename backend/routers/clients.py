@@ -178,13 +178,18 @@ async def upload_client_logo(
     ext = (file.filename or "logo").rsplit(".", 1)[-1].lower()
     if ext not in ("png", "jpg", "jpeg", "gif", "webp"):
         ext = "png"
-    filename  = f"{uuid.uuid4().hex[:12]}.{ext}"
+
+    # Auto-remove background for best results on all slide themes
+    from services.logo_processor import process_logo_upload
+    processed_bytes, final_ext, bg_removed = process_logo_upload(contents, ext)
+
+    filename  = f"{uuid.uuid4().hex[:12]}.{final_ext}"
     save_dir  = os.path.join(_CLIENT_LOGOS, client_id)
     os.makedirs(save_dir, exist_ok=True)
     save_path = os.path.join(save_dir, filename)
 
     with open(save_path, "wb") as f:
-        f.write(contents)
+        f.write(processed_bytes)
 
     public_url = f"{app_settings.BACKEND_URL}/static/logos/clients/{client_id}/{filename}"
 
@@ -193,5 +198,5 @@ async def upload_client_logo(
         "updated_at": datetime.utcnow().isoformat(),
     }).eq("id", client_id).eq("user_id", user_id).execute()
 
-    logger.info("Client logo uploaded for client %s → %s", client_id, public_url)
-    return {"url": public_url}
+    logger.info("Client logo uploaded for client %s → %s (bg_removed=%s)", client_id, public_url, bg_removed)
+    return {"url": public_url, "bg_removed": bg_removed}

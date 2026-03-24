@@ -196,6 +196,9 @@ VISUAL_TEMPLATES = {
     "modern_clean":    os.path.join(_TEMPLATES_DIR, "modern_clean.pptx"),
     "dark_executive":  os.path.join(_TEMPLATES_DIR, "dark_executive.pptx"),
     "colorful_agency": os.path.join(_TEMPLATES_DIR, "colorful_agency.pptx"),
+    "bold_geometric":  os.path.join(_TEMPLATES_DIR, "bold_geometric.pptx"),
+    "minimal_elegant": os.path.join(_TEMPLATES_DIR, "minimal_elegant.pptx"),
+    "gradient_modern": os.path.join(_TEMPLATES_DIR, "gradient_modern.pptx"),
 }
 
 # Slide index mapping — each template has exactly 9 slides in this order

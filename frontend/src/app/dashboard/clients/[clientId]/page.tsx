@@ -51,7 +51,7 @@ export default function ClientDetailPage({ params }: Props) {
   const [periodStart,       setPeriodStart]       = useState(defaultRange.start)
   const [periodEnd,         setPeriodEnd]         = useState(defaultRange.end)
   const [selectedTemplate,  setSelectedTemplate]  = useState<'full' | 'summary' | 'brief'>('full')
-  const [visualTemplate,    setVisualTemplate]    = useState<'modern_clean' | 'dark_executive' | 'colorful_agency'>('modern_clean')
+  const [visualTemplate,    setVisualTemplate]    = useState<'modern_clean' | 'dark_executive' | 'colorful_agency' | 'bold_geometric' | 'minimal_elegant' | 'gradient_modern'>('modern_clean')
   const [generating,        setGenerating]        = useState(false)
   const [genError,          setGenError]          = useState<string | null>(null)
 
@@ -700,23 +700,33 @@ export default function ClientDetailPage({ params }: Props) {
                 <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
                   Visual Style
                 </label>
-                <div className="flex flex-wrap gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   {([
-                    { value: 'modern_clean',    label: 'Modern Clean',    desc: 'Light &amp; minimal' },
-                    { value: 'dark_executive',  label: 'Dark Executive',  desc: 'Bold dark theme' },
-                    { value: 'colorful_agency', label: 'Colorful Agency', desc: 'Vibrant orange accents' },
+                    { value: 'modern_clean',    label: 'Modern Clean',      desc: 'Light & professional',  colors: ['#4338CA', '#FAFAFA', '#FFFFFF'] },
+                    { value: 'dark_executive',  label: 'Dark Executive',    desc: 'Premium dark theme',    colors: ['#06B6D4', '#0F172A', '#1E293B'] },
+                    { value: 'colorful_agency', label: 'Colorful Agency',   desc: 'Vibrant & creative',    colors: ['#F97316', '#8B5CF6', '#14B8A6'] },
+                    { value: 'bold_geometric',  label: 'Bold Geometric',    desc: 'Strong shapes & impact',colors: ['#4338CA', '#3730A3', '#FFFFFF'] },
+                    { value: 'minimal_elegant', label: 'Minimal Elegant',   desc: 'Ultra-clean whitespace',colors: ['#0F172A', '#FFFFFF', '#E2E8F0'] },
+                    { value: 'gradient_modern', label: 'Gradient Modern',   desc: 'Warm startup aesthetic',colors: ['#F97316', '#F43F5E', '#8B5CF6'] },
                   ] as const).map((opt) => (
                     <button
                       key={opt.value}
                       onClick={() => setVisualTemplate(opt.value)}
-                      className={`flex flex-col items-start px-4 py-2.5 rounded-lg border text-left transition-colors ${
+                      className={`flex flex-col items-start px-3 py-2.5 rounded-lg border text-left transition-colors ${
                         visualTemplate === opt.value
                           ? 'bg-indigo-700 border-indigo-700 text-white'
                           : 'bg-white border-slate-200 text-slate-700 hover:border-indigo-300 hover:bg-indigo-50'
                       }`}
                     >
-                      <span className="text-sm font-semibold">{opt.label}</span>
-                      <span className={`text-xs mt-0.5 ${visualTemplate === opt.value ? 'text-indigo-200' : 'text-slate-400'}`}>
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="flex -space-x-0.5">
+                          {opt.colors.map((c, i) => (
+                            <div key={i} className="w-3 h-3 rounded-full border border-white/50" style={{ backgroundColor: c }} />
+                          ))}
+                        </div>
+                        <span className="text-sm font-semibold">{opt.label}</span>
+                      </div>
+                      <span className={`text-xs ${visualTemplate === opt.value ? 'text-indigo-200' : 'text-slate-400'}`}>
                         {opt.desc}
                       </span>
                     </button>

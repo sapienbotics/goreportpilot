@@ -1,5 +1,5 @@
 /**
- * ReportPilot — Generate all 3 PPTX templates.
+ * ReportPilot — Generate all 6 PPTX templates.
  * Run: node scripts/create_all_templates.js
  */
 const { execSync } = require("child_process");
@@ -9,6 +9,9 @@ const scripts = [
   "create_modern_clean.js",
   "create_dark_executive.js",
   "create_colorful_agency.js",
+  "create_bold_geometric.js",
+  "create_minimal_elegant.js",
+  "create_gradient_modern.js",
 ];
 
 for (const script of scripts) {
@@ -17,4 +20,4 @@ for (const script of scripts) {
   execSync(`node "${full}"`, { stdio: "inherit" });
 }
 
-console.log("\n\u2713 All 3 templates generated successfully.");
+console.log("\n\u2713 All 6 templates generated successfully.");
