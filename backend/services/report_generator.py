@@ -189,6 +189,11 @@ _RL_ROSE       = rl_colors.HexColor("#E11D48")
 # ── Template-based PowerPoint report generator ─────────────────────────────
 # ═══════════════════════════════════════════════════════════════════════════════
 
+from services.slide_selector import (
+    select_slides, select_kpis, get_slides_to_delete,
+    SLIDE_INDEX, TOTAL_TEMPLATE_SLIDES,
+)
+
 _TEMPLATES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                               "templates", "pptx")
 
@@ -201,7 +206,7 @@ VISUAL_TEMPLATES = {
     "gradient_modern": os.path.join(_TEMPLATES_DIR, "gradient_modern.pptx"),
 }
 
-# Slide index mapping — each template has exactly 9 slides in this order
+# Legacy 9-slide mapping (for backwards compatibility with existing templates)
 SLIDE_MAP = {
     "cover": 0,
     "executive_summary": 1,
@@ -213,6 +218,9 @@ SLIDE_MAP = {
     "next_steps": 7,
     "custom_section": 8,
 }
+
+# New 19-slide mapping from slide_selector
+SLIDE_MAP_V2 = SLIDE_INDEX
 
 
 def _fmt_num(val: Any) -> str:
@@ -255,27 +263,17 @@ def _build_replacements(
 ) -> dict[str, str]:
     """Build the {{placeholder}} → value replacement dictionary."""
     br = branding or {}
-    ga4  = data.get("ga4", {}).get("summary", {})
-    meta = data.get("meta_ads", {}).get("summary", {})
     cur_sym = _currency_symbol(data)
 
-    # Compute KPI values
-    roas     = meta.get("roas") or 0.0
-    prev_roas = meta.get("prev_roas") or 0.0
-    roas_chg = round((roas - prev_roas) / max(prev_roas, 0.01) * 100, 1) if prev_roas else None
-    cpa      = meta.get("cost_per_conversion") or 0.0
-    prev_cpa = meta.get("prev_cost_per_conversion") or 0.0
-    cpa_chg  = round((cpa - prev_cpa) / max(prev_cpa, 0.01) * 100, 1) if prev_cpa else None
-
+    # Smart KPI selection — pick the 6 best KPIs from available data
+    smart_kpis = select_kpis(data, currency_symbol=cur_sym)
     kpis = [
-        ("SESSIONS",     _fmt_num(ga4.get("sessions", 0)),        _fmt_change(ga4.get("sessions_change"))),
-        ("USERS",        _fmt_num(ga4.get("users", 0)),           _fmt_change(ga4.get("users_change"))),
-        ("CONVERSIONS",  _fmt_num(ga4.get("conversions", 0)),     _fmt_change(ga4.get("conversions_change"))),
-        ("AD SPEND",     f"{cur_sym}{_fmt_num(meta.get('spend', 0))}", _fmt_change(meta.get("spend_change"))),
-        ("ROAS",         f"{roas:.1f}x" if roas else "N/A",      _fmt_change(roas_chg)),
-        ("COST / CONV.", f"{cur_sym}{cpa:.2f}" if cpa else "N/A",
-         _fmt_change(-cpa_chg if cpa_chg is not None else None)),
+        (k["label"], k["value"], k["change"] or "")
+        for k in smart_kpis
     ]
+    # Pad to 6 if fewer available
+    while len(kpis) < 6:
+        kpis.append(("", "", ""))
 
     agency_name = br.get("agency_name") or client_info.get("agency_name") or "Your Agency"
     report_date = datetime.now().strftime("%B %d, %Y")
@@ -335,15 +333,37 @@ def _replace_charts(prs: Any, charts: Dict[str, str]) -> None:
     """Replace chart placeholder text boxes with actual chart PNG images.
 
     When a chart file exists: embeds the PNG and clears the placeholder text.
-    When no chart is available: replaces the placeholder with a subtle
-    "No data available for this period" message so raw {{…}} never leaks.
+    When no chart is available: deletes the placeholder shape entirely
+    (since our slide selector guarantees we only show slides with data).
     """
     chart_mapping = {
-        "{{chart_sessions}}":  charts.get("sessions"),
-        "{{chart_traffic}}":   charts.get("traffic_sources"),
-        "{{chart_spend}}":     charts.get("spend_conversions"),
-        "{{chart_campaigns}}": charts.get("campaigns"),
+        # GA4 charts
+        "{{chart_sessions}}":           charts.get("sessions"),
+        "{{chart_traffic}}":            charts.get("traffic_sources"),
+        "{{chart_device_breakdown}}":   charts.get("device_breakdown"),
+        "{{chart_top_pages}}":          charts.get("top_pages"),
+        "{{chart_new_vs_returning}}":   charts.get("new_vs_returning"),
+        "{{chart_top_countries}}":      charts.get("top_countries"),
+        "{{chart_bounce_rate}}":        charts.get("bounce_rate_trend"),
+        "{{chart_conversion_funnel}}":  charts.get("conversion_funnel"),
+        # Meta Ads charts
+        "{{chart_spend}}":              charts.get("spend_conversions"),
+        "{{chart_campaigns}}":          charts.get("campaigns"),
+        "{{chart_demographics}}":       charts.get("audience_demographics"),
+        "{{chart_placements}}":         charts.get("placements"),
+        # Google Ads charts
+        "{{chart_gads_spend}}":         charts.get("gads_spend_conversions"),
+        "{{chart_gads_campaigns}}":     charts.get("gads_campaigns"),
+        "{{chart_search_terms}}":       charts.get("search_terms_bar"),
+        # Search Console charts
+        "{{chart_seo_trend}}":          charts.get("seo_clicks_trend"),
+        "{{chart_top_queries}}":        charts.get("top_queries"),
     }
+
+    # Add CSV chart mappings dynamically
+    for key, path in charts.items():
+        if key.startswith("csv_"):
+            chart_mapping[f"{{{{chart_{key}}}}}"] = path
 
     available = [v for v in chart_mapping.values() if v]
     logger.debug("_replace_charts: %d chart paths available: %s",
@@ -726,16 +746,19 @@ def generate_pptx_report(
     """
     Generate a report by populating a pre-designed PPTX template.
 
+    Uses adaptive slide selection: only includes slides with actual data.
+    Never shows empty slides or N/A KPIs.
+
     Args:
-        data:             Combined GA4 + Meta Ads data dict.
+        data:             Combined data dict (ga4, meta_ads, google_ads, search_console, csv_sources).
         narrative:        AI-generated narrative sections dict.
         charts:           {chart_name: file_path} for PNG chart images.
         client_info:      Dict with "name", "agency_name".
         enabled_sections: Per-client section toggles (all True by default).
-        template:         "full" | "summary" | "brief" — controls which slides are kept.
+        template:         "full" | "summary" | "brief" — detail level.
         custom_section:   {"title": str, "text": str} for the optional custom section.
         branding:         Agency branding dict.
-        visual_template:  "modern_clean" | "dark_executive" | "colorful_agency".
+        visual_template:  "modern_clean" | "dark_executive" | "colorful_agency" | etc.
 
     Returns raw bytes suitable for writing to disk or streaming as a download.
     """
@@ -746,6 +769,12 @@ def generate_pptx_report(
         template_path = VISUAL_TEMPLATES["modern_clean"]
 
     prs = Presentation(template_path)
+    num_slides = len(prs.slides)
+
+    # Determine whether this is a legacy 9-slide template or new 19-slide template
+    use_legacy = num_slides <= 10
+    logger.info("Template %s has %d slides — using %s slide mapping",
+                visual_template, num_slides, "legacy" if use_legacy else "v2")
 
     # Build the full replacement map, then split out the keys that get
     # rich formatting (paragraphs / bullet lists) so the generic pass
@@ -756,24 +785,48 @@ def generate_pptx_report(
         if key in replacements:
             formatted_content[key] = replacements.pop(key)
 
+    # Also add new narrative keys for expanded sections
+    extra_narratives = {
+        "{{google_ads_narrative}}": _narrative_to_text(narrative.get("google_ads_performance", "")),
+        "{{seo_narrative}}": _narrative_to_text(narrative.get("seo_performance", "")),
+    }
+    for k, v in extra_narratives.items():
+        if v:
+            formatted_content[k] = v
+        else:
+            replacements[k] = ""  # Clear unused placeholders
+
     # ── Generic pass: single-value placeholders (names, KPIs, dates, logos) ─
     for slide in prs.slides:
         _replace_placeholders_in_slide(slide, replacements)
 
     # ── Formatted pass: narrative paragraphs ──────────────────────────────────
-    # Slide indices (0-based):
-    #   0 Cover  1 Exec Summary  2 KPI  3 Website  4 Meta Ads
-    #   5 Key Wins  6 Concerns  7 Next Steps  8 Custom
-    _NARRATIVE_SLIDES = {
-        1: "{{executive_summary}}",
-        3: "{{website_narrative}}",
-        4: "{{ads_narrative}}",
-    }
-    _LIST_SLIDES = {
-        5: ("{{key_wins}}",    "✓", RGBColor(0x05, 0x96, 0x69)),   # emerald
-        6: ("{{concerns}}",   "⚠", RGBColor(0xD9, 0x77, 0x06)),   # amber
-        7: ("{{next_steps}}", "→", _hex_to_rgb((branding or {}).get("brand_color") or "#4338CA")),
-    }
+    if use_legacy:
+        # Legacy 9-slide mapping
+        _NARRATIVE_SLIDES = {
+            1: "{{executive_summary}}",
+            3: "{{website_narrative}}",
+            4: "{{ads_narrative}}",
+        }
+        _LIST_SLIDES = {
+            5: ("{{key_wins}}",    "\u2713", RGBColor(0x05, 0x96, 0x69)),
+            6: ("{{concerns}}",   "\u26A0", RGBColor(0xD9, 0x77, 0x06)),
+            7: ("{{next_steps}}", "\u2192", _hex_to_rgb((branding or {}).get("brand_color") or "#4338CA")),
+        }
+    else:
+        # New 19-slide mapping
+        _NARRATIVE_SLIDES = {
+            SLIDE_INDEX["executive_summary"]: "{{executive_summary}}",
+            SLIDE_INDEX["website_traffic"]:   "{{website_narrative}}",
+            SLIDE_INDEX["meta_ads_overview"]: "{{ads_narrative}}",
+            SLIDE_INDEX["google_ads_overview"]: "{{google_ads_narrative}}",
+            SLIDE_INDEX["seo_overview"]:      "{{seo_narrative}}",
+        }
+        _LIST_SLIDES = {
+            SLIDE_INDEX["key_wins"]:   ("{{key_wins}}",    "\u2713", RGBColor(0x05, 0x96, 0x69)),
+            SLIDE_INDEX["concerns"]:   ("{{concerns}}",   "\u26A0", RGBColor(0xD9, 0x77, 0x06)),
+            SLIDE_INDEX["next_steps"]: ("{{next_steps}}", "\u2192", _hex_to_rgb((branding or {}).get("brand_color") or "#4338CA")),
+        }
 
     for slide_idx, placeholder_key in _NARRATIVE_SLIDES.items():
         if slide_idx >= len(prs.slides):
@@ -809,8 +862,18 @@ def generate_pptx_report(
     # ── Logos ─────────────────────────────────────────────────────────────────
     _embed_logos(prs, branding)
 
-    # Delete slides for disabled/empty sections (iterate in reverse to preserve indices)
-    slides_to_delete = _get_slides_to_delete(enabled_sections, template, narrative, custom_section)
+    # ── Smart slide deletion ──────────────────────────────────────────────────
+    if use_legacy:
+        # Legacy behavior for existing 9-slide templates
+        slides_to_delete = _get_slides_to_delete(enabled_sections, template, narrative, custom_section)
+    else:
+        # New adaptive selection for 19-slide templates
+        selected = select_slides(data, template, custom_section, narrative)
+        slides_to_delete = get_slides_to_delete(
+            selected, len(data.get("csv_sources", []))
+        )
+
+    # Delete in reverse order to preserve indices
     for idx in sorted(slides_to_delete, reverse=True):
         if idx < len(prs.slides):
             try:
@@ -823,8 +886,8 @@ def generate_pptx_report(
     # Save to bytes
     output = io.BytesIO()
     prs.save(output)
-    logger.info("PPTX report generated for %s (template=%s, visual=%s)",
-                client_info.get("name"), template, visual_template)
+    logger.info("PPTX report generated for %s (detail=%s, visual=%s, slides=%d)",
+                client_info.get("name"), template, visual_template, len(prs.slides))
     return output.getvalue()
 
 
