@@ -103,19 +103,16 @@ async def upload_csv(
     slug = resolved_source.lower().replace(" ", "_")
     slug = "".join(c if c.isalnum() or c == "_" else "_" for c in slug)
 
-    # NOTE: The connections table has a CHECK constraint limiting `platform` to
-    # ('ga4', 'meta_ads', 'google_ads', 'search_console', 'linkedin_ads').
-    # CSV uploads are stored using a matching platform value where the source
-    # name maps to a known platform, otherwise they use "ga4" as a neutral
-    # fallback until a DB migration adds 'csv' to the allowed list.
-    # To support arbitrary csv_* platforms, run:
-    #   ALTER TABLE connections DROP CONSTRAINT connections_platform_check;
-    #   ALTER TABLE connections ADD CONSTRAINT connections_platform_check
-    #     CHECK (platform IN ('ga4','meta_ads','google_ads','search_console','linkedin_ads','csv_import'));
-    _PLATFORM_MAP: dict[str, str] = {
-        "linkedin_ads": "linkedin_ads",
+    # Map known template slugs to canonical platform names used in the DB.
+    # All CSV sources are stored as csv_<slug> — see migration 009 which
+    # widens the connections.platform CHECK constraint to allow csv_* values.
+    _KNOWN_SLUGS: set[str] = {
+        "linkedin_ads", "tiktok_ads", "mailchimp", "shopify", "generic",
     }
-    platform = _PLATFORM_MAP.get(slug, "ga4")
+    # Normalise the slug to one of the known template slugs, or keep as-is
+    # (will still be prefixed with csv_).
+    canonical_slug = slug if slug in _KNOWN_SLUGS else slug[:50]  # guard length
+    platform = f"csv_{canonical_slug}"
 
     # --- Create connection record ---
     connection_id = str(uuid.uuid4())
