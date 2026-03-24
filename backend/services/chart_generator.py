@@ -103,6 +103,9 @@ _VISUAL_TO_THEME: Dict[str, str] = {
     "modern_clean":    "light",
     "dark_executive":  "dark",
     "colorful_agency": "colorful",
+    "bold_geometric":  "light",
+    "minimal_elegant": "light",
+    "gradient_modern": "colorful",
 }
 
 # Chart dimensions — exactly matches the PPTX chart placeholder size
@@ -360,6 +363,476 @@ def generate_campaign_performance_chart(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# NEW CHART TYPES — Phase 2 expansion
+# ─────────────────────────────────────────────────────────────────────────────
+
+def generate_device_breakdown_chart(
+    device_data: List[Dict],
+    output_path: str,
+    brand_color: str = "#4338CA",
+    theme_name: str = "light",
+) -> str:
+    """Donut chart of sessions by device type (Desktop/Mobile/Tablet)."""
+    theme = CHART_THEMES.get(theme_name, CHART_THEMES["light"])
+    colors = _setup_chart_style(theme, brand_color)
+
+    labels = [d["device"] for d in device_data]
+    values = [d["sessions"] for d in device_data]
+    chart_colors = [colors["primary"], colors["secondary"], colors["accent"]][:len(labels)]
+
+    fig, ax = plt.subplots(figsize=_FIGSIZE)
+    fig.set_facecolor(theme["fig_bg"])
+    wedges, texts, autotexts = ax.pie(
+        values, labels=None, colors=chart_colors,
+        autopct="%1.1f%%", startangle=90, pctdistance=0.78,
+        wedgeprops={"width": 0.45, "edgecolor": theme["fig_bg"], "linewidth": 2},
+    )
+    for t in autotexts:
+        t.set_fontsize(10)
+        t.set_fontweight("bold")
+        t.set_color(theme["text_color"])
+
+    # Add legend instead of labels on wedges
+    total = sum(values)
+    legend_labels = [f"{l}  ({v:,} — {v/total*100:.1f}%)" for l, v in zip(labels, values)]
+    ax.legend(wedges, legend_labels, loc="center left", bbox_to_anchor=(0.85, 0.5),
+              fontsize=9, frameon=False)
+    ax.set_title("Sessions by Device", fontsize=12, fontweight="bold", color=theme["title_color"])
+
+    fig.tight_layout()
+    return _save_fig(fig, output_path, fig_bg=theme["fig_bg"])
+
+
+def generate_top_pages_chart(
+    pages_data: List[Dict],
+    output_path: str,
+    brand_color: str = "#4338CA",
+    theme_name: str = "light",
+) -> str:
+    """Horizontal bar chart of top landing pages by sessions."""
+    theme = CHART_THEMES.get(theme_name, CHART_THEMES["light"])
+    colors = _setup_chart_style(theme, brand_color)
+
+    top = pages_data[:7]
+    # Truncate URLs to path only, max 30 chars
+    labels = [(p["page"][:30] + "..." if len(p["page"]) > 30 else p["page"]) for p in top]
+    values = [p["sessions"] for p in top]
+
+    fig, ax = plt.subplots(figsize=_FIGSIZE)
+    ax.set_facecolor(theme["axes_bg"])
+    bars = ax.barh(labels, values, color=colors["primary"], height=0.55, alpha=0.85, edgecolor="none")
+
+    max_val = max(values) if values else 1
+    for bar, val in zip(bars, values):
+        ax.text(bar.get_width() + max_val * 0.015, bar.get_y() + bar.get_height() / 2,
+                f"{val:,}", va="center", fontsize=9, color=theme["text_color"])
+
+    ax.set_title("Top Landing Pages")
+    ax.set_xlabel("Sessions")
+    ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{int(x):,}"))
+    ax.invert_yaxis()
+    fig.tight_layout()
+    return _save_fig(fig, output_path, fig_bg=theme["fig_bg"])
+
+
+def generate_new_vs_returning_chart(
+    nvr_data: Dict,
+    output_path: str,
+    brand_color: str = "#4338CA",
+    theme_name: str = "light",
+) -> str:
+    """Grouped bar chart comparing new vs returning users: sessions + conversions."""
+    theme = CHART_THEMES.get(theme_name, CHART_THEMES["light"])
+    colors = _setup_chart_style(theme, brand_color)
+
+    categories = ["Sessions", "Conversions"]
+    new_vals = [nvr_data["new"]["sessions"], nvr_data["new"]["conversions"]]
+    ret_vals = [nvr_data["returning"]["sessions"], nvr_data["returning"]["conversions"]]
+
+    fig, ax = plt.subplots(figsize=_FIGSIZE)
+    ax.set_facecolor(theme["axes_bg"])
+    x = range(len(categories))
+    width = 0.3
+
+    bars1 = ax.bar([i - width / 2 for i in x], new_vals, width,
+                   label="New Users", color=colors["primary"], edgecolor="none", alpha=0.85)
+    bars2 = ax.bar([i + width / 2 for i in x], ret_vals, width,
+                   label="Returning Users", color=colors["secondary"], edgecolor="none", alpha=0.85)
+
+    # Add value labels on bars
+    for bar in list(bars1) + list(bars2):
+        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + max(new_vals) * 0.02,
+                f"{int(bar.get_height()):,}", ha="center", va="bottom", fontsize=9,
+                color=theme["text_color"])
+
+    ax.set_xticks(list(x))
+    ax.set_xticklabels(categories, fontsize=10)
+    ax.set_title("New vs Returning Users")
+    ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{int(x):,}"))
+    ax.legend(loc="upper right")
+    fig.tight_layout()
+    return _save_fig(fig, output_path, fig_bg=theme["fig_bg"])
+
+
+def generate_top_countries_chart(
+    countries_data: List[Dict],
+    output_path: str,
+    brand_color: str = "#4338CA",
+    theme_name: str = "light",
+) -> str:
+    """Horizontal bar chart of top countries by sessions."""
+    theme = CHART_THEMES.get(theme_name, CHART_THEMES["light"])
+    colors = _setup_chart_style(theme, brand_color)
+
+    top = countries_data[:7]
+    labels = [c["country"] for c in top]
+    values = [c["sessions"] for c in top]
+    palette = [colors["primary"], colors["secondary"], colors["accent"],
+               colors["gray"], colors["danger"]]
+    bar_colors = (palette * 3)[:len(labels)]
+
+    fig, ax = plt.subplots(figsize=_FIGSIZE)
+    ax.set_facecolor(theme["axes_bg"])
+    bars = ax.barh(labels, values, color=bar_colors, height=0.55, edgecolor="none")
+
+    max_val = max(values) if values else 1
+    for bar, val in zip(bars, values):
+        ax.text(bar.get_width() + max_val * 0.015, bar.get_y() + bar.get_height() / 2,
+                f"{val:,}", va="center", fontsize=9, color=theme["text_color"])
+
+    ax.set_title("Top Countries by Sessions")
+    ax.set_xlabel("Sessions")
+    ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{int(x):,}"))
+    ax.invert_yaxis()
+    fig.tight_layout()
+    return _save_fig(fig, output_path, fig_bg=theme["fig_bg"])
+
+
+def generate_audience_demographics_chart(
+    age_gender_data: List[Dict],
+    output_path: str,
+    brand_color: str = "#4338CA",
+    theme_name: str = "light",
+) -> str:
+    """Grouped bar chart: age groups x gender, by conversions."""
+    theme = CHART_THEMES.get(theme_name, CHART_THEMES["light"])
+    colors = _setup_chart_style(theme, brand_color)
+
+    # Group by age
+    ages: Dict[str, Dict[str, int]] = {}
+    for item in age_gender_data:
+        age = item["age"]
+        if age not in ages:
+            ages[age] = {"male": 0, "female": 0}
+        ages[age][item["gender"]] = item.get("conversions", 0)
+
+    age_labels = list(ages.keys())
+    male_vals = [ages[a]["male"] for a in age_labels]
+    female_vals = [ages[a]["female"] for a in age_labels]
+
+    fig, ax = plt.subplots(figsize=_FIGSIZE)
+    ax.set_facecolor(theme["axes_bg"])
+    x = range(len(age_labels))
+    width = 0.35
+
+    ax.bar([i - width / 2 for i in x], male_vals, width,
+           label="Male", color=colors["primary"], edgecolor="none", alpha=0.85)
+    ax.bar([i + width / 2 for i in x], female_vals, width,
+           label="Female", color=colors["secondary"], edgecolor="none", alpha=0.85)
+
+    ax.set_xticks(list(x))
+    ax.set_xticklabels(age_labels, fontsize=9)
+    ax.set_title("Conversions by Age & Gender")
+    ax.set_ylabel("Conversions")
+    ax.legend(loc="upper right")
+    fig.tight_layout()
+    return _save_fig(fig, output_path, fig_bg=theme["fig_bg"])
+
+
+def generate_placements_chart(
+    placements_data: List[Dict],
+    output_path: str,
+    currency_symbol: str = "$",
+    brand_color: str = "#4338CA",
+    theme_name: str = "light",
+) -> str:
+    """Horizontal bar chart of ad placements by spend."""
+    theme = CHART_THEMES.get(theme_name, CHART_THEMES["light"])
+    colors = _setup_chart_style(theme, brand_color)
+
+    labels = [p["placement"] for p in placements_data]
+    values = [p["spend"] for p in placements_data]
+    palette = [colors["primary"], colors["secondary"], colors["accent"],
+               colors["gray"], colors["danger"]]
+    bar_colors = (palette * 3)[:len(labels)]
+
+    fig, ax = plt.subplots(figsize=_FIGSIZE)
+    ax.set_facecolor(theme["axes_bg"])
+    bars = ax.barh(labels, values, color=bar_colors, height=0.55, edgecolor="none")
+
+    max_val = max(values) if values else 1
+    for bar, val in zip(bars, values):
+        ax.text(bar.get_width() + max_val * 0.015, bar.get_y() + bar.get_height() / 2,
+                f"{currency_symbol}{val:,.0f}", va="center", fontsize=9, color=theme["text_color"])
+
+    ax.set_title("Spend by Placement")
+    ax.set_xlabel(f"Spend ({currency_symbol})")
+    ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{currency_symbol}{int(x):,}"))
+    ax.invert_yaxis()
+    fig.tight_layout()
+    return _save_fig(fig, output_path, fig_bg=theme["fig_bg"])
+
+
+def generate_bounce_rate_trend_chart(
+    daily_data: List[Dict],
+    output_path: str,
+    brand_color: str = "#4338CA",
+    theme_name: str = "light",
+) -> str:
+    """Line chart of daily bounce rate with average reference line."""
+    theme = CHART_THEMES.get(theme_name, CHART_THEMES["light"])
+    colors = _setup_chart_style(theme, brand_color)
+
+    dates = [datetime.strptime(d["date"], "%Y-%m-%d") for d in daily_data]
+    bounce_rates = [d.get("bounce_rate", 0) for d in daily_data]
+    avg_bounce = sum(bounce_rates) / max(len(bounce_rates), 1)
+
+    fig, ax = plt.subplots(figsize=_FIGSIZE)
+    ax.set_facecolor(theme["axes_bg"])
+    ax.plot(dates, bounce_rates, color=colors["accent"], linewidth=2.0,
+            marker="o", markersize=3.5, zorder=3)
+    ax.axhline(y=avg_bounce, color=colors["gray"], linestyle="--", linewidth=1.0, alpha=0.7,
+               label=f"Average: {avg_bounce:.1f}%")
+    ax.fill_between(dates, bounce_rates, alpha=0.08, color=colors["accent"])
+
+    ax.set_title("Bounce Rate Trend")
+    ax.set_ylabel("Bounce Rate (%)")
+    ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{x:.0f}%"))
+    ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
+    fig.autofmt_xdate(rotation=30, ha="right")
+    ax.legend(loc="upper right")
+    fig.tight_layout()
+    return _save_fig(fig, output_path, fig_bg=theme["fig_bg"])
+
+
+def generate_conversion_funnel_chart(
+    funnel_data: Dict[str, int],
+    output_path: str,
+    brand_color: str = "#4338CA",
+    theme_name: str = "light",
+) -> str:
+    """Horizontal decreasing bars (funnel): Sessions → Users → Conversions."""
+    theme = CHART_THEMES.get(theme_name, CHART_THEMES["light"])
+    colors = _setup_chart_style(theme, brand_color)
+
+    stages = list(funnel_data.keys())
+    values = list(funnel_data.values())
+    bar_colors = [colors["primary"], colors["secondary"], colors["accent"]][:len(stages)]
+
+    fig, ax = plt.subplots(figsize=(10.0, 3.5))
+    ax.set_facecolor(theme["axes_bg"])
+    fig.set_facecolor(theme["fig_bg"])
+    bars = ax.barh(stages, values, color=bar_colors, height=0.6, edgecolor="none")
+
+    max_val = max(values) if values else 1
+    for i, (bar, val) in enumerate(zip(bars, values)):
+        pct = f"  ({val/values[0]*100:.1f}%)" if i > 0 and values[0] > 0 else ""
+        ax.text(bar.get_width() + max_val * 0.01, bar.get_y() + bar.get_height() / 2,
+                f"{val:,}{pct}", va="center", fontsize=10, fontweight="bold",
+                color=theme["text_color"])
+        # Add drop-off annotation between stages
+        if i > 0 and values[i - 1] > 0:
+            drop = round((1 - val / values[i - 1]) * 100, 1)
+            mid_y = bar.get_y() + bar.get_height() + 0.15
+            ax.annotate(f"↓ {drop}% drop-off", xy=(val / 2, mid_y),
+                        fontsize=8, color=colors["danger"], ha="center")
+
+    ax.set_title("Conversion Funnel", fontsize=12, fontweight="bold")
+    ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{int(x):,}"))
+    ax.invert_yaxis()
+    fig.tight_layout()
+    return _save_fig(fig, output_path, fig_bg=theme["fig_bg"])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Google Ads chart types
+# ─────────────────────────────────────────────────────────────────────────────
+
+def generate_gads_spend_conversions_chart(
+    daily_data: List[Dict],
+    output_path: str,
+    currency_symbol: str = "$",
+    brand_color: str = "#4338CA",
+    theme_name: str = "light",
+) -> str:
+    """Dual-axis chart: daily Google Ads spend (bars) vs conversions (line)."""
+    # Reuse the same pattern as Meta spend chart
+    return generate_spend_vs_conversions_chart(
+        daily_data, output_path, currency_symbol, brand_color, theme_name
+    )
+
+
+def generate_search_terms_chart(
+    search_terms: List[Dict],
+    output_path: str,
+    brand_color: str = "#4338CA",
+    theme_name: str = "light",
+) -> str:
+    """Horizontal bar chart of top search terms by clicks with impressions overlay."""
+    theme = CHART_THEMES.get(theme_name, CHART_THEMES["light"])
+    colors = _setup_chart_style(theme, brand_color)
+
+    top = search_terms[:10]
+    labels = [(t["term"][:35] + "..." if len(t["term"]) > 35 else t["term"]) for t in top]
+    clicks = [t["clicks"] for t in top]
+
+    fig, ax = plt.subplots(figsize=_FIGSIZE)
+    ax.set_facecolor(theme["axes_bg"])
+    bars = ax.barh(labels, clicks, color=colors["primary"], height=0.55, alpha=0.85, edgecolor="none")
+
+    max_val = max(clicks) if clicks else 1
+    for bar, val in zip(bars, clicks):
+        ax.text(bar.get_width() + max_val * 0.015, bar.get_y() + bar.get_height() / 2,
+                f"{val:,}", va="center", fontsize=9, color=theme["text_color"])
+
+    ax.set_title("Top Search Terms by Clicks")
+    ax.set_xlabel("Clicks")
+    ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{int(x):,}"))
+    ax.invert_yaxis()
+    fig.tight_layout()
+    return _save_fig(fig, output_path, fig_bg=theme["fig_bg"])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Search Console (SEO) chart types
+# ─────────────────────────────────────────────────────────────────────────────
+
+def generate_seo_clicks_trend_chart(
+    daily_data: List[Dict],
+    output_path: str,
+    brand_color: str = "#4338CA",
+    theme_name: str = "light",
+) -> str:
+    """Dual-axis line: organic clicks (primary) + impressions (secondary) over time."""
+    theme = CHART_THEMES.get(theme_name, CHART_THEMES["light"])
+    colors = _setup_chart_style(theme, brand_color)
+
+    dates = [datetime.strptime(d["date"], "%Y-%m-%d") for d in daily_data]
+    clicks = [d["clicks"] for d in daily_data]
+    impressions = [d["impressions"] for d in daily_data]
+
+    fig, ax1 = plt.subplots(figsize=_FIGSIZE)
+    ax1.set_facecolor(theme["axes_bg"])
+    ax1.plot(dates, clicks, color=colors["primary"], linewidth=2.0,
+             marker="o", markersize=3.5, label="Clicks", zorder=3)
+    ax1.fill_between(dates, clicks, alpha=0.10, color=colors["primary"])
+    ax1.set_ylabel("Clicks", color=colors["primary"])
+    ax1.tick_params(axis="y", labelcolor=colors["primary"])
+    ax1.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{int(x):,}"))
+
+    ax2 = ax1.twinx()
+    ax2.set_facecolor(theme["axes_bg"])
+    ax2.plot(dates, impressions, color=colors["secondary"], linewidth=1.5,
+             linestyle="--", alpha=0.7, label="Impressions", zorder=2)
+    ax2.set_ylabel("Impressions", color=colors["secondary"])
+    ax2.tick_params(axis="y", labelcolor=colors["secondary"])
+    ax2.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{int(x):,}"))
+    ax2.spines["right"].set_visible(True)
+    ax2.spines["right"].set_color(theme["spine_color"])
+
+    ax1.set_title("Organic Search: Clicks & Impressions")
+    h1, l1 = ax1.get_legend_handles_labels()
+    h2, l2 = ax2.get_legend_handles_labels()
+    ax1.legend(h1 + h2, l1 + l2, loc="upper left")
+
+    ax1.xaxis.set_major_locator(mdates.AutoDateLocator())
+    ax1.xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
+    fig.autofmt_xdate(rotation=30, ha="right")
+    fig.tight_layout()
+    return _save_fig(fig, output_path, fig_bg=theme["fig_bg"])
+
+
+def generate_top_queries_chart(
+    queries_data: List[Dict],
+    output_path: str,
+    brand_color: str = "#4338CA",
+    theme_name: str = "light",
+) -> str:
+    """Horizontal bar chart of top search queries by clicks with CTR annotation."""
+    theme = CHART_THEMES.get(theme_name, CHART_THEMES["light"])
+    colors = _setup_chart_style(theme, brand_color)
+
+    top = queries_data[:10]
+    labels = [(q["query"][:30] + "..." if len(q["query"]) > 30 else q["query"]) for q in top]
+    clicks = [q["clicks"] for q in top]
+
+    fig, ax = plt.subplots(figsize=_FIGSIZE)
+    ax.set_facecolor(theme["axes_bg"])
+    bars = ax.barh(labels, clicks, color=colors["primary"], height=0.55, alpha=0.85, edgecolor="none")
+
+    max_val = max(clicks) if clicks else 1
+    for bar, val, q in zip(bars, clicks, top):
+        ctr = q.get("ctr", 0)
+        ax.text(bar.get_width() + max_val * 0.015, bar.get_y() + bar.get_height() / 2,
+                f"{val:,}  (CTR: {ctr:.1f}%)", va="center", fontsize=8, color=theme["text_color"])
+
+    ax.set_title("Top Organic Queries by Clicks")
+    ax.set_xlabel("Clicks")
+    ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{int(x):,}"))
+    ax.invert_yaxis()
+    fig.tight_layout()
+    return _save_fig(fig, output_path, fig_bg=theme["fig_bg"])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CSV data chart
+# ─────────────────────────────────────────────────────────────────────────────
+
+def generate_csv_comparison_chart(
+    csv_source: Dict,
+    output_path: str,
+    brand_color: str = "#4338CA",
+    theme_name: str = "light",
+) -> str:
+    """Horizontal bar chart: current vs previous values. Green for improved, red for declined."""
+    theme = CHART_THEMES.get(theme_name, CHART_THEMES["light"])
+    colors = _setup_chart_style(theme, brand_color)
+
+    metrics = csv_source.get("metrics", [])[:6]
+    labels = [m["name"] for m in metrics]
+    current = [m["current_value"] for m in metrics]
+    previous = [m.get("previous_value", 0) for m in metrics]
+
+    fig, ax = plt.subplots(figsize=_FIGSIZE)
+    ax.set_facecolor(theme["axes_bg"])
+    x = range(len(labels))
+    width = 0.35
+
+    ax.barh([i - width / 2 for i in x], previous, width,
+            label="Previous", color=colors["gray"], alpha=0.5, edgecolor="none")
+    bar_colors = []
+    for c, p in zip(current, previous):
+        # For metrics where lower is better (cost, bounces), invert
+        name_lower = labels[current.index(c)].lower() if c in current else ""
+        if "cost" in name_lower or "bounce" in name_lower or "unsubscribe" in name_lower:
+            bar_colors.append("#059669" if c <= p else "#E11D48")
+        else:
+            bar_colors.append("#059669" if c >= p else "#E11D48")
+
+    for i, (c_val, color) in enumerate(zip(current, bar_colors)):
+        ax.barh(i + width / 2, c_val, width, color=color, alpha=0.85, edgecolor="none")
+
+    ax.set_yticks(list(x))
+    ax.set_yticklabels(labels, fontsize=9)
+    ax.set_title(f"{csv_source.get('name', 'Custom')} — Current vs Previous")
+    ax.legend(["Previous", "Current"], loc="lower right")
+    ax.invert_yaxis()
+    fig.tight_layout()
+    return _save_fig(fig, output_path, fig_bg=theme["fig_bg"])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Orchestrator
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -370,66 +843,137 @@ def generate_all_charts(
     visual_template: str = "modern_clean",
 ) -> Dict[str, str]:
     """
-    Generate all report charts; return {chart_name: file_path}.
+    Generate ONLY charts that have sufficient data — never generate empty charts.
+    Returns {chart_name: file_path}.
     Synchronous — call via asyncio.to_thread() in async contexts.
-
-    brand_color:     Agency brand hex colour (overrides theme primary for GA4 charts).
-    visual_template: "modern_clean" | "dark_executive" | "colorful_agency"
-                     Maps to a colour theme so charts match slide backgrounds.
     """
     os.makedirs(output_dir, exist_ok=True)
 
     theme_name = _VISUAL_TO_THEME.get(visual_template, "light")
     charts: Dict[str, str] = {}
-    ga4  = data.get("ga4", {})
+    ga4 = data.get("ga4", {})
     meta = data.get("meta_ads", {})
+    gads = data.get("google_ads", {})
+    gsc = data.get("search_console", {})
     cur_sym = _get_currency_symbol(data)
 
-    try:
-        if ga4.get("daily"):
-            charts["sessions"] = generate_sessions_chart(
-                ga4["daily"],
-                os.path.join(output_dir, "sessions.png"),
-                brand_color=brand_color,
-                theme_name=theme_name,
-            )
-    except Exception as exc:
-        logger.error("Sessions chart failed: %s", exc)
+    def _try(name: str, fn, *args, **kwargs):
+        try:
+            charts[name] = fn(*args, **kwargs)
+        except Exception as exc:
+            logger.error("Chart '%s' failed: %s", name, exc)
 
-    try:
-        if ga4.get("traffic_sources"):
-            charts["traffic_sources"] = generate_traffic_sources_chart(
-                ga4["traffic_sources"],
-                os.path.join(output_dir, "traffic_sources.png"),
-                brand_color=brand_color,
-                theme_name=theme_name,
-            )
-    except Exception as exc:
-        logger.error("Traffic sources chart failed: %s", exc)
+    # ── GA4 charts ──────────────────────────────────────────────────────────
+    if ga4.get("daily") and len(ga4["daily"]) >= 3:
+        _try("sessions", generate_sessions_chart,
+             ga4["daily"], os.path.join(output_dir, "sessions.png"),
+             brand_color=brand_color, theme_name=theme_name)
 
-    try:
-        if meta.get("daily"):
-            charts["spend_conversions"] = generate_spend_vs_conversions_chart(
-                meta["daily"],
-                os.path.join(output_dir, "spend_conversions.png"),
-                currency_symbol=cur_sym,
-                brand_color=brand_color,
-                theme_name=theme_name,
-            )
-    except Exception as exc:
-        logger.error("Spend/conversions chart failed: %s", exc)
+    if ga4.get("traffic_sources") and len(ga4["traffic_sources"]) >= 2:
+        _try("traffic_sources", generate_traffic_sources_chart,
+             ga4["traffic_sources"], os.path.join(output_dir, "traffic_sources.png"),
+             brand_color=brand_color, theme_name=theme_name)
 
-    try:
-        if meta.get("campaigns"):
-            charts["campaigns"] = generate_campaign_performance_chart(
-                meta["campaigns"],
-                os.path.join(output_dir, "campaigns.png"),
-                currency_symbol=cur_sym,
-                brand_color=brand_color,
-                theme_name=theme_name,
-            )
-    except Exception as exc:
-        logger.error("Campaign performance chart failed: %s", exc)
+    if ga4.get("device_breakdown") and len(ga4["device_breakdown"]) >= 2:
+        _try("device_breakdown", generate_device_breakdown_chart,
+             ga4["device_breakdown"], os.path.join(output_dir, "device_breakdown.png"),
+             brand_color=brand_color, theme_name=theme_name)
+
+    if ga4.get("top_pages") and len(ga4["top_pages"]) >= 3:
+        _try("top_pages", generate_top_pages_chart,
+             ga4["top_pages"], os.path.join(output_dir, "top_pages.png"),
+             brand_color=brand_color, theme_name=theme_name)
+
+    if ga4.get("new_vs_returning"):
+        nvr = ga4["new_vs_returning"]
+        if nvr.get("new", {}).get("sessions", 0) > 0:
+            _try("new_vs_returning", generate_new_vs_returning_chart,
+                 nvr, os.path.join(output_dir, "new_vs_returning.png"),
+                 brand_color=brand_color, theme_name=theme_name)
+
+    if ga4.get("top_countries") and len(ga4["top_countries"]) >= 2:
+        _try("top_countries", generate_top_countries_chart,
+             ga4["top_countries"], os.path.join(output_dir, "top_countries.png"),
+             brand_color=brand_color, theme_name=theme_name)
+
+    # Bounce rate: only if daily data has bounce_rate field
+    if ga4.get("daily") and any(d.get("bounce_rate") for d in ga4["daily"]):
+        _try("bounce_rate_trend", generate_bounce_rate_trend_chart,
+             ga4["daily"], os.path.join(output_dir, "bounce_rate_trend.png"),
+             brand_color=brand_color, theme_name=theme_name)
+
+    # Conversion funnel
+    ga4_summary = ga4.get("summary", {})
+    if ga4_summary.get("sessions", 0) > 0 and ga4_summary.get("conversions", 0) > 0:
+        funnel = {
+            "Sessions": ga4_summary["sessions"],
+            "Users": ga4_summary.get("users", 0),
+            "Conversions": ga4_summary["conversions"],
+        }
+        _try("conversion_funnel", generate_conversion_funnel_chart,
+             funnel, os.path.join(output_dir, "conversion_funnel.png"),
+             brand_color=brand_color, theme_name=theme_name)
+
+    # ── Meta Ads charts — only if there's actual spend ──────────────────────
+    meta_spend = meta.get("summary", {}).get("spend", 0)
+    if meta_spend and meta_spend > 0:
+        if meta.get("daily") and len(meta["daily"]) >= 3:
+            _try("spend_conversions", generate_spend_vs_conversions_chart,
+                 meta["daily"], os.path.join(output_dir, "spend_conversions.png"),
+                 currency_symbol=cur_sym, brand_color=brand_color, theme_name=theme_name)
+
+        if meta.get("campaigns") and len(meta["campaigns"]) >= 1:
+            _try("campaigns", generate_campaign_performance_chart,
+                 meta["campaigns"], os.path.join(output_dir, "campaigns.png"),
+                 currency_symbol=cur_sym, brand_color=brand_color, theme_name=theme_name)
+
+        if meta.get("age_gender") and len(meta["age_gender"]) >= 2:
+            _try("audience_demographics", generate_audience_demographics_chart,
+                 meta["age_gender"], os.path.join(output_dir, "audience_demographics.png"),
+                 brand_color=brand_color, theme_name=theme_name)
+
+        if meta.get("placements") and len(meta["placements"]) >= 2:
+            _try("placements", generate_placements_chart,
+                 meta["placements"], os.path.join(output_dir, "placements.png"),
+                 currency_symbol=cur_sym, brand_color=brand_color, theme_name=theme_name)
+
+    # ── Google Ads charts — only if connected AND has spend ─────────────────
+    gads_spend = gads.get("summary", {}).get("spend", 0)
+    if gads_spend and gads_spend > 0:
+        if gads.get("daily") and len(gads["daily"]) >= 3:
+            _try("gads_spend_conversions", generate_gads_spend_conversions_chart,
+                 gads["daily"], os.path.join(output_dir, "gads_spend_conversions.png"),
+                 currency_symbol=cur_sym, brand_color=brand_color, theme_name=theme_name)
+
+        if gads.get("campaigns") and len(gads["campaigns"]) >= 1:
+            _try("gads_campaigns", generate_campaign_performance_chart,
+                 gads["campaigns"], os.path.join(output_dir, "gads_campaigns.png"),
+                 currency_symbol=cur_sym, brand_color=brand_color, theme_name=theme_name)
+
+        if gads.get("search_terms") and len(gads["search_terms"]) >= 3:
+            _try("search_terms_bar", generate_search_terms_chart,
+                 gads["search_terms"], os.path.join(output_dir, "search_terms.png"),
+                 brand_color=brand_color, theme_name=theme_name)
+
+    # ── Search Console charts — only if connected AND has clicks ────────────
+    if gsc.get("summary", {}).get("clicks", 0) > 0:
+        if gsc.get("daily") and len(gsc["daily"]) >= 3:
+            _try("seo_clicks_trend", generate_seo_clicks_trend_chart,
+                 gsc["daily"], os.path.join(output_dir, "seo_clicks_trend.png"),
+                 brand_color=brand_color, theme_name=theme_name)
+
+        if gsc.get("top_queries") and len(gsc["top_queries"]) >= 3:
+            _try("top_queries", generate_top_queries_chart,
+                 gsc["top_queries"], os.path.join(output_dir, "top_queries.png"),
+                 brand_color=brand_color, theme_name=theme_name)
+
+    # ── CSV source charts — one per source ──────────────────────────────────
+    for csv_source in data.get("csv_sources", []):
+        if csv_source.get("metrics") and len(csv_source["metrics"]) >= 2:
+            safe_name = csv_source["name"].lower().replace(" ", "_").replace("/", "_")
+            _try(f"csv_{safe_name}", generate_csv_comparison_chart,
+                 csv_source, os.path.join(output_dir, f"csv_{safe_name}.png"),
+                 brand_color=brand_color, theme_name=theme_name)
 
     logger.info(
         "Generated %d charts in %s (template=%s, theme=%s)",
