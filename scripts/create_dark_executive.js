@@ -88,13 +88,13 @@ async function build() {
     // Client name — large, below accent line
     s.addText("{{client_name}}", {
       x: 0.8, y: 2.5, w: W - 1.6, h: 1.5,
-      fontSize: 44, fontFace: FONT, bold: true, color: C.white,
+      fontSize: 40, fontFace: FONT, bold: true, color: C.white,
     });
 
     // Report period
     s.addText("{{report_period}}", {
       x: 0.8, y: 4.15, w: 8, h: 0.45,
-      fontSize: 16, fontFace: FONT, color: C.text,
+      fontSize: 14, fontFace: FONT, color: C.text,
     });
 
     // Report type
@@ -134,7 +134,7 @@ async function build() {
     });
     s.addText("{{executive_summary}}", {
       x: 1.1, y: 1.7, w: W - 2.2, h: 4.5,
-      fontSize: 13, fontFace: FONT, color: C.text,
+      fontSize: 12, fontFace: FONT, color: C.text,
       lineSpacingMultiple: 1.45, valign: "top",
     });
 
@@ -180,7 +180,7 @@ async function build() {
       // Value
       s.addText(`{{kpi_${i}_value}}`, {
         x: cx + 0.22, y: cy + 0.6, w: cardW - 0.44, h: 0.7,
-        fontSize: 30, fontFace: FONT, bold: true, color: C.white,
+        fontSize: 32, fontFace: FONT, bold: true, color: C.white,
       });
 
       // Change
@@ -273,7 +273,7 @@ async function build() {
     });
     s.addText("{{key_wins}}", {
       x: 1.1, y: 1.7, w: W - 2.2, h: 4.5,
-      fontSize: 13, fontFace: FONT, color: C.text,
+      fontSize: 12, fontFace: FONT, color: C.text,
       lineSpacingMultiple: 1.5, valign: "top",
     });
 
@@ -300,7 +300,7 @@ async function build() {
     });
     s.addText("{{concerns}}", {
       x: 1.1, y: 1.7, w: W - 2.2, h: 4.5,
-      fontSize: 13, fontFace: FONT, color: C.text,
+      fontSize: 12, fontFace: FONT, color: C.text,
       lineSpacingMultiple: 1.5, valign: "top",
     });
 
@@ -321,7 +321,7 @@ async function build() {
     });
     s.addText("{{next_steps}}", {
       x: 1.1, y: 1.7, w: W - 2.2, h: 3.5,
-      fontSize: 13, fontFace: FONT, color: C.text,
+      fontSize: 12, fontFace: FONT, color: C.text,
       lineSpacingMultiple: 1.5, valign: "top",
     });
 
@@ -359,7 +359,7 @@ async function build() {
     });
     s.addText("{{custom_section_text}}", {
       x: 1.1, y: 1.7, w: W - 2.2, h: 4.5,
-      fontSize: 13, fontFace: FONT, color: C.text,
+      fontSize: 12, fontFace: FONT, color: C.text,
       lineSpacingMultiple: 1.4, valign: "top",
     });
 

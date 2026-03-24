@@ -101,19 +101,19 @@ async function build() {
     // Client name — large, below band
     s.addText("{{client_name}}", {
       x: 0.8, y: 2.7, w: W - 1.6, h: 1.5,
-      fontSize: 42, fontFace: FONT, bold: true, color: C.dark,
+      fontSize: 40, fontFace: FONT, bold: true, color: C.dark,
     });
 
     // Report period
     s.addText("{{report_period}}", {
       x: 0.8, y: 4.35, w: W - 1.6, h: 0.5,
-      fontSize: 16, fontFace: FONT_BODY, color: C.muted,
+      fontSize: 14, fontFace: FONT_BODY, color: C.muted,
     });
 
     // Report type
     s.addText("{{report_type}}", {
       x: 0.8, y: 4.95, w: W - 1.6, h: 0.4,
-      fontSize: 13, fontFace: FONT_BODY, color: C.light,
+      fontSize: 12, fontFace: FONT_BODY, color: C.light,
     });
 
     // Client logo placeholder
@@ -142,7 +142,7 @@ async function build() {
     // Large text area
     s.addText("{{executive_summary}}", {
       x: 0.8, y: 1.5, w: W - 1.6, h: 5.0,
-      fontSize: 13, fontFace: FONT_BODY, color: C.text,
+      fontSize: 12, fontFace: FONT_BODY, color: C.text,
       lineSpacingMultiple: 1.4, valign: "top",
     });
 
@@ -190,7 +190,7 @@ async function build() {
       // Value
       s.addText(`{{kpi_${i}_value}}`, {
         x: cx + 0.2, y: cy + 0.6, w: cardW - 0.4, h: 0.7,
-        fontSize: 30, fontFace: FONT, bold: true, color: C.dark,
+        fontSize: 32, fontFace: FONT, bold: true, color: C.dark,
       });
 
       // Change
@@ -298,7 +298,7 @@ async function build() {
 
     s.addText("{{key_wins}}", {
       x: 0.8, y: 1.5, w: W - 1.6, h: 5.0,
-      fontSize: 13, fontFace: FONT_BODY, color: C.text,
+      fontSize: 12, fontFace: FONT_BODY, color: C.text,
       lineSpacingMultiple: 1.5, valign: "top",
     });
 
@@ -325,7 +325,7 @@ async function build() {
 
     s.addText("{{concerns}}", {
       x: 0.8, y: 1.5, w: W - 1.6, h: 5.0,
-      fontSize: 13, fontFace: FONT_BODY, color: C.text,
+      fontSize: 12, fontFace: FONT_BODY, color: C.text,
       lineSpacingMultiple: 1.5, valign: "top",
     });
 
@@ -343,7 +343,7 @@ async function build() {
 
     s.addText("{{next_steps}}", {
       x: 0.8, y: 1.5, w: W - 1.6, h: 4.0,
-      fontSize: 13, fontFace: FONT_BODY, color: C.text,
+      fontSize: 12, fontFace: FONT_BODY, color: C.text,
       lineSpacingMultiple: 1.5, valign: "top",
     });
 
@@ -377,7 +377,7 @@ async function build() {
 
     s.addText("{{custom_section_text}}", {
       x: 0.8, y: 1.5, w: W - 1.6, h: 5.0,
-      fontSize: 13, fontFace: FONT_BODY, color: C.text,
+      fontSize: 12, fontFace: FONT_BODY, color: C.text,
       lineSpacingMultiple: 1.4, valign: "top",
     });
 

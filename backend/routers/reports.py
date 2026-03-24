@@ -240,7 +240,7 @@ async def _generate_report_internal(
 
     from services.chart_generator import generate_all_charts  # noqa: PLC0415
     charts = await asyncio.to_thread(
-        generate_all_charts, raw_data, charts_dir, branding["brand_color"],
+        generate_all_charts, raw_data, charts_dir, branding["brand_color"], visual_template,
     )
 
     client_info = {

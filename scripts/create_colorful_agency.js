@@ -94,19 +94,19 @@ async function build() {
     // Client name — bold and large
     s.addText("{{client_name}}", {
       x: 0.8, y: 1.8, w: W - 1.6, h: 1.6,
-      fontSize: 44, fontFace: FONT, bold: true, color: C.dark,
+      fontSize: 40, fontFace: FONT, bold: true, color: C.dark,
     });
 
     // Report period
     s.addText("{{report_period}}", {
       x: 0.8, y: 3.6, w: 8, h: 0.45,
-      fontSize: 16, fontFace: FONT, color: C.muted,
+      fontSize: 14, fontFace: FONT, color: C.muted,
     });
 
     // Report type
     s.addText("{{report_type}}", {
       x: 0.8, y: 4.15, w: 8, h: 0.4,
-      fontSize: 13, fontFace: FONT, color: C.light,
+      fontSize: 12, fontFace: FONT, color: C.light,
     });
 
     // Client logo
@@ -139,7 +139,7 @@ async function build() {
 
     s.addText("{{executive_summary}}", {
       x: 0.8, y: 1.5, w: W - 1.6, h: 5.0,
-      fontSize: 13, fontFace: FONT, color: C.text,
+      fontSize: 12, fontFace: FONT, color: C.text,
       lineSpacingMultiple: 1.4, valign: "top",
     });
 
@@ -190,7 +190,7 @@ async function build() {
       // Value
       s.addText(`{{kpi_${i}_value}}`, {
         x: cx + 0.25, y: cy + 0.6, w: cardW - 0.45, h: 0.7,
-        fontSize: 30, fontFace: FONT, bold: true, color: C.dark,
+        fontSize: 32, fontFace: FONT, bold: true, color: C.dark,
       });
 
       // Change
@@ -279,7 +279,7 @@ async function build() {
 
     s.addText("{{key_wins}}", {
       x: 0.8, y: 1.5, w: W - 1.6, h: 5.0,
-      fontSize: 13, fontFace: FONT, color: C.text,
+      fontSize: 12, fontFace: FONT, color: C.text,
       lineSpacingMultiple: 1.5, valign: "top",
     });
 
@@ -300,7 +300,7 @@ async function build() {
 
     s.addText("{{concerns}}", {
       x: 0.8, y: 1.5, w: W - 1.6, h: 5.0,
-      fontSize: 13, fontFace: FONT, color: C.text,
+      fontSize: 12, fontFace: FONT, color: C.text,
       lineSpacingMultiple: 1.5, valign: "top",
     });
 
@@ -318,7 +318,7 @@ async function build() {
 
     s.addText("{{next_steps}}", {
       x: 0.8, y: 1.5, w: W - 1.6, h: 4.0,
-      fontSize: 13, fontFace: FONT, color: C.text,
+      fontSize: 12, fontFace: FONT, color: C.text,
       lineSpacingMultiple: 1.5, valign: "top",
     });
 
@@ -349,7 +349,7 @@ async function build() {
 
     s.addText("{{custom_section_text}}", {
       x: 0.8, y: 1.5, w: W - 1.6, h: 5.0,
-      fontSize: 13, fontFace: FONT, color: C.text,
+      fontSize: 12, fontFace: FONT, color: C.text,
       lineSpacingMultiple: 1.4, valign: "top",
     });
 

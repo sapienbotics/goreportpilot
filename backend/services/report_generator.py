@@ -73,6 +73,15 @@ def _hex_to_rgb(hex_color: str) -> RGBColor:
     return RGBColor(0x43, 0x38, 0xCA)  # default indigo
 
 
+def _delete_shape(slide: Any, shape: Any) -> None:
+    """Remove a shape element from a slide entirely."""
+    try:
+        sp = shape._element
+        sp.getparent().remove(sp)
+    except Exception as exc:
+        logger.debug("Could not delete shape: %s", exc)
+
+
 def _hex_to_rl(hex_color: str):
     """Convert a #RRGGBB hex string to a ReportLab HexColor."""
     try:
@@ -467,78 +476,237 @@ def _get_slides_to_delete(
 def _embed_logos(prs: Any, branding: dict | None) -> None:
     """Embed agency and client logos on the cover slide.
 
-    Also clears the {{agency_logo}} and {{client_logo}} placeholder text
-    so they don't appear as raw text in the final output.
-    Note: _replace_placeholders_in_slide already clears these (replaced
-    with ""), but this function handles the image embedding on top.
+    When an image URL is provided: download and embed it at the placeholder position.
+    When no image is provided: DELETE the placeholder shape so no empty box appears.
     """
-    if not branding:
-        return
     cover = prs.slides[0]
 
-    # Find the placeholder shapes for positioning and clear them
+    # Locate placeholder shapes by their text content
     agency_logo_shape = None
     client_logo_shape = None
-    for shape in cover.shapes:
+    for shape in list(cover.shapes):
         if not shape.has_text_frame:
             continue
         text = shape.text_frame.text.strip()
-        # After _replace_placeholders_in_slide, these should already be empty.
-        # But if they survived (e.g. the replacement key wasn't in dict), clear now.
-        if "agency_logo" in text.lower() or text == "{{agency_logo}}":
+        if "agency_logo" in text.lower():
             agency_logo_shape = shape
-            for para in shape.text_frame.paragraphs:
-                for run in para.runs:
-                    run.text = ""
-        elif "client_logo" in text.lower() or text == "{{client_logo}}":
+        elif "client_logo" in text.lower():
             client_logo_shape = shape
-            for para in shape.text_frame.paragraphs:
-                for run in para.runs:
-                    run.text = ""
 
-    # Embed agency logo image
-    agency_img = _download_image(branding.get("agency_logo_url", ""))
-    if agency_img:
+    br = branding or {}
+
+    # ── Agency logo ───────────────────────────────────────────────────────────
+    agency_img = _download_image(br.get("agency_logo_url", ""))
+    if agency_img and agency_logo_shape:
         try:
             agency_img.seek(0)
-            if agency_logo_shape:
-                # Place at the placeholder shape's position
-                cover.shapes.add_picture(
-                    agency_img,
-                    agency_logo_shape.left, agency_logo_shape.top,
-                    height=agency_logo_shape.height,
-                )
-            else:
-                # Fallback: top-right of cover
-                sw = prs.slide_width
-                cover.shapes.add_picture(
-                    agency_img,
-                    sw - Inches(2.2), Inches(0.3),
-                    height=Inches(0.8),
-                )
+            cover.shapes.add_picture(
+                agency_img,
+                agency_logo_shape.left, agency_logo_shape.top,
+                height=agency_logo_shape.height,
+            )
+            _delete_shape(cover, agency_logo_shape)   # remove placeholder text box
         except Exception as e:
             logger.debug("Could not embed agency logo: %s", e)
+    elif agency_img:
+        # No placeholder found — fall back to top-right corner
+        try:
+            agency_img.seek(0)
+            sw = prs.slide_width
+            cover.shapes.add_picture(agency_img, sw - Inches(2.2), Inches(0.3), height=Inches(0.8))
+        except Exception as e:
+            logger.debug("Could not embed agency logo (fallback): %s", e)
+    else:
+        # No logo provided — delete the empty placeholder so it doesn't clutter the slide
+        if agency_logo_shape:
+            _delete_shape(cover, agency_logo_shape)
 
-    # Embed client logo image
-    client_img = _download_image(branding.get("client_logo_url", ""))
-    if client_img:
+    # ── Client logo ───────────────────────────────────────────────────────────
+    client_img = _download_image(br.get("client_logo_url", ""))
+    if client_img and client_logo_shape:
         try:
             client_img.seek(0)
-            if client_logo_shape:
-                cover.shapes.add_picture(
-                    client_img,
-                    client_logo_shape.left, client_logo_shape.top,
-                    height=client_logo_shape.height,
-                )
-            else:
-                sw = prs.slide_width
-                cover.shapes.add_picture(
-                    client_img,
-                    (sw - Inches(2.0)) // 2, Inches(5.5),
-                    height=Inches(1.5),
-                )
+            cover.shapes.add_picture(
+                client_img,
+                client_logo_shape.left, client_logo_shape.top,
+                height=client_logo_shape.height,
+            )
+            _delete_shape(cover, client_logo_shape)   # remove placeholder text box
         except Exception as e:
             logger.debug("Could not embed client logo: %s", e)
+    elif client_img:
+        try:
+            client_img.seek(0)
+            sw = prs.slide_width
+            cover.shapes.add_picture(
+                client_img,
+                (sw - Inches(2.0)) // 2, Inches(5.5),
+                height=Inches(1.5),
+            )
+        except Exception as e:
+            logger.debug("Could not embed client logo (fallback): %s", e)
+    else:
+        if client_logo_shape:
+            _delete_shape(cover, client_logo_shape)
+
+
+def _populate_text_frame_formatted(
+    text_frame: Any,
+    content: str,
+    font_size: Any = None,
+    font_color: Any = None,
+    bold: bool = False,
+) -> None:
+    """
+    Replace a text frame's content with properly-formatted multi-paragraph text.
+    Splits content on double newlines into separate paragraphs.
+    Preserves font name and size from the template's first run where possible.
+    """
+    import re as _re
+
+    if not content or not content.strip():
+        text_frame.clear()
+        return
+
+    # Capture template formatting from first paragraph / first run
+    template_name: str | None = None
+    template_size: Any = font_size
+    template_color: Any = font_color
+    template_bold: bool = bold
+    try:
+        first_para = text_frame.paragraphs[0]
+        if first_para.runs:
+            r0 = first_para.runs[0]
+            if r0.font.name:
+                template_name = r0.font.name
+            if r0.font.size:
+                template_size = r0.font.size
+            if r0.font.color and r0.font.color.type is not None:
+                try:
+                    template_color = r0.font.color.rgb
+                except Exception:
+                    pass
+            if r0.font.bold is not None:
+                template_bold = r0.font.bold
+    except Exception:
+        pass
+
+    text_frame.clear()
+
+    paragraphs = [p.strip() for p in content.split("\n\n") if p.strip()]
+    if not paragraphs:
+        paragraphs = [content.strip()]
+
+    for i, para_text in enumerate(paragraphs):
+        p = text_frame.paragraphs[0] if i == 0 else text_frame.add_paragraph()
+        p.space_after  = Pt(6)
+        p.space_before = Pt(0)
+
+        run = p.add_run()
+        run.text = para_text
+        if template_name:
+            run.font.name = template_name
+        if template_size:
+            run.font.size = template_size
+        if template_color:
+            run.font.color.rgb = template_color
+        run.font.bold = template_bold
+
+
+def _populate_bullet_list(
+    text_frame: Any,
+    content: str,
+    prefix: str = "•",
+    font_size: Any = None,
+    font_color: Any = None,
+    prefix_color: Any = None,
+) -> None:
+    """
+    Replace a text frame's content with a formatted bullet list.
+    Splits content on single newlines into individual items.
+    Strips any existing prefix chars (✓ ⚠ • numbered) before re-adding prefix.
+    """
+    import re as _re
+
+    if not content or not content.strip():
+        text_frame.clear()
+        return
+
+    # Capture template formatting
+    template_name: str | None = None
+    template_size: Any = font_size
+    template_color: Any = font_color
+    try:
+        first_para = text_frame.paragraphs[0]
+        if first_para.runs:
+            r0 = first_para.runs[0]
+            if r0.font.name:
+                template_name = r0.font.name
+            if r0.font.size:
+                template_size = r0.font.size
+            if r0.font.color and r0.font.color.type is not None:
+                try:
+                    template_color = r0.font.color.rgb
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    text_frame.clear()
+
+    items = [item.strip() for item in content.split("\n") if item.strip()]
+
+    for i, item_text in enumerate(items):
+        p = text_frame.paragraphs[0] if i == 0 else text_frame.add_paragraph()
+        p.space_after  = Pt(8)
+        p.space_before = Pt(2)
+
+        # Strip any existing prefix that AI or previous code may have added
+        clean = item_text
+        for strip_pfx in ("✓ ", "⚠ ", "• ", "→ ", "- "):
+            if clean.startswith(strip_pfx):
+                clean = clean[len(strip_pfx):]
+                break
+        # Strip numbered prefixes like "1. " or "2) "
+        clean = _re.sub(r"^\d+[.)]\s*", "", clean)
+
+        # Prefix run (bold, coloured)
+        if prefix:
+            pr = p.add_run()
+            pr.text = f"{prefix}  "
+            if template_name:
+                pr.font.name = template_name
+            if template_size:
+                pr.font.size = template_size
+            pr.font.bold = True
+            if prefix_color:
+                pr.font.color.rgb = prefix_color
+
+        # Content run
+        cr = p.add_run()
+        cr.text = clean
+        if template_name:
+            cr.font.name = template_name
+        if template_size:
+            cr.font.size = template_size
+        if template_color:
+            cr.font.color.rgb = template_color
+
+
+# Keys that get formatted population instead of plain text replacement.
+# These are popped from replacements before the generic pass so the
+# generic _replace_placeholders_in_slide() doesn't flatten them first.
+_NARRATIVE_KEYS = {
+    "{{executive_summary}}",
+    "{{website_narrative}}",
+    "{{ads_narrative}}",
+}
+_LIST_KEYS = {
+    "{{key_wins}}",
+    "{{concerns}}",
+    "{{next_steps}}",
+}
+_FORMATTED_KEYS = _NARRATIVE_KEYS | _LIST_KEYS
 
 
 def generate_pptx_report(
@@ -576,20 +744,66 @@ def generate_pptx_report(
 
     prs = Presentation(template_path)
 
-    # Build the placeholder → value replacement map
+    # Build the full replacement map, then split out the keys that get
+    # rich formatting (paragraphs / bullet lists) so the generic pass
+    # doesn't flatten them to a single unstyled run first.
     replacements = _build_replacements(data, narrative, client_info, branding, custom_section)
+    formatted_content: dict[str, str] = {}
+    for key in _FORMATTED_KEYS:
+        if key in replacements:
+            formatted_content[key] = replacements.pop(key)
 
-    # Replace all {{placeholder}} text in all slides
+    # ── Generic pass: single-value placeholders (names, KPIs, dates, logos) ─
     for slide in prs.slides:
         _replace_placeholders_in_slide(slide, replacements)
 
-    # Replace chart placeholder text areas with actual chart PNG images
+    # ── Formatted pass: narrative paragraphs ──────────────────────────────────
+    # Slide indices (0-based):
+    #   0 Cover  1 Exec Summary  2 KPI  3 Website  4 Meta Ads
+    #   5 Key Wins  6 Concerns  7 Next Steps  8 Custom
+    _NARRATIVE_SLIDES = {
+        1: "{{executive_summary}}",
+        3: "{{website_narrative}}",
+        4: "{{ads_narrative}}",
+    }
+    _LIST_SLIDES = {
+        5: ("{{key_wins}}",    "✓", RGBColor(0x05, 0x96, 0x69)),   # emerald
+        6: ("{{concerns}}",   "⚠", RGBColor(0xD9, 0x77, 0x06)),   # amber
+        7: ("{{next_steps}}", "→", _hex_to_rgb((branding or {}).get("brand_color") or "#4338CA")),
+    }
+
+    for slide_idx, placeholder_key in _NARRATIVE_SLIDES.items():
+        if slide_idx >= len(prs.slides):
+            continue
+        content = formatted_content.get(placeholder_key, "")
+        if not content:
+            continue
+        slide = prs.slides[slide_idx]
+        for shape in slide.shapes:
+            if shape.has_text_frame and placeholder_key in shape.text_frame.text:
+                _populate_text_frame_formatted(shape.text_frame, content)
+                break
+
+    for slide_idx, (placeholder_key, prefix, prefix_color) in _LIST_SLIDES.items():
+        if slide_idx >= len(prs.slides):
+            continue
+        content = formatted_content.get(placeholder_key, "")
+        if not content:
+            continue
+        slide = prs.slides[slide_idx]
+        for shape in slide.shapes:
+            if shape.has_text_frame and placeholder_key in shape.text_frame.text:
+                _populate_bullet_list(shape.text_frame, content,
+                                      prefix=prefix, prefix_color=prefix_color)
+                break
+
+    # ── Charts ────────────────────────────────────────────────────────────────
     _replace_charts(prs, charts)
 
-    # Colorize KPI change values (green/red)
+    # ── KPI colour coding ─────────────────────────────────────────────────────
     _colorize_kpi_changes(prs, data)
 
-    # Embed logos on cover slide
+    # ── Logos ─────────────────────────────────────────────────────────────────
     _embed_logos(prs, branding)
 
     # Delete slides for disabled/empty sections (iterate in reverse to preserve indices)
