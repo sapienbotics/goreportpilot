@@ -200,22 +200,36 @@ export default function DashboardPage() {
 
         {/* Connection health */}
         <div className="bg-white rounded-xl border border-slate-200 p-5">
-          <h2 className="text-sm font-semibold text-slate-700 mb-4">Connection Health</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-semibold text-slate-700">Connection Health</h2>
+            <Link href="/dashboard/integrations" className="text-xs text-indigo-600 hover:underline">
+              Manage →
+            </Link>
+          </div>
           {loading ? (
             <div className="space-y-3">
               {[1, 2].map((i) => <Skeleton key={i} className="h-10 w-full" />)}
             </div>
           ) : !stats || Object.keys(stats.connection_health).length === 0 ? (
-            <p className="text-sm text-slate-400 py-4 text-center">No platform connections yet.</p>
+            <div className="py-4 text-center">
+              <p className="text-sm text-slate-400 mb-2">No platform connections yet.</p>
+              <Link href="/dashboard/integrations" className="text-xs text-indigo-600 hover:underline">
+                View integrations →
+              </Link>
+            </div>
           ) : (
             <div className="divide-y divide-slate-50">
               {Object.entries(stats.connection_health).map(([platform, h]) => (
-                <div key={platform} className="flex items-center justify-between py-2.5 first:pt-0 last:pb-0">
+                <Link
+                  key={platform}
+                  href="/dashboard/integrations"
+                  className="flex items-center justify-between py-2.5 first:pt-0 last:pb-0 hover:bg-slate-50 -mx-2 px-2 rounded transition-colors"
+                >
                   <div className="flex items-center gap-2">
                     {h.issues > 0 ? (
-                      <AlertCircle className="h-4 w-4 text-amber-500" />
+                      <AlertCircle className="h-4 w-4 text-amber-500 shrink-0" />
                     ) : (
-                      <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                      <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
                     )}
                     <span className="text-sm text-slate-700">
                       {PLATFORM_LABELS[platform] ?? platform}
@@ -223,9 +237,9 @@ export default function DashboardPage() {
                     </span>
                   </div>
                   <span className={`text-xs font-medium ${h.issues > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
-                    {h.issues > 0 ? `${h.issues} issue${h.issues > 1 ? 's' : ''}` : 'All healthy'}
+                    {h.issues > 0 ? `${h.issues} issue${h.issues > 1 ? 's' : ''} — Fix →` : 'All healthy'}
                   </span>
-                </div>
+                </Link>
               ))}
             </div>
           )}

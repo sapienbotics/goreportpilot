@@ -529,28 +529,39 @@ export default function ClientDetailPage({ params }: Props) {
               {/* GA4 row */}
               {(() => {
                 const ga4 = connections.find((c) => c.platform === 'ga4')
+                const ga4Healthy = ga4?.status === 'active'
                 return ga4 ? (
-                  <div className="flex items-center justify-between rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3">
+                  <div className={`flex items-center justify-between rounded-lg border px-4 py-3 ${ga4Healthy ? 'border-emerald-100 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
                     <div className="flex items-center gap-3">
-                      <BarChart2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                      <BarChart2 className={`h-4 w-4 shrink-0 ${ga4Healthy ? 'text-emerald-600' : 'text-amber-500'}`} />
                       <div>
                         <p className="text-sm font-medium text-slate-800">{ga4.account_name}</p>
                         <p className="text-xs text-slate-400">{ga4.account_id}</p>
                       </div>
-                      <span className="text-xs font-medium text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
-                        Connected
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${ga4Healthy ? 'text-emerald-700 bg-emerald-100' : 'text-amber-700 bg-amber-100'}`}>
+                        {ga4Healthy ? 'Active' : ga4.status === 'error' ? 'Error' : 'Expired'}
                       </span>
                     </div>
-                    <button
-                      onClick={() => handleDisconnect(ga4.id)}
-                      disabled={disconnecting === ga4.id}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-60"
-                    >
-                      {disconnecting === ga4.id
-                        ? <Loader2 className="h-3 w-3 animate-spin" />
-                        : <Unlink className="h-3 w-3" />}
-                      Disconnect
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {!ga4Healthy && (
+                        <button
+                          onClick={handleConnectGa4}
+                          disabled={connectingGa4}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 transition-colors disabled:opacity-60"
+                        >
+                          {connectingGa4 ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2 className="h-3 w-3" />}
+                          Reconnect
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleDisconnect(ga4.id)}
+                        disabled={disconnecting === ga4.id}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-60"
+                      >
+                        {disconnecting === ga4.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unlink className="h-3 w-3" />}
+                        Disconnect
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3">
@@ -566,9 +577,7 @@ export default function ClientDetailPage({ params }: Props) {
                       disabled={connectingGa4}
                       className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-800 transition-colors disabled:opacity-60"
                     >
-                      {connectingGa4
-                        ? <Loader2 className="h-3 w-3 animate-spin" />
-                        : <Link2 className="h-3 w-3" />}
+                      {connectingGa4 ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2 className="h-3 w-3" />}
                       Connect GA4
                     </button>
                   </div>
@@ -578,28 +587,39 @@ export default function ClientDetailPage({ params }: Props) {
               {/* Meta Ads row */}
               {(() => {
                 const meta = connections.find((c) => c.platform === 'meta_ads')
+                const metaHealthy = meta?.status === 'active'
                 return meta ? (
-                  <div className="flex items-center justify-between rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3">
+                  <div className={`flex items-center justify-between rounded-lg border px-4 py-3 ${metaHealthy ? 'border-emerald-100 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
                     <div className="flex items-center gap-3">
-                      <Megaphone className="h-4 w-4 text-emerald-600 shrink-0" />
+                      <Megaphone className={`h-4 w-4 shrink-0 ${metaHealthy ? 'text-emerald-600' : 'text-amber-500'}`} />
                       <div>
                         <p className="text-sm font-medium text-slate-800">{meta.account_name}</p>
                         <p className="text-xs text-slate-400">{meta.account_id}</p>
                       </div>
-                      <span className="text-xs font-medium text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
-                        Connected
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${metaHealthy ? 'text-emerald-700 bg-emerald-100' : 'text-amber-700 bg-amber-100'}`}>
+                        {metaHealthy ? 'Active' : meta.status === 'error' ? 'Error' : 'Expired'}
                       </span>
                     </div>
-                    <button
-                      onClick={() => handleDisconnect(meta.id)}
-                      disabled={disconnecting === meta.id}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-60"
-                    >
-                      {disconnecting === meta.id
-                        ? <Loader2 className="h-3 w-3 animate-spin" />
-                        : <Unlink className="h-3 w-3" />}
-                      Disconnect
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {!metaHealthy && (
+                        <button
+                          onClick={handleConnectMeta}
+                          disabled={connectingMeta}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 transition-colors disabled:opacity-60"
+                        >
+                          {connectingMeta ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2 className="h-3 w-3" />}
+                          Reconnect
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleDisconnect(meta.id)}
+                        disabled={disconnecting === meta.id}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-60"
+                      >
+                        {disconnecting === meta.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unlink className="h-3 w-3" />}
+                        Disconnect
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3">
@@ -615,9 +635,7 @@ export default function ClientDetailPage({ params }: Props) {
                       disabled={connectingMeta}
                       className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-800 transition-colors disabled:opacity-60"
                     >
-                      {connectingMeta
-                        ? <Loader2 className="h-3 w-3 animate-spin" />
-                        : <Link2 className="h-3 w-3" />}
+                      {connectingMeta ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2 className="h-3 w-3" />}
                       Connect Meta Ads
                     </button>
                   </div>

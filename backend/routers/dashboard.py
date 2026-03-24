@@ -101,7 +101,7 @@ async def get_dashboard_stats(user_id: str = Depends(get_current_user_id)) -> di
     # ── Connection health ─────────────────────────────────────────────────────
     connections_result = (
         supabase.table("connections")
-        .select("platform, status, token_expires_at")
+        .select("id, client_id, platform, status, account_name")
         .in_("client_id", [c["id"] for c in clients] if clients else ["none"])
         .execute()
     )
@@ -112,17 +112,11 @@ async def get_dashboard_stats(user_id: str = Depends(get_current_user_id)) -> di
         if platform not in health:
             health[platform] = {"connected": 0, "healthy": 0, "issues": 0}
         health[platform]["connected"] += 1
-        # A connection is healthy when status == 'active' and token not expired
-        conn_status = conn.get("status", "")
-        expires_at = conn.get("token_expires_at")
-        is_expired = False
-        if expires_at:
-            try:
-                exp_dt = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
-                is_expired = now > exp_dt
-            except Exception:
-                pass
-        if conn_status == "active" and not is_expired:
+        # Use the status column as source of truth.
+        # The backend token manager updates status to 'expired'/'error' when
+        # a refresh fails. We do NOT use token_expires_at here — access tokens
+        # expire in 1 hour but the backend auto-refreshes them; that's not an issue.
+        if conn.get("status") == "active":
             health[platform]["healthy"] += 1
         else:
             health[platform]["issues"] += 1
