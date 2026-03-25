@@ -212,12 +212,21 @@ export default function ClientDetailPage({ params }: Props) {
     }
   }
 
+  // Helper: clear all platform sessionStorage keys before setting a new one.
+  // Prevents stale keys from a previously failed OAuth flow from causing the
+  // callback page to misdetect the platform.
+  const clearOAuthSessionKeys = () => {
+    sessionStorage.removeItem('ga4_connect_client_id')
+    sessionStorage.removeItem('gads_connect_client_id')
+    sessionStorage.removeItem('gsc_connect_client_id')
+    sessionStorage.removeItem('meta_connect_client_id')
+  }
+
   const handleConnectGa4 = async () => {
     setConnectingGa4(true)
     try {
       const { url } = await authApi.getGoogleAuthUrl()
-      // Store clientId in sessionStorage so the callback page can retrieve it
-      // (Google's OAuth redirect cannot carry arbitrary extra state)
+      clearOAuthSessionKeys()
       sessionStorage.setItem('ga4_connect_client_id', clientId)
       window.location.href = url
     } catch {
@@ -230,7 +239,7 @@ export default function ClientDetailPage({ params }: Props) {
     setConnectingMeta(true)
     try {
       const { url } = await authApi.getMetaAuthUrl()
-      // Store clientId in sessionStorage so the callback page can retrieve it
+      clearOAuthSessionKeys()
       sessionStorage.setItem('meta_connect_client_id', clientId)
       window.location.href = url
     } catch {
@@ -243,6 +252,7 @@ export default function ClientDetailPage({ params }: Props) {
     setConnectingGads(true)
     try {
       const { url } = await authApi.getGoogleAdsAuthUrl()
+      clearOAuthSessionKeys()
       sessionStorage.setItem('gads_connect_client_id', clientId)
       window.location.href = url
     } catch {
@@ -255,6 +265,7 @@ export default function ClientDetailPage({ params }: Props) {
     setConnectingGsc(true)
     try {
       const { url } = await authApi.getSearchConsoleAuthUrl()
+      clearOAuthSessionKeys()
       sessionStorage.setItem('gsc_connect_client_id', clientId)
       window.location.href = url
     } catch {

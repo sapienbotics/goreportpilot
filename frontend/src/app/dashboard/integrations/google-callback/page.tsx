@@ -137,6 +137,12 @@ export default function GoogleCallbackPage() {
       cid = sessionStorage.getItem('ga4_connect_client_id')
     }
 
+    // Immediately clear ALL Google-related keys to prevent stale detection
+    // on subsequent OAuth flows (keys are only needed for this one detection).
+    sessionStorage.removeItem('ga4_connect_client_id')
+    sessionStorage.removeItem('gads_connect_client_id')
+    sessionStorage.removeItem('gsc_connect_client_id')
+
     setPlatform(detected)
     setClientId(cid)
   }, [])
@@ -203,10 +209,7 @@ export default function GoogleCallbackPage() {
 
       await connectionsApi.create(payload)
 
-      // Clean up sessionStorage
-      if (platform === 'ga4')            sessionStorage.removeItem('ga4_connect_client_id')
-      if (platform === 'google_ads')     sessionStorage.removeItem('gads_connect_client_id')
-      if (platform === 'search_console') sessionStorage.removeItem('gsc_connect_client_id')
+      // sessionStorage keys already cleared in Step 0 detection
 
       setStep('done')
       setTimeout(() => {

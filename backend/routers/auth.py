@@ -9,6 +9,7 @@ Endpoints:
     GET  /api/auth/meta/url         — Build and return the Meta OAuth authorization URL
     POST /api/auth/meta/callback    — Exchange auth code for tokens, list Meta ad accounts
 """
+import asyncio
 import json
 import logging
 import secrets
@@ -431,7 +432,7 @@ async def google_ads_callback(
             "token_expires_at": (datetime.now(tz=timezone.utc).timestamp() + expires_in),
         })
         _handle = encrypt_token(_payload)
-        accounts = await list_accessible_accounts(_handle, _handle)
+        accounts = await asyncio.to_thread(list_accessible_accounts, _handle, _handle)
     except Exception as exc:
         logger.warning("Could not list Google Ads accounts: %s", exc)
         accounts = []

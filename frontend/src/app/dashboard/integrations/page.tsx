@@ -136,6 +136,13 @@ export default function IntegrationsPage() {
     if (!selectedClientId || platform.isCsv) return
     setConnecting((prev) => ({ ...prev, [platform.id]: true }))
     try {
+      // Clear ALL Google-related keys first to prevent stale key detection
+      // in the callback page (e.g. a failed Google Ads flow leaving
+      // gads_connect_client_id behind, causing Search Console to misroute).
+      sessionStorage.removeItem('ga4_connect_client_id')
+      sessionStorage.removeItem('gads_connect_client_id')
+      sessionStorage.removeItem('gsc_connect_client_id')
+      sessionStorage.removeItem('meta_connect_client_id')
       if (platform.sessionKey) {
         sessionStorage.setItem(platform.sessionKey, selectedClientId)
       }
