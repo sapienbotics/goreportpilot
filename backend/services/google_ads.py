@@ -19,14 +19,17 @@ def _build_credentials(access_token: str, refresh_token: str) -> dict:
     The dict follows the format expected by
     ``google.ads.googleads.client.GoogleAdsClient.load_from_dict()``.
     """
-    return {
-        "developer_token": settings.google_ads_developer_token,
-        "client_id": settings.google_client_id,
-        "client_secret": settings.google_client_secret,
+    creds: dict = {
+        "developer_token": settings.GOOGLE_ADS_DEVELOPER_TOKEN,
+        "client_id": settings.GOOGLE_CLIENT_ID,
+        "client_secret": settings.GOOGLE_CLIENT_SECRET,
         "refresh_token": refresh_token,
         "access_token": access_token,
         "use_proto_plus": True,
     }
+    if settings.GOOGLE_ADS_LOGIN_CUSTOMER_ID:
+        creds["login_customer_id"] = settings.GOOGLE_ADS_LOGIN_CUSTOMER_ID
+    return creds
 
 
 def list_accessible_accounts(

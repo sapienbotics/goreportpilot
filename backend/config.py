@@ -31,6 +31,7 @@ class Settings(BaseSettings):
 
     # Google Ads
     GOOGLE_ADS_DEVELOPER_TOKEN: str = ""
+    GOOGLE_ADS_LOGIN_CUSTOMER_ID: str = ""
 
     # OpenAI
     OPENAI_API_KEY: str = ""
