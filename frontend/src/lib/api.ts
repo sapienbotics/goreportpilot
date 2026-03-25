@@ -131,6 +131,30 @@ export interface GoogleCallbackResponse {
   token_handle: string
 }
 
+export interface GoogleAdsAccount {
+  customer_id: string
+  name: string
+  currency_code: string
+  time_zone: string
+}
+
+export interface GoogleAdsCallbackResponse {
+  accounts: GoogleAdsAccount[]
+  token_handle: string
+  expires_in: number
+}
+
+export interface SearchConsoleSite {
+  url: string
+  permission: string
+}
+
+export interface SearchConsoleCallbackResponse {
+  sites: SearchConsoleSite[]
+  token_handle: string
+  expires_in: number
+}
+
 export interface MetaAuthUrlResponse {
   url: string
   state: string
@@ -175,8 +199,18 @@ export const authApi = {
     return data
   },
 
+  googleAdsCallback: async (payload: GoogleCallbackPayload): Promise<GoogleAdsCallbackResponse> => {
+    const { data } = await api.post('/api/auth/google-ads/callback', payload)
+    return data
+  },
+
   getSearchConsoleAuthUrl: async (): Promise<{ url: string }> => {
     const { data } = await api.get('/api/auth/search-console/url')
+    return data
+  },
+
+  searchConsoleCallback: async (payload: GoogleCallbackPayload): Promise<SearchConsoleCallbackResponse> => {
+    const { data } = await api.post('/api/auth/search-console/callback', payload)
     return data
   },
 }
