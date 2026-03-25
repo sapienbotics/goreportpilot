@@ -105,11 +105,11 @@ function toListItems(platform: Platform, data: unknown): ListItem[] {
       currency: a.currency_code,
     }))
   }
-  // search_console
+  // search_console — backend returns {site_url, permission_level}
   return (data as SearchConsoleSite[]).map((s) => ({
-    id: s.url,
-    label: s.url,
-    sublabel: s.permission,
+    id: s.site_url,
+    label: s.site_url,
+    sublabel: s.permission_level,
   }))
 }
 

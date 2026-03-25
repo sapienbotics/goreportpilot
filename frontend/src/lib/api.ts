@@ -145,8 +145,8 @@ export interface GoogleAdsCallbackResponse {
 }
 
 export interface SearchConsoleSite {
-  url: string
-  permission: string
+  site_url: string          // backend field name: {"site_url": ..., "permission_level": ...}
+  permission_level: string
 }
 
 export interface SearchConsoleCallbackResponse {
