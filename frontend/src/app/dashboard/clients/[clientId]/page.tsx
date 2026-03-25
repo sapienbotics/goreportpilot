@@ -1,64 +1,93 @@
 'use client'
 
-// Client detail page — shows client info, connections, report config, generate report, and report history.
-// Includes edit-in-place, delete (soft-delete), and per-client report customization.
+// Client detail page — tab-based layout.
+// All data fetching and state live here; each tab receives only what it needs.
+// Tab is controlled via ?tab= search param (default: overview).
 
-import { useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import Link from 'next/link'
+import { useEffect, useRef, useState, useCallback } from 'react'
+import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import {
-  Globe, Mail, Building2, Pencil, Trash2, Check, X as XIcon,
-  FileText, Sparkles, ChevronRight, Calendar, BarChart2,
-  Link2, Unlink, Loader2, Megaphone, Settings2, Upload, Clock,
-  TrendingUp, Search, Image as ImageIcon, Database,
+  LayoutDashboard, Link2, FileText, Clock, Settings,
+  Building2,
 } from 'lucide-react'
 import { clientsApi, reportsApi, connectionsApi, authApi, scheduledReportsApi, uploadClientLogo, customSectionApi } from '@/lib/api'
 import type { ScheduledReport, ScheduledReportPayload } from '@/lib/api'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import LanguageSelector from '@/components/clients/LanguageSelector'
-import RichTextEditor from '@/components/clients/RichTextEditor'
-import CSVUploadDialog from '@/components/clients/CSVUploadDialog'
+import { cn } from '@/lib/utils'
 import type { Client, Report, Connection, ReportConfig } from '@/types'
 import { DEFAULT_REPORT_CONFIG } from '@/types'
+
+// Lazy tab components
+import OverviewTab      from '@/components/clients/tabs/OverviewTab'
+import IntegrationsTab  from '@/components/clients/tabs/IntegrationsTab'
+import ReportsTab       from '@/components/clients/tabs/ReportsTab'
+import SchedulesTab     from '@/components/clients/tabs/SchedulesTab'
+import SettingsTab      from '@/components/clients/tabs/SettingsTab'
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Props {
   params: { clientId: string }
 }
 
-// ── Helper: first and last day of last month ────────────────────────────────
+type TabId = 'overview' | 'integrations' | 'reports' | 'schedules' | 'settings'
+
+const TABS: { id: TabId; label: string; icon: React.FC<{ className?: string }> }[] = [
+  { id: 'overview',      label: 'Overview',      icon: LayoutDashboard },
+  { id: 'integrations',  label: 'Integrations',  icon: Link2 },
+  { id: 'reports',       label: 'Reports',       icon: FileText },
+  { id: 'schedules',     label: 'Schedules',     icon: Clock },
+  { id: 'settings',      label: 'Settings',      icon: Settings },
+]
+
+// ── Helper ────────────────────────────────────────────────────────────────────
+
 function lastMonthRange(): { start: string; end: string } {
-  const now = new Date()
+  const now   = new Date()
   const first = new Date(now.getFullYear(), now.getMonth() - 1, 1)
   const last  = new Date(now.getFullYear(), now.getMonth(), 0)
   const fmt   = (d: Date) => d.toISOString().slice(0, 10)
   return { start: fmt(first), end: fmt(last) }
 }
 
+// ── Page ──────────────────────────────────────────────────────────────────────
+
 export default function ClientDetailPage({ params }: Props) {
-  const router = useRouter()
+  const router      = useRouter()
+  const pathname    = usePathname()
+  const searchParams = useSearchParams()
   const { clientId } = params
 
-  const [client, setClient]   = useState<Client | null>(null)
+  const activeTab = (searchParams.get('tab') as TabId) || 'overview'
+
+  const setTab = (id: TabId) => {
+    const sp = new URLSearchParams(searchParams.toString())
+    sp.set('tab', id)
+    router.push(`${pathname}?${sp.toString()}`, { scroll: false })
+  }
+
+  // ── Core data ──────────────────────────────────────────────────────────────
+
+  const [client,  setClient]  = useState<Client | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError]     = useState<string | null>(null)
+  const [error,   setError]   = useState<string | null>(null)
 
-  // Edit state
-  const [editing, setEditing] = useState(false)
-  const [saving, setSaving]   = useState(false)
-  const [deleting, setDeleting] = useState(false)
-  const [editValues, setEditValues] = useState<Partial<Client>>({})
+  useEffect(() => {
+    clientsApi.get(clientId)
+      .then((data) => {
+        setClient(data)
+        setEditValues(data)
+        if (data.logo_url)     setClientLogo(data.logo_url as string)
+        if (data.report_config) {
+          const rc = data.report_config
+          setReportConfig(prev => ({ ...DEFAULT_REPORT_CONFIG, ...rc, sections: { ...DEFAULT_REPORT_CONFIG.sections, ...rc.sections } }))
+        }
+      })
+      .catch(() => setError('Client not found or failed to load.'))
+      .finally(() => setLoading(false))
+  }, [clientId])
 
-  // Generate report state
-  const defaultRange = lastMonthRange()
-  const [periodStart,       setPeriodStart]       = useState(defaultRange.start)
-  const [periodEnd,         setPeriodEnd]         = useState(defaultRange.end)
-  const [selectedTemplate,  setSelectedTemplate]  = useState<'full' | 'summary' | 'brief'>('full')
-  const [visualTemplate,    setVisualTemplate]    = useState<'modern_clean' | 'dark_executive' | 'colorful_agency' | 'bold_geometric' | 'minimal_elegant' | 'gradient_modern'>('modern_clean')
-  const [generating,        setGenerating]        = useState(false)
-  const [genError,          setGenError]          = useState<string | null>(null)
+  // ── Connections ────────────────────────────────────────────────────────────
 
-  // Connections
   const [connections,        setConnections]        = useState<Connection[]>([])
   const [connectionsLoading, setConnectionsLoading] = useState(true)
   const [connectingGa4,      setConnectingGa4]      = useState(false)
@@ -66,155 +95,22 @@ export default function ClientDetailPage({ params }: Props) {
   const [connectingGads,     setConnectingGads]     = useState(false)
   const [connectingGsc,      setConnectingGsc]      = useState(false)
   const [disconnecting,      setDisconnecting]      = useState<string | null>(null)
-
-  // CSV Upload dialog
   const [showCsvUpload,      setShowCsvUpload]      = useState(false)
 
-  // Custom section image
-  const customImgInputRef     = useRef<HTMLInputElement>(null)
-  const [customImgUploading,  setCustomImgUploading] = useState(false)
-
-  // Report configuration
-  const [reportConfig, setReportConfig]   = useState<ReportConfig>(DEFAULT_REPORT_CONFIG)
-  const [savingConfig, setSavingConfig]   = useState(false)
-  const [configSaved, setConfigSaved]     = useState(false)
-
-  // Client logo upload
-  const logoInputRef    = useRef<HTMLInputElement>(null)
-  const [logoUploading, setLogoUploading] = useState(false)
-  const [clientLogo,    setClientLogo]    = useState<string>('')
-
-  // Scheduled reports
-  const [schedule,      setSchedule]      = useState<ScheduledReport | null>(null)
-  const [schedEnabled,  setSchedEnabled]  = useState(false)
-  const [schedForm,     setSchedForm]     = useState<ScheduledReportPayload>({
-    client_id:      clientId,
-    frequency:      'monthly',
-    day_of_month:   1,
-    time_utc:       '09:00',
-    template:       'full',
-    auto_send:      false,
-    send_to_emails: [],
-  })
-  const [savingSched,   setSavingSched]   = useState(false)
-  const [schedSaved,    setSchedSaved]    = useState(false)
-
-  // Reports list
-  const [reports, setReports]         = useState<Report[]>([])
-  const [reportsLoading, setReportsLoading] = useState(true)
-
-  // Fetch client
-  useEffect(() => {
-    const fetchClient = async () => {
-      try {
-        const data = await clientsApi.get(clientId)
-        setClient(data)
-        setEditValues(data)
-        if (data.logo_url) setClientLogo(data.logo_url as string)
-        // Populate report config from DB (or use defaults if null)
-        if (data.report_config) {
-          setReportConfig({ ...DEFAULT_REPORT_CONFIG, ...data.report_config })
-        }
-      } catch {
-        setError('Client not found or failed to load.')
-      } finally {
-        setLoading(false)
-      }
-    }
-    fetchClient()
-  }, [clientId])
-
-  // Fetch connections for this client
-  useEffect(() => {
-    const fetchConnections = async () => {
-      try {
-        const { connections: data } = await connectionsApi.listByClient(clientId)
-        setConnections(data)
-      } catch {
-        // Non-fatal — connections section just stays empty
-      } finally {
-        setConnectionsLoading(false)
-      }
-    }
-    fetchConnections()
-  }, [clientId])
-
-  // Fetch reports for this client
-  useEffect(() => {
-    const fetchReports = async () => {
-      try {
-        const { reports: data } = await reportsApi.listByClient(clientId)
-        setReports(data)
-      } catch {
-        // Reports list failing shouldn't break the page
-      } finally {
-        setReportsLoading(false)
-      }
-    }
-    fetchReports()
-  }, [clientId])
-
-  // Fetch schedule for this client
-  useEffect(() => {
-    scheduledReportsApi.getByClient(clientId)
-      .then((schedules) => {
-        const active = schedules[0] ?? null
-        setSchedule(active)
-        if (active) {
-          setSchedEnabled(active.is_active)
-          setSchedForm({
-            client_id:      clientId,
-            frequency:      active.frequency as ScheduledReportPayload['frequency'],
-            day_of_week:    active.day_of_week ?? undefined,
-            day_of_month:   active.day_of_month ?? 1,
-            time_utc:       active.time_utc,
-            template:       active.template,
-            auto_send:      active.auto_send,
-            send_to_emails: active.send_to_emails,
-          })
-        }
-      })
-      .catch(() => { /* non-fatal */ })
-  }, [clientId])
-
-  const handleSave = async () => {
-    if (!client) return
-    setSaving(true)
+  const refreshConnections = useCallback(async () => {
     try {
-      const updated = await clientsApi.update(client.id, {
-        name:                  editValues.name,
-        website_url:           editValues.website_url           ?? undefined,
-        industry:              editValues.industry              ?? undefined,
-        primary_contact_email: editValues.primary_contact_email ?? undefined,
-        goals_context:         editValues.goals_context         ?? undefined,
-        notes:                 editValues.notes                 ?? undefined,
-        report_language:       editValues.report_language       ?? 'en',
-      })
-      setClient(updated)
-      setEditing(false)
-    } catch {
-      setError('Failed to save changes.')
-    } finally {
-      setSaving(false)
-    }
-  }
+      const { connections: data } = await connectionsApi.listByClient(clientId)
+      setConnections(data)
+    } catch { /* non-fatal */ }
+  }, [clientId])
 
-  const handleDelete = async () => {
-    if (!client) return
-    if (!window.confirm(`Delete ${client.name}? This cannot be undone.`)) return
-    setDeleting(true)
-    try {
-      await clientsApi.delete(client.id)
-      router.push('/dashboard/clients')
-    } catch {
-      setError('Failed to delete client.')
-      setDeleting(false)
-    }
-  }
+  useEffect(() => {
+    connectionsApi.listByClient(clientId)
+      .then(({ connections: data }) => setConnections(data))
+      .catch(() => {})
+      .finally(() => setConnectionsLoading(false))
+  }, [clientId])
 
-  // Helper: clear all platform sessionStorage keys before setting a new one.
-  // Prevents stale keys from a previously failed OAuth flow from causing the
-  // callback page to misdetect the platform.
   const clearOAuthSessionKeys = () => {
     sessionStorage.removeItem('ga4_connect_client_id')
     sessionStorage.removeItem('gads_connect_client_id')
@@ -229,10 +125,7 @@ export default function ClientDetailPage({ params }: Props) {
       clearOAuthSessionKeys()
       sessionStorage.setItem('ga4_connect_client_id', clientId)
       window.location.href = url
-    } catch {
-      setConnectingGa4(false)
-      setError('Failed to start Google Analytics authorisation. Please try again.')
-    }
+    } catch { setConnectingGa4(false); setError('Failed to start Google Analytics authorisation.') }
   }
 
   const handleConnectMeta = async () => {
@@ -242,10 +135,7 @@ export default function ClientDetailPage({ params }: Props) {
       clearOAuthSessionKeys()
       sessionStorage.setItem('meta_connect_client_id', clientId)
       window.location.href = url
-    } catch {
-      setConnectingMeta(false)
-      setError('Failed to start Meta Ads authorisation. Please try again.')
-    }
+    } catch { setConnectingMeta(false); setError('Failed to start Meta Ads authorisation.') }
   }
 
   const handleConnectGoogleAds = async () => {
@@ -255,10 +145,7 @@ export default function ClientDetailPage({ params }: Props) {
       clearOAuthSessionKeys()
       sessionStorage.setItem('gads_connect_client_id', clientId)
       window.location.href = url
-    } catch {
-      setConnectingGads(false)
-      setError('Failed to start Google Ads authorisation. Please try again.')
-    }
+    } catch { setConnectingGads(false); setError('Failed to start Google Ads authorisation.') }
   }
 
   const handleConnectSearchConsole = async () => {
@@ -268,99 +155,58 @@ export default function ClientDetailPage({ params }: Props) {
       clearOAuthSessionKeys()
       sessionStorage.setItem('gsc_connect_client_id', clientId)
       window.location.href = url
-    } catch {
-      setConnectingGsc(false)
-      setError('Failed to start Search Console authorisation. Please try again.')
-    }
-  }
-
-  const handleCustomSectionImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file || !client) return
-    setCustomImgUploading(true)
-    try {
-      const { url } = await customSectionApi.uploadImage(client.id, file)
-      setReportConfig((c) => ({ ...c, custom_section_image_url: url }))
-    } catch {
-      setError('Image upload failed. Max 5 MB, PNG/JPEG/WebP.')
-    } finally {
-      setCustomImgUploading(false)
-      if (customImgInputRef.current) customImgInputRef.current.value = ''
-    }
+    } catch { setConnectingGsc(false); setError('Failed to start Search Console authorisation.') }
   }
 
   const handleDisconnect = async (connectionId: string) => {
-    if (!window.confirm('Remove this connection? Reports for this client will use mock data until reconnected.')) return
+    if (!window.confirm('Remove this connection? Reports will use mock data until reconnected.')) return
     setDisconnecting(connectionId)
     try {
       await connectionsApi.delete(connectionId)
-      setConnections((prev) => prev.filter((c) => c.id !== connectionId))
-    } catch {
-      setError('Failed to remove connection.')
-    } finally {
-      setDisconnecting(null)
-    }
+      setConnections(prev => prev.filter(c => c.id !== connectionId))
+    } catch { setError('Failed to remove connection.') }
+    finally { setDisconnecting(null) }
   }
 
+  // ── Reports ────────────────────────────────────────────────────────────────
+
+  const [reports,        setReports]        = useState<Report[]>([])
+  const [reportsLoading, setReportsLoading] = useState(true)
+
+  useEffect(() => {
+    reportsApi.listByClient(clientId)
+      .then(({ reports: data }) => setReports(data))
+      .catch(() => {})
+      .finally(() => setReportsLoading(false))
+  }, [clientId])
+
+  const defaultRange = lastMonthRange()
+  const [periodStart,      setPeriodStart]      = useState(defaultRange.start)
+  const [periodEnd,        setPeriodEnd]        = useState(defaultRange.end)
+  const [selectedTemplate, setSelectedTemplate] = useState<'full' | 'summary' | 'brief'>('full')
+  const [visualTemplate,   setVisualTemplate]   = useState<'modern_clean' | 'dark_executive' | 'colorful_agency' | 'bold_geometric' | 'minimal_elegant' | 'gradient_modern'>('modern_clean')
+  const [generating,       setGenerating]       = useState(false)
+  const [genError,         setGenError]         = useState<string | null>(null)
+
   const handleGenerate = async () => {
-    setGenerating(true)
-    setGenError(null)
+    setGenerating(true); setGenError(null)
     try {
-      const report = await reportsApi.generate({
-        client_id:    clientId,
-        period_start: periodStart,
-        period_end:   periodEnd,
-        template:     selectedTemplate,
-        visual_template: visualTemplate,
-      })
+      const report = await reportsApi.generate({ client_id: clientId, period_start: periodStart, period_end: periodEnd, template: selectedTemplate, visual_template: visualTemplate })
       router.push(`/dashboard/reports/${report.id}`)
     } catch (err: unknown) {
-      const msg =
-        err instanceof Error ? err.message : 'Failed to generate report. Please try again.'
-      setGenError(msg)
+      setGenError(err instanceof Error ? err.message : 'Failed to generate report.')
       setGenerating(false)
     }
   }
 
-  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file || !client) return
-    setLogoUploading(true)
-    try {
-      const { url } = await uploadClientLogo(client.id, file)
-      setClientLogo(url)
-    } catch {
-      setError('Logo upload failed. Max 2 MB, PNG/JPEG/GIF/WebP.')
-    } finally {
-      setLogoUploading(false)
-      if (logoInputRef.current) logoInputRef.current.value = ''
-    }
-  }
+  // ── Report config ──────────────────────────────────────────────────────────
 
-  const handleSaveSchedule = async () => {
-    if (!client) return
-    setSavingSched(true)
-    try {
-      if (schedule) {
-        // Update existing schedule
-        const updated = await scheduledReportsApi.update(schedule.id, {
-          ...schedForm,
-          is_active: schedEnabled,
-        })
-        setSchedule(updated)
-      } else if (schedEnabled) {
-        // Create new schedule
-        const created = await scheduledReportsApi.create(schedForm)
-        setSchedule(created)
-      }
-      setSchedSaved(true)
-      setTimeout(() => setSchedSaved(false), 2500)
-    } catch {
-      setError('Failed to save schedule.')
-    } finally {
-      setSavingSched(false)
-    }
-  }
+  const [reportConfig, setReportConfig] = useState<ReportConfig>(DEFAULT_REPORT_CONFIG)
+  const [savingConfig, setSavingConfig] = useState(false)
+  const [configSaved,  setConfigSaved]  = useState(false)
+
+  const customImgInputRef    = useRef<HTMLInputElement>(null)
+  const [customImgUploading, setCustomImgUploading] = useState(false)
 
   const handleSaveConfig = async () => {
     if (!client) return
@@ -370,19 +216,112 @@ export default function ClientDetailPage({ params }: Props) {
       setClient(updated)
       setConfigSaved(true)
       setTimeout(() => setConfigSaved(false), 2500)
-    } catch {
-      setError('Failed to save report configuration.')
-    } finally {
-      setSavingConfig(false)
-    }
+    } catch { setError('Failed to save report configuration.') }
+    finally { setSavingConfig(false) }
   }
 
-  // ── Loading / error states ───────────────────────────────────────────────
+  const handleCustomSectionImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !client) return
+    setCustomImgUploading(true)
+    try {
+      const { url } = await customSectionApi.uploadImage(client.id, file)
+      setReportConfig(c => ({ ...c, custom_section_image_url: url }))
+    } catch { setError('Image upload failed. Max 5 MB, PNG/JPEG/WebP.') }
+    finally { setCustomImgUploading(false); if (customImgInputRef.current) customImgInputRef.current.value = '' }
+  }
+
+  // ── Schedules ──────────────────────────────────────────────────────────────
+
+  const [schedule,     setSchedule]     = useState<ScheduledReport | null>(null)
+  const [schedEnabled, setSchedEnabled] = useState(false)
+  const [schedForm,    setSchedForm]    = useState<ScheduledReportPayload>({
+    client_id: clientId, frequency: 'monthly', day_of_month: 1,
+    time_utc: '09:00', template: 'full', auto_send: false, send_to_emails: [],
+  })
+  const [savingSched, setSavingSched] = useState(false)
+  const [schedSaved,  setSchedSaved]  = useState(false)
+
+  useEffect(() => {
+    scheduledReportsApi.getByClient(clientId)
+      .then(schedules => {
+        const active = schedules[0] ?? null
+        setSchedule(active)
+        if (active) {
+          setSchedEnabled(active.is_active)
+          setSchedForm({ client_id: clientId, frequency: active.frequency as ScheduledReportPayload['frequency'], day_of_week: active.day_of_week ?? undefined, day_of_month: active.day_of_month ?? 1, time_utc: active.time_utc, template: active.template, auto_send: active.auto_send, send_to_emails: active.send_to_emails })
+        }
+      })
+      .catch(() => {})
+  }, [clientId])
+
+  const handleSaveSchedule = async () => {
+    if (!client) return
+    setSavingSched(true)
+    try {
+      if (schedule) {
+        const updated = await scheduledReportsApi.update(schedule.id, { ...schedForm, is_active: schedEnabled })
+        setSchedule(updated)
+      } else if (schedEnabled) {
+        const created = await scheduledReportsApi.create(schedForm)
+        setSchedule(created)
+      }
+      setSchedSaved(true)
+      setTimeout(() => setSchedSaved(false), 2500)
+    } catch { setError('Failed to save schedule.') }
+    finally { setSavingSched(false) }
+  }
+
+  // ── Settings ───────────────────────────────────────────────────────────────
+
+  const [editing,    setEditing]    = useState(false)
+  const [saving,     setSaving]     = useState(false)
+  const [deleting,   setDeleting]   = useState(false)
+  const [editValues, setEditValues] = useState<Partial<Client>>({})
+
+  const logoInputRef    = useRef<HTMLInputElement>(null)
+  const [logoUploading, setLogoUploading] = useState(false)
+  const [clientLogo,    setClientLogo]    = useState<string>('')
+
+  const handleSave = async () => {
+    if (!client) return
+    setSaving(true)
+    try {
+      const updated = await clientsApi.update(client.id, { name: editValues.name, website_url: editValues.website_url ?? undefined, industry: editValues.industry ?? undefined, primary_contact_email: editValues.primary_contact_email ?? undefined, goals_context: editValues.goals_context ?? undefined, notes: editValues.notes ?? undefined, report_language: editValues.report_language ?? 'en' })
+      setClient(updated)
+      setEditing(false)
+    } catch { setError('Failed to save changes.') }
+    finally { setSaving(false) }
+  }
+
+  const handleDelete = async () => {
+    if (!client) return
+    if (!window.confirm(`Delete ${client.name}? This cannot be undone.`)) return
+    setDeleting(true)
+    try {
+      await clientsApi.delete(client.id)
+      router.push('/dashboard/clients')
+    } catch { setError('Failed to delete client.'); setDeleting(false) }
+  }
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !client) return
+    setLogoUploading(true)
+    try {
+      const { url } = await uploadClientLogo(client.id, file)
+      setClientLogo(url)
+    } catch { setError('Logo upload failed. Max 2 MB, PNG/JPEG/GIF/WebP.') }
+    finally { setLogoUploading(false); if (logoInputRef.current) logoInputRef.current.value = '' }
+  }
+
+  // ── Loading / error states ─────────────────────────────────────────────────
 
   if (loading) {
     return (
-      <div className="max-w-2xl mx-auto space-y-4">
+      <div className="max-w-7xl mx-auto space-y-4">
         <div className="h-8 w-48 rounded bg-slate-100 animate-pulse" />
+        <div className="h-10 rounded-lg bg-slate-100 animate-pulse" />
         <div className="h-64 rounded-xl bg-slate-100 animate-pulse" />
       </div>
     )
@@ -390,981 +329,154 @@ export default function ClientDetailPage({ params }: Props) {
 
   if (error && !client) {
     return (
-      <div className="max-w-2xl mx-auto">
-        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          {error}
-        </div>
+      <div className="max-w-7xl mx-auto">
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>
       </div>
     )
   }
 
   if (!client) return null
 
-  return (
-    <div className="max-w-2xl mx-auto space-y-6">
-      {/* ── Page header ─────────────────────────────────────────────────── */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h1
-            className="text-2xl font-bold text-slate-900"
-            style={{ fontFamily: 'var(--font-plus-jakarta-sans)' }}
-          >
-            {client.name}
-          </h1>
-          {client.industry && (
-            <p className="mt-1 text-slate-500 text-sm flex items-center gap-1">
-              <Building2 className="h-3.5 w-3.5" />
-              {client.industry}
-            </p>
-          )}
-        </div>
+  // ── Render ─────────────────────────────────────────────────────────────────
 
-        <div className="flex gap-2">
-          {editing ? (
-            <>
-              <button
-                onClick={() => { setEditing(false); setEditValues(client) }}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 transition-colors"
-              >
-                <XIcon className="h-4 w-4" /> Cancel
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-800 transition-colors disabled:opacity-60"
-              >
-                <Check className="h-4 w-4" /> {saving ? 'Saving…' : 'Save'}
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={() => setEditing(true)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 transition-colors"
-              >
-                <Pencil className="h-4 w-4" /> Edit
-              </button>
-              <button
-                onClick={handleDelete}
-                disabled={deleting}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-sm text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-60"
-              >
-                <Trash2 className="h-4 w-4" /> {deleting ? 'Deleting…' : 'Delete'}
-              </button>
-            </>
-          )}
-        </div>
+  return (
+    <div className="max-w-7xl mx-auto space-y-0">
+
+      {/* Page header */}
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
+        {clientLogo ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={clientLogo} alt="" className="h-9 w-9 object-contain rounded-md border border-slate-200 bg-slate-50 p-0.5 shrink-0" />
+        ) : (
+          <div className="h-9 w-9 flex items-center justify-center rounded-md border border-slate-200 bg-slate-50 shrink-0">
+            <Building2 className="h-4 w-4 text-slate-300" />
+          </div>
+        )}
+        <h1 className="text-2xl font-bold text-slate-900" style={{ fontFamily: 'var(--font-plus-jakarta-sans)' }}>
+          {client.name}
+        </h1>
+        {client.industry && (
+          <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">{client.industry}</span>
+        )}
       </div>
 
+      {/* Error banner */}
       {error && (
-        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          {error}
-        </div>
+        <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>
       )}
 
-      {/* ── Client details card ─────────────────────────────────────────── */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-base text-slate-700">Client details</CardTitle>
-            {/* Client logo */}
-            <div className="flex items-center gap-2">
-              {clientLogo ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={clientLogo} alt="Client logo" className="h-10 w-10 object-contain rounded-md border border-slate-200 bg-slate-50 p-0.5" />
-              ) : (
-                <div className="flex h-10 w-10 items-center justify-center rounded-md border-2 border-dashed border-slate-200 bg-slate-50">
-                  <Building2 className="h-4 w-4 text-slate-300" />
-                </div>
+      {/* Tab bar — sticky, single scrollable row on mobile */}
+      <div className="sticky top-0 z-10 bg-slate-50 -mx-4 px-4 md:-mx-6 md:px-6 border-b border-slate-200 mb-6">
+        <nav className="flex gap-0 overflow-x-auto scrollbar-none -mb-px">
+          {TABS.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              onClick={() => setTab(id)}
+              className={cn(
+                'flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors shrink-0',
+                activeTab === id
+                  ? 'border-indigo-600 text-indigo-700 bg-indigo-50/50'
+                  : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
               )}
-              <button
-                onClick={() => logoInputRef.current?.click()}
-                disabled={logoUploading}
-                className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-60"
-              >
-                {logoUploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3" />}
-                {logoUploading ? 'Uploading…' : 'Logo'}
-              </button>
-              <input ref={logoInputRef} type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          <Field label="Name">
-            {editing ? (
-              <Input
-                value={editValues.name ?? ''}
-                onChange={(e) => setEditValues((v) => ({ ...v, name: e.target.value }))}
-              />
-            ) : (
-              <span>{client.name}</span>
-            )}
-          </Field>
+            >
+              <Icon className="h-4 w-4 shrink-0" />
+              <span className="hidden sm:inline">{label}</span>
+              <span className="sm:hidden">{label.slice(0, 3)}</span>
+            </button>
+          ))}
+        </nav>
+      </div>
 
-          <Field label="Website">
-            {editing ? (
-              <Input
-                value={editValues.website_url ?? ''}
-                onChange={(e) => setEditValues((v) => ({ ...v, website_url: e.target.value }))}
-                placeholder="https://example.com"
-                type="url"
-              />
-            ) : client.website_url ? (
-              <a
-                href={client.website_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-indigo-700 hover:underline flex items-center gap-1"
-              >
-                <Globe className="h-3.5 w-3.5" />
-                {client.website_url.replace(/^https?:\/\//, '')}
-              </a>
-            ) : (
-              <span className="text-slate-400">—</span>
-            )}
-          </Field>
-
-          <Field label="Industry">
-            {editing ? (
-              <Input
-                value={editValues.industry ?? ''}
-                onChange={(e) => setEditValues((v) => ({ ...v, industry: e.target.value }))}
-                placeholder="e.g. E-commerce"
-              />
-            ) : (
-              <span>{client.industry ?? <span className="text-slate-400">—</span>}</span>
-            )}
-          </Field>
-
-          <Field label="Contact email">
-            {editing ? (
-              <Input
-                value={editValues.primary_contact_email ?? ''}
-                onChange={(e) =>
-                  setEditValues((v) => ({ ...v, primary_contact_email: e.target.value }))
-                }
-                type="email"
-                placeholder="jane@example.com"
-              />
-            ) : client.primary_contact_email ? (
-              <a
-                href={`mailto:${client.primary_contact_email}`}
-                className="text-indigo-700 hover:underline flex items-center gap-1"
-              >
-                <Mail className="h-3.5 w-3.5" />
-                {client.primary_contact_email}
-              </a>
-            ) : (
-              <span className="text-slate-400">—</span>
-            )}
-          </Field>
-
-          <Field label="Goals & context">
-            {editing ? (
-              <textarea
-                value={editValues.goals_context ?? ''}
-                onChange={(e) => setEditValues((v) => ({ ...v, goals_context: e.target.value }))}
-                placeholder="Goals, KPIs, context for AI reports…"
-                rows={4}
-                className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
-              />
-            ) : (
-              <span className="whitespace-pre-wrap">
-                {client.goals_context ?? <span className="text-slate-400">—</span>}
-              </span>
-            )}
-          </Field>
-
-          <Field label="Report language">
-            {editing ? (
-              <LanguageSelector
-                value={editValues.report_language ?? 'en'}
-                onChange={(lang) => setEditValues((v) => ({ ...v, report_language: lang }))}
-              />
-            ) : (
-              <span className="text-slate-700">
-                {client.report_language && client.report_language !== 'en'
-                  ? client.report_language.toUpperCase()
-                  : 'English (default)'}
-              </span>
-            )}
-          </Field>
-        </CardContent>
-      </Card>
-
-      {/* ── Platform Connections ─────────────────────────────────────────── */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base text-slate-700 flex items-center gap-2">
-            <Link2 className="h-4 w-4 text-slate-400" />
-            Platform Connections
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {connectionsLoading ? (
-            <div className="h-12 rounded-lg bg-slate-100 animate-pulse" />
-          ) : (
-            <div className="space-y-3">
-              {/* GA4 row */}
-              {(() => {
-                const ga4 = connections.find((c) => c.platform === 'ga4')
-                const ga4Healthy = ga4?.status === 'active'
-                return ga4 ? (
-                  <div className={`flex items-center justify-between rounded-lg border px-4 py-3 ${ga4Healthy ? 'border-emerald-100 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
-                    <div className="flex items-center gap-3">
-                      <BarChart2 className={`h-4 w-4 shrink-0 ${ga4Healthy ? 'text-emerald-600' : 'text-amber-500'}`} />
-                      <div>
-                        <p className="text-sm font-medium text-slate-800">{ga4.account_name}</p>
-                        <p className="text-xs text-slate-400">{ga4.account_id}</p>
-                      </div>
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${ga4Healthy ? 'text-emerald-700 bg-emerald-100' : 'text-amber-700 bg-amber-100'}`}>
-                        {ga4Healthy ? 'Active' : ga4.status === 'error' ? 'Error' : 'Expired'}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {!ga4Healthy && (
-                        <button
-                          onClick={handleConnectGa4}
-                          disabled={connectingGa4}
-                          className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 transition-colors disabled:opacity-60"
-                        >
-                          {connectingGa4 ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2 className="h-3 w-3" />}
-                          Reconnect
-                        </button>
-                      )}
-                      <button
-                        onClick={() => handleDisconnect(ga4.id)}
-                        disabled={disconnecting === ga4.id}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-60"
-                      >
-                        {disconnecting === ga4.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unlink className="h-3 w-3" />}
-                        Disconnect
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <BarChart2 className="h-4 w-4 text-slate-400 shrink-0" />
-                      <div>
-                        <p className="text-sm font-medium text-slate-700">Google Analytics 4</p>
-                        <p className="text-xs text-slate-400">Not connected — reports use sample data</p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={handleConnectGa4}
-                      disabled={connectingGa4}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-800 transition-colors disabled:opacity-60"
-                    >
-                      {connectingGa4 ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2 className="h-3 w-3" />}
-                      Connect GA4
-                    </button>
-                  </div>
-                )
-              })()}
-
-              {/* Meta Ads row */}
-              {(() => {
-                const meta = connections.find((c) => c.platform === 'meta_ads')
-                const metaHealthy = meta?.status === 'active'
-                return meta ? (
-                  <div className={`flex items-center justify-between rounded-lg border px-4 py-3 ${metaHealthy ? 'border-emerald-100 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
-                    <div className="flex items-center gap-3">
-                      <Megaphone className={`h-4 w-4 shrink-0 ${metaHealthy ? 'text-emerald-600' : 'text-amber-500'}`} />
-                      <div>
-                        <p className="text-sm font-medium text-slate-800">{meta.account_name}</p>
-                        <p className="text-xs text-slate-400">{meta.account_id}</p>
-                      </div>
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${metaHealthy ? 'text-emerald-700 bg-emerald-100' : 'text-amber-700 bg-amber-100'}`}>
-                        {metaHealthy ? 'Active' : meta.status === 'error' ? 'Error' : 'Expired'}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {!metaHealthy && (
-                        <button
-                          onClick={handleConnectMeta}
-                          disabled={connectingMeta}
-                          className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 transition-colors disabled:opacity-60"
-                        >
-                          {connectingMeta ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2 className="h-3 w-3" />}
-                          Reconnect
-                        </button>
-                      )}
-                      <button
-                        onClick={() => handleDisconnect(meta.id)}
-                        disabled={disconnecting === meta.id}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-60"
-                      >
-                        {disconnecting === meta.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unlink className="h-3 w-3" />}
-                        Disconnect
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <Megaphone className="h-4 w-4 text-slate-400 shrink-0" />
-                      <div>
-                        <p className="text-sm font-medium text-slate-700">Meta Ads</p>
-                        <p className="text-xs text-slate-400">Not connected — reports use sample data</p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={handleConnectMeta}
-                      disabled={connectingMeta}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-800 transition-colors disabled:opacity-60"
-                    >
-                      {connectingMeta ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2 className="h-3 w-3" />}
-                      Connect Meta Ads
-                    </button>
-                  </div>
-                )
-              })()}
-
-              {/* Google Ads row */}
-              {(() => {
-                const gads = connections.find((c) => c.platform === 'google_ads')
-                const gadsHealthy = gads?.status === 'active'
-                return gads ? (
-                  <div className={`flex items-center justify-between rounded-lg border px-4 py-3 ${gadsHealthy ? 'border-emerald-100 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
-                    <div className="flex items-center gap-3">
-                      <TrendingUp className={`h-4 w-4 shrink-0 ${gadsHealthy ? 'text-emerald-600' : 'text-amber-500'}`} />
-                      <div>
-                        <p className="text-sm font-medium text-slate-800">{gads.account_name}</p>
-                        <p className="text-xs text-slate-400">{gads.account_id}</p>
-                      </div>
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${gadsHealthy ? 'text-emerald-700 bg-emerald-100' : 'text-amber-700 bg-amber-100'}`}>
-                        {gadsHealthy ? 'Active' : gads.status === 'error' ? 'Error' : 'Expired'}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {!gadsHealthy && (
-                        <button
-                          onClick={handleConnectGoogleAds}
-                          disabled={connectingGads}
-                          className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 transition-colors disabled:opacity-60"
-                        >
-                          {connectingGads ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2 className="h-3 w-3" />}
-                          Reconnect
-                        </button>
-                      )}
-                      <button
-                        onClick={() => handleDisconnect(gads.id)}
-                        disabled={disconnecting === gads.id}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-60"
-                      >
-                        {disconnecting === gads.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unlink className="h-3 w-3" />}
-                        Disconnect
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <TrendingUp className="h-4 w-4 text-slate-400 shrink-0" />
-                      <div>
-                        <p className="text-sm font-medium text-slate-700">Google Ads</p>
-                        <p className="text-xs text-slate-400">Not connected — reports use sample data</p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={handleConnectGoogleAds}
-                      disabled={connectingGads}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-800 transition-colors disabled:opacity-60"
-                    >
-                      {connectingGads ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2 className="h-3 w-3" />}
-                      Connect Google Ads
-                    </button>
-                  </div>
-                )
-              })()}
-
-              {/* Search Console row */}
-              {(() => {
-                const gsc = connections.find((c) => c.platform === 'search_console')
-                const gscHealthy = gsc?.status === 'active'
-                return gsc ? (
-                  <div className={`flex items-center justify-between rounded-lg border px-4 py-3 ${gscHealthy ? 'border-emerald-100 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
-                    <div className="flex items-center gap-3">
-                      <Search className={`h-4 w-4 shrink-0 ${gscHealthy ? 'text-emerald-600' : 'text-amber-500'}`} />
-                      <div>
-                        <p className="text-sm font-medium text-slate-800">{gsc.account_name}</p>
-                        <p className="text-xs text-slate-400">{gsc.account_id}</p>
-                      </div>
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${gscHealthy ? 'text-emerald-700 bg-emerald-100' : 'text-amber-700 bg-amber-100'}`}>
-                        {gscHealthy ? 'Active' : gsc.status === 'error' ? 'Error' : 'Expired'}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {!gscHealthy && (
-                        <button
-                          onClick={handleConnectSearchConsole}
-                          disabled={connectingGsc}
-                          className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 transition-colors disabled:opacity-60"
-                        >
-                          {connectingGsc ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2 className="h-3 w-3" />}
-                          Reconnect
-                        </button>
-                      )}
-                      <button
-                        onClick={() => handleDisconnect(gsc.id)}
-                        disabled={disconnecting === gsc.id}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-60"
-                      >
-                        {disconnecting === gsc.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unlink className="h-3 w-3" />}
-                        Disconnect
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <Search className="h-4 w-4 text-slate-400 shrink-0" />
-                      <div>
-                        <p className="text-sm font-medium text-slate-700">Google Search Console</p>
-                        <p className="text-xs text-slate-400">Not connected — SEO slides use sample data</p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={handleConnectSearchConsole}
-                      disabled={connectingGsc}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-800 transition-colors disabled:opacity-60"
-                    >
-                      {connectingGsc ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2 className="h-3 w-3" />}
-                      Connect Search Console
-                    </button>
-                  </div>
-                )
-              })()}
-
-              {/* CSV / Manual data row */}
-              <div className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3">
-                <div className="flex items-center gap-3">
-                  <Database className="h-4 w-4 text-slate-400 shrink-0" />
-                  <div>
-                    <p className="text-sm font-medium text-slate-700">CSV / Manual Data</p>
-                    <p className="text-xs text-slate-400">
-                      {connections.filter((c) => c.platform.startsWith('csv_')).length > 0
-                        ? `${connections.filter((c) => c.platform.startsWith('csv_')).length} CSV source(s) connected`
-                        : 'Upload LinkedIn Ads, TikTok, Shopify, or custom metrics'}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setShowCsvUpload(true)}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-800 transition-colors"
-                >
-                  <Upload className="h-3 w-3" />
-                  Upload CSV
-                </button>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* CSV Upload dialog */}
-      {showCsvUpload && (
-        <CSVUploadDialog
-          clientId={clientId}
-          onClose={() => setShowCsvUpload(false)}
-          onSuccess={() => {
-            // Refresh connections list so new CSV source appears
-            connectionsApi.listByClient(clientId)
-              .then(({ connections: data }) => setConnections(data))
-              .catch(() => {/* non-fatal */})
-            setShowCsvUpload(false)
-          }}
+      {/* Tab content */}
+      {activeTab === 'overview' && (
+        <OverviewTab
+          client={client}
+          reports={reports}
+          connections={connections}
+          reportsLoading={reportsLoading}
+          connectionsLoading={connectionsLoading}
         />
       )}
 
-      {/* ── Generate Report ─────────────────────────────────────────────── */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base text-slate-700 flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-indigo-600" />
-            Generate Report
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {generating ? (
-            <div className="flex flex-col items-center justify-center py-8 gap-3 text-center">
-              <div className="h-10 w-10 rounded-full border-4 border-indigo-200 border-t-indigo-700 animate-spin" />
-              <p className="font-semibold text-slate-700">Generating report…</p>
-              <p className="text-sm text-slate-400 max-w-xs">
-                AI is pulling data and writing your narrative insights. This takes 15–30 seconds.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-4">
+      {activeTab === 'integrations' && (
+        <IntegrationsTab
+          clientId={clientId}
+          connections={connections}
+          connectionsLoading={connectionsLoading}
+          connectingGa4={connectingGa4}
+          connectingMeta={connectingMeta}
+          connectingGads={connectingGads}
+          connectingGsc={connectingGsc}
+          disconnecting={disconnecting}
+          showCsvUpload={showCsvUpload}
+          setShowCsvUpload={setShowCsvUpload}
+          handleConnectGa4={handleConnectGa4}
+          handleConnectMeta={handleConnectMeta}
+          handleConnectGoogleAds={handleConnectGoogleAds}
+          handleConnectSearchConsole={handleConnectSearchConsole}
+          handleDisconnect={handleDisconnect}
+          onConnectionsRefresh={refreshConnections}
+        />
+      )}
 
-              {/* Detail level selector */}
-              <div>
-                <label className="block text-xs font-medium text-slate-500 mb-2">
-                  Detail level
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {([
-                    { value: 'full',    label: 'Full Report',      desc: '8 slides · complete analysis' },
-                    { value: 'summary', label: 'Summary',          desc: '4 slides · KPIs + highlights' },
-                    { value: 'brief',   label: 'One-Page Brief',   desc: '2 slides · numbers + summary' },
-                  ] as const).map((opt) => (
-                    <button
-                      key={opt.value}
-                      onClick={() => setSelectedTemplate(opt.value)}
-                      className={`flex flex-col items-start px-4 py-2.5 rounded-lg border text-left transition-colors ${
-                        selectedTemplate === opt.value
-                          ? 'bg-indigo-700 border-indigo-700 text-white'
-                          : 'bg-white border-slate-200 text-slate-700 hover:border-indigo-300 hover:bg-indigo-50'
-                      }`}
-                    >
-                      <span className="text-sm font-semibold">{opt.label}</span>
-                      <span className={`text-xs mt-0.5 ${selectedTemplate === opt.value ? 'text-indigo-200' : 'text-slate-400'}`}>
-                        {opt.desc}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
+      {activeTab === 'reports' && (
+        <ReportsTab
+          clientId={clientId}
+          reports={reports}
+          reportsLoading={reportsLoading}
+          periodStart={periodStart}
+          periodEnd={periodEnd}
+          setPeriodStart={setPeriodStart}
+          setPeriodEnd={setPeriodEnd}
+          selectedTemplate={selectedTemplate}
+          setSelectedTemplate={setSelectedTemplate}
+          visualTemplate={visualTemplate}
+          setVisualTemplate={setVisualTemplate}
+          generating={generating}
+          genError={genError}
+          reportConfig={reportConfig}
+          setReportConfig={setReportConfig}
+          savingConfig={savingConfig}
+          configSaved={configSaved}
+          customImgInputRef={customImgInputRef}
+          customImgUploading={customImgUploading}
+          handleGenerate={handleGenerate}
+          handleSaveConfig={handleSaveConfig}
+          handleCustomSectionImageUpload={handleCustomSectionImageUpload}
+        />
+      )}
 
-              {/* Visual style */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
-                  Visual Style
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {([
-                    { value: 'modern_clean',    label: 'Modern Clean',      desc: 'Light & professional',  colors: ['#4338CA', '#FAFAFA', '#FFFFFF'] },
-                    { value: 'dark_executive',  label: 'Dark Executive',    desc: 'Premium dark theme',    colors: ['#06B6D4', '#0F172A', '#1E293B'] },
-                    { value: 'colorful_agency', label: 'Colorful Agency',   desc: 'Vibrant & creative',    colors: ['#F97316', '#8B5CF6', '#14B8A6'] },
-                    { value: 'bold_geometric',  label: 'Bold Geometric',    desc: 'Strong shapes & impact',colors: ['#4338CA', '#3730A3', '#FFFFFF'] },
-                    { value: 'minimal_elegant', label: 'Minimal Elegant',   desc: 'Ultra-clean whitespace',colors: ['#0F172A', '#FFFFFF', '#E2E8F0'] },
-                    { value: 'gradient_modern', label: 'Gradient Modern',   desc: 'Warm startup aesthetic',colors: ['#F97316', '#F43F5E', '#8B5CF6'] },
-                  ] as const).map((opt) => (
-                    <button
-                      key={opt.value}
-                      onClick={() => setVisualTemplate(opt.value)}
-                      className={`flex flex-col items-start px-3 py-2.5 rounded-lg border text-left transition-colors ${
-                        visualTemplate === opt.value
-                          ? 'bg-indigo-700 border-indigo-700 text-white'
-                          : 'bg-white border-slate-200 text-slate-700 hover:border-indigo-300 hover:bg-indigo-50'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 mb-1">
-                        <div className="flex -space-x-0.5">
-                          {opt.colors.map((c, i) => (
-                            <div key={i} className="w-3 h-3 rounded-full border border-white/50" style={{ backgroundColor: c }} />
-                          ))}
-                        </div>
-                        <span className="text-sm font-semibold">{opt.label}</span>
-                      </div>
-                      <span className={`text-xs ${visualTemplate === opt.value ? 'text-indigo-200' : 'text-slate-400'}`}>
-                        {opt.desc}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
+      {activeTab === 'schedules' && (
+        <SchedulesTab
+          client={client}
+          schedule={schedule}
+          schedEnabled={schedEnabled}
+          setSchedEnabled={setSchedEnabled}
+          schedForm={schedForm}
+          setSchedForm={setSchedForm}
+          savingSched={savingSched}
+          schedSaved={schedSaved}
+          handleSaveSchedule={handleSaveSchedule}
+        />
+      )}
 
-              {/* Date range */}
-              <div className="flex flex-wrap gap-4">
-                <div className="flex-1 min-w-[160px]">
-                  <label className="block text-xs font-medium text-slate-500 mb-1.5">
-                    Period start
-                  </label>
-                  <Input
-                    type="date"
-                    value={periodStart}
-                    onChange={(e) => setPeriodStart(e.target.value)}
-                  />
-                </div>
-                <div className="flex-1 min-w-[160px]">
-                  <label className="block text-xs font-medium text-slate-500 mb-1.5">
-                    Period end
-                  </label>
-                  <Input
-                    type="date"
-                    value={periodEnd}
-                    onChange={(e) => setPeriodEnd(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              {genError && (
-                <p className="text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
-                  {genError}
-                </p>
-              )}
-
-              <button
-                onClick={handleGenerate}
-                disabled={!periodStart || !periodEnd}
-                className="inline-flex items-center gap-2 rounded-lg bg-indigo-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-800 transition-colors disabled:opacity-50"
-              >
-                <Sparkles className="h-4 w-4" />
-                Generate Report with AI
-              </button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* ── Report Configuration ─────────────────────────────────────────── */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base text-slate-700 flex items-center gap-2">
-            <Settings2 className="h-4 w-4 text-slate-400" />
-            Report Configuration
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-5">
-
-          {/* Default template for automation (scheduled reports) */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
-              Default detail level for scheduled reports
-            </label>
-            <select
-              value={reportConfig.template}
-              onChange={(e) =>
-                setReportConfig((c) => ({ ...c, template: e.target.value as ReportConfig['template'] }))
-              }
-              className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            >
-              <option value="full">Full Report — 8 slides, complete analysis</option>
-              <option value="summary">Summary — 4 slides, KPIs + highlights</option>
-              <option value="brief">One-Page Brief — 2 slides, numbers + summary</option>
-            </select>
-          </div>
-
-          {/* Section toggles */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
-              Sections
-            </label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {(Object.keys(reportConfig.sections) as Array<keyof ReportConfig['sections']>).map((key) => (
-                <label key={key} className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={reportConfig.sections[key]}
-                    onChange={(e) =>
-                      setReportConfig((c) => ({
-                        ...c,
-                        sections: { ...c.sections, [key]: e.target.checked },
-                      }))
-                    }
-                    className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                  />
-                  <span className="text-sm text-slate-700 capitalize">
-                    {key.replace(/_/g, ' ')}
-                  </span>
-                </label>
-              ))}
-            </div>
-          </div>
-
-          {/* Custom section (shown only when toggled on) */}
-          {reportConfig.sections.custom_section && (
-            <div className="space-y-3 rounded-lg border border-indigo-100 bg-indigo-50 p-4">
-              <p className="text-xs font-semibold text-indigo-700 uppercase tracking-wide">Custom Section</p>
-              <Input
-                value={reportConfig.custom_section_title}
-                onChange={(e) =>
-                  setReportConfig((c) => ({ ...c, custom_section_title: e.target.value }))
-                }
-                placeholder="Section title…"
-              />
-              <RichTextEditor
-                value={reportConfig.custom_section_text}
-                onChange={(val) =>
-                  setReportConfig((c) => ({ ...c, custom_section_text: val }))
-                }
-                placeholder="Write your custom commentary — use **bold**, ## headings, - bullets, 1. numbered lists…"
-                rows={6}
-              />
-
-              {/* Custom section image */}
-              <div className="flex items-center gap-3">
-                {reportConfig.custom_section_image_url && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={reportConfig.custom_section_image_url}
-                    alt="Custom section"
-                    className="h-16 w-24 object-cover rounded-md border border-indigo-200"
-                  />
-                )}
-                <div>
-                  <button
-                    type="button"
-                    onClick={() => customImgInputRef.current?.click()}
-                    disabled={customImgUploading}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-indigo-200 bg-white px-3 py-1.5 text-xs text-indigo-700 hover:bg-indigo-50 transition-colors disabled:opacity-60"
-                  >
-                    {customImgUploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <ImageIcon className="h-3 w-3" />}
-                    {customImgUploading ? 'Uploading…' : reportConfig.custom_section_image_url ? 'Replace image' : 'Add image'}
-                  </button>
-                  {reportConfig.custom_section_image_url && (
-                    <button
-                      type="button"
-                      onClick={() => setReportConfig((c) => ({ ...c, custom_section_image_url: undefined }))}
-                      className="ml-2 text-xs text-rose-500 hover:text-rose-700"
-                    >
-                      Remove
-                    </button>
-                  )}
-                  <p className="mt-1 text-[11px] text-slate-400">PNG / JPEG / WebP · max 5 MB · shown on slide right</p>
-                </div>
-                <input
-                  ref={customImgInputRef}
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  onChange={handleCustomSectionImageUpload}
-                  className="hidden"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Save button */}
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleSaveConfig}
-              disabled={savingConfig}
-              className="inline-flex items-center gap-2 rounded-lg bg-indigo-700 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-800 transition-colors disabled:opacity-60"
-            >
-              {savingConfig ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Check className="h-4 w-4" />
-              )}
-              {savingConfig ? 'Saving…' : 'Save Configuration'}
-            </button>
-            {configSaved && (
-              <span className="text-sm text-emerald-600 font-medium">
-                ✓ Saved
-              </span>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* ── Automated Reports ───────────────────────────────────────────── */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base text-slate-700 flex items-center gap-2">
-            <Clock className="h-4 w-4 text-slate-400" />
-            Automated Reports
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Enable toggle */}
-          <label className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3 cursor-pointer hover:bg-slate-50 transition-colors">
-            <div>
-              <p className="text-sm font-medium text-slate-700">Enable automatic report generation</p>
-              <p className="text-xs text-slate-400 mt-0.5">Reports will be generated on the schedule below</p>
-            </div>
-            <div
-              onClick={() => setSchedEnabled(!schedEnabled)}
-              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${schedEnabled ? 'bg-indigo-700' : 'bg-slate-200'}`}
-            >
-              <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${schedEnabled ? 'translate-x-4' : 'translate-x-1'}`} />
-            </div>
-          </label>
-
-          {schedEnabled && (
-            <div className="space-y-4 rounded-lg border border-slate-100 bg-slate-50 p-4">
-              {/* Frequency */}
-              <div className="flex flex-wrap gap-4 items-end">
-                <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1.5">Frequency</label>
-                  <select
-                    value={schedForm.frequency}
-                    onChange={(e) => setSchedForm((f) => ({ ...f, frequency: e.target.value as ScheduledReportPayload['frequency'] }))}
-                    className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="weekly">Weekly</option>
-                    <option value="biweekly">Bi-weekly</option>
-                    <option value="monthly">Monthly</option>
-                  </select>
-                </div>
-
-                {schedForm.frequency === 'monthly' ? (
-                  <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1.5">On day</label>
-                    <select
-                      value={schedForm.day_of_month ?? 1}
-                      onChange={(e) => setSchedForm((f) => ({ ...f, day_of_month: +e.target.value }))}
-                      className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    >
-                      {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
-                        <option key={d} value={d}>{d}</option>
-                      ))}
-                    </select>
-                  </div>
-                ) : (
-                  <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1.5">On</label>
-                    <select
-                      value={schedForm.day_of_week ?? 0}
-                      onChange={(e) => setSchedForm((f) => ({ ...f, day_of_week: +e.target.value }))}
-                      className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    >
-                      {['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map((d, i) => (
-                        <option key={d} value={i}>{d}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1.5">At (UTC)</label>
-                  <Input
-                    type="time"
-                    value={schedForm.time_utc}
-                    onChange={(e) => setSchedForm((f) => ({ ...f, time_utc: e.target.value }))}
-                    className="w-28"
-                  />
-                </div>
-              </div>
-
-              {/* Detail level */}
-              <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1.5">Report detail level</label>
-                <select
-                  value={schedForm.template}
-                  onChange={(e) => setSchedForm((f) => ({ ...f, template: e.target.value }))}
-                  className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="full">Full Report — 8 slides</option>
-                  <option value="summary">Summary — 4 slides</option>
-                  <option value="brief">One-Page Brief — 2 slides</option>
-                </select>
-              </div>
-
-              {/* Auto-send */}
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={schedForm.auto_send}
-                  onChange={(e) => setSchedForm((f) => ({ ...f, auto_send: e.target.checked }))}
-                  className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                />
-                <span className="text-sm text-slate-700">Auto-send report to client via email</span>
-              </label>
-
-              {schedForm.auto_send && (
-                <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1.5">Send to (comma-separated emails)</label>
-                  <Input
-                    value={schedForm.send_to_emails?.join(', ') ?? ''}
-                    onChange={(e) =>
-                      setSchedForm((f) => ({
-                        ...f,
-                        send_to_emails: e.target.value.split(',').map((s) => s.trim()).filter(Boolean),
-                      }))
-                    }
-                    placeholder="client@company.com, ceo@company.com"
-                  />
-                </div>
-              )}
-
-              {/* Status info */}
-              {schedule && (
-                <div className="text-xs text-slate-400 space-y-0.5">
-                  {schedule.next_run_at && (
-                    <p>Next report: {new Date(schedule.next_run_at).toLocaleDateString('en-US', { weekday:'short', year:'numeric', month:'short', day:'numeric' })} at {schedule.time_utc} UTC</p>
-                  )}
-                  {schedule.last_generated_at && (
-                    <p>Last generated: {new Date(schedule.last_generated_at).toLocaleDateString('en-US', { weekday:'short', year:'numeric', month:'short', day:'numeric' })}</p>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Save button */}
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleSaveSchedule}
-              disabled={savingSched}
-              className="inline-flex items-center gap-2 rounded-lg bg-indigo-700 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-800 transition-colors disabled:opacity-60"
-            >
-              {savingSched ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-              {savingSched ? 'Saving…' : 'Save Schedule'}
-            </button>
-            {schedSaved && <span className="text-sm text-emerald-600 font-medium">✓ Saved</span>}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* ── Report history ──────────────────────────────────────────────── */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base text-slate-700 flex items-center gap-2">
-            <FileText className="h-4 w-4 text-slate-400" />
-            Report History
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {reportsLoading ? (
-            <div className="space-y-2">
-              {[1, 2].map((i) => (
-                <div key={i} className="h-12 rounded-lg bg-slate-100 animate-pulse" />
-              ))}
-            </div>
-          ) : reports.length === 0 ? (
-            <p className="text-sm text-slate-400 py-2">
-              No reports generated yet. Use the form above to generate your first report.
-            </p>
-          ) : (
-            <ul className="divide-y divide-slate-100">
-              {reports.map((report) => (
-                <li key={report.id}>
-                  <Link
-                    href={`/dashboard/reports/${report.id}`}
-                    className="flex items-center justify-between py-3 hover:bg-slate-50 -mx-2 px-2 rounded-lg transition-colors group"
-                  >
-                    <div className="flex items-start gap-3">
-                      <FileText className="h-4 w-4 text-indigo-400 mt-0.5 shrink-0" />
-                      <div>
-                        <p className="text-sm font-medium text-slate-800 group-hover:text-indigo-700 transition-colors">
-                          {report.title}
-                        </p>
-                        <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
-                          <Calendar className="h-3 w-3" />
-                          {report.period_start} → {report.period_end}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                          report.status === 'draft' || report.status === 'approved'
-                            ? 'bg-emerald-50 text-emerald-700'
-                            : 'bg-slate-100 text-slate-500'
-                        }`}
-                      >
-                        {report.status}
-                      </span>
-                      <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-slate-500 transition-colors" />
-                    </div>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  )
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="grid grid-cols-3 gap-4 items-start">
-      <span className="text-sm font-medium text-slate-500 pt-1">{label}</span>
-      <div className="col-span-2 text-sm text-slate-800">{children}</div>
+      {activeTab === 'settings' && (
+        <SettingsTab
+          client={client}
+          editing={editing}
+          setEditing={setEditing}
+          saving={saving}
+          deleting={deleting}
+          editValues={editValues}
+          setEditValues={setEditValues}
+          clientLogo={clientLogo}
+          logoUploading={logoUploading}
+          logoInputRef={logoInputRef}
+          handleSave={handleSave}
+          handleDelete={handleDelete}
+          handleLogoUpload={handleLogoUpload}
+        />
+      )}
     </div>
   )
 }

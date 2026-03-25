@@ -58,7 +58,7 @@ export default function ReportsPage() {
 
   if (loading) {
     return (
-      <div className="max-w-5xl mx-auto space-y-3">
+      <div className="max-w-7xl mx-auto space-y-3">
         <div className="h-8 w-48 rounded bg-slate-100 animate-pulse" />
         {[1, 2, 3].map((i) => (
           <div key={i} className="h-16 rounded-xl bg-slate-100 animate-pulse" />
@@ -68,7 +68,7 @@ export default function ReportsPage() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto">
+    <div className="max-w-7xl mx-auto">
       {/* Header */}
       <div className="mb-6">
         <h1
