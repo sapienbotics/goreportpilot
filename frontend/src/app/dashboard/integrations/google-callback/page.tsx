@@ -5,14 +5,20 @@
 // OAuth redirect URI and are distinguished by which sessionStorage key is set.
 //
 // Flow:
-//   1. Client detail page stores the client_id and initiates the OAuth redirect.
+//   1. Client detail / integrations page stores client_id in sessionStorage
+//      and initiates the OAuth redirect.
 //      Key names:  ga4_connect_client_id | gads_connect_client_id | gsc_connect_client_id
 //   2. Google redirects → /api/auth/callback/google-analytics → here
-//   3. This page detects the platform, exchanges the code via the correct backend
-//      endpoint, then presents the user with a list of properties/accounts/sites.
+//   3. This page detects the platform, exchanges the code via the correct
+//      backend endpoint, then presents the user with a list of
+//      properties / accounts / sites.
 //   4. User picks one → saved as a connection → redirect to client detail page.
+//
+// IMPORTANT: Platform detection + sessionStorage cleanup + code exchange all
+// happen inside a SINGLE useEffect to avoid React Strict Mode double-mount
+// clearing the keys before the exchange can read them.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
   CheckCircle, Loader2, AlertTriangle,
@@ -29,7 +35,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type Platform = 'ga4' | 'google_ads' | 'search_console'
-type Step = 'exchanging' | 'select' | 'saving' | 'done' | 'error'
+type Step = 'init' | 'exchanging' | 'select' | 'saving' | 'done' | 'error'
 
 interface PlatformMeta {
   label: string
@@ -37,7 +43,8 @@ interface PlatformMeta {
   icon: React.ReactNode
   platformValue: string          // value stored in connections.platform
   emptyMessage: string
-  sessionKey: string
+  selectLabel: string
+  itemNoun: string               // "property" | "account" | "site"
 }
 
 const PLATFORM_META: Record<Platform, PlatformMeta> = {
@@ -48,7 +55,8 @@ const PLATFORM_META: Record<Platform, PlatformMeta> = {
     platformValue: 'google_analytics',
     emptyMessage:
       'No GA4 properties found. Make sure your Google account has access to at least one Google Analytics 4 property.',
-    sessionKey: 'ga4_connect_client_id',
+    selectLabel: 'Choose which GA4 property to connect to this client.',
+    itemNoun: 'property',
   },
   google_ads: {
     label: 'Google Ads',
@@ -57,7 +65,8 @@ const PLATFORM_META: Record<Platform, PlatformMeta> = {
     platformValue: 'google_ads',
     emptyMessage:
       'No Google Ads accounts found. Make sure your Google account has access to a Google Ads account and that you have the correct developer token and login customer ID configured.',
-    sessionKey: 'gads_connect_client_id',
+    selectLabel: 'Choose which Google Ads account to connect to this client.',
+    itemNoun: 'account',
   },
   search_console: {
     label: 'Search Console',
@@ -66,7 +75,8 @@ const PLATFORM_META: Record<Platform, PlatformMeta> = {
     platformValue: 'search_console',
     emptyMessage:
       'No verified sites found. Make sure your Google account has at least one verified site in Google Search Console.',
-    sessionKey: 'gsc_connect_client_id',
+    selectLabel: 'Choose which Search Console site to connect to this client.',
+    itemNoun: 'site',
   },
 }
 
@@ -112,51 +122,71 @@ export default function GoogleCallbackPage() {
   const code  = searchParams.get('code')
   const state = searchParams.get('state')
 
-  const [platform,    setPlatform]    = useState<Platform | null>(null)
-  const [clientId,    setClientId]    = useState<string | null>(null)
-  const [step,        setStep]        = useState<Step>('exchanging')
+  const [platform,    setPlatform]    = useState<Platform>('ga4')
+  const [clientId,    setClientId]    = useState<string>('')
+  const [step,        setStep]        = useState<Step>('init')
   const [items,       setItems]       = useState<ListItem[]>([])
   const [tokenHandle, setTokenHandle] = useState('')
   const [selected,    setSelected]    = useState('')
   const [errorMsg,    setErrorMsg]    = useState('')
 
-  // ── Step 0: detect platform from sessionStorage ───────────────────────────
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    let detected: Platform = 'ga4'
-    let cid: string | null = null
+  // Ref guard: prevent React Strict Mode from running the effect twice.
+  // The first invocation reads + clears sessionStorage and kicks off the
+  // async exchange.  A second invocation (from Strict Mode remount) must
+  // be a no-op because the keys are already gone.
+  const didRunRef = useRef(false)
 
-    if (sessionStorage.getItem('gads_connect_client_id')) {
+  // ── Single combined effect: detect platform → exchange code ───────────────
+  useEffect(() => {
+    if (didRunRef.current) return
+    didRunRef.current = true
+
+    // 1. Detect platform from sessionStorage (synchronous)
+    let detected: Platform = 'ga4'
+    let cid = ''
+
+    const gadsKey = sessionStorage.getItem('gads_connect_client_id')
+    const gscKey  = sessionStorage.getItem('gsc_connect_client_id')
+    const ga4Key  = sessionStorage.getItem('ga4_connect_client_id')
+
+    if (gadsKey) {
       detected = 'google_ads'
-      cid = sessionStorage.getItem('gads_connect_client_id')
-    } else if (sessionStorage.getItem('gsc_connect_client_id')) {
+      cid = gadsKey
+    } else if (gscKey) {
       detected = 'search_console'
-      cid = sessionStorage.getItem('gsc_connect_client_id')
-    } else {
+      cid = gscKey
+    } else if (ga4Key) {
       detected = 'ga4'
-      cid = sessionStorage.getItem('ga4_connect_client_id')
+      cid = ga4Key
     }
 
-    // Immediately clear ALL Google-related keys to prevent stale detection
-    // on subsequent OAuth flows (keys are only needed for this one detection).
+    // 2. Clear ALL keys immediately — they're single-use
     sessionStorage.removeItem('ga4_connect_client_id')
     sessionStorage.removeItem('gads_connect_client_id')
     sessionStorage.removeItem('gsc_connect_client_id')
 
+    // 3. Persist into React state (for render + handleSave)
     setPlatform(detected)
     setClientId(cid)
-  }, [])
 
-  // ── Step 1: exchange auth code via correct backend endpoint ───────────────
-  useEffect(() => {
-    if (platform === null || clientId === undefined) return  // still detecting
-
+    // 4. Validate params
     if (!code || !state) {
       setErrorMsg('Missing OAuth parameters. Please try connecting again.')
       setStep('error')
       return
     }
 
+    if (!cid) {
+      setErrorMsg(
+        'Could not determine which client this connection is for. ' +
+        'Please go back to the client page and try connecting again.'
+      )
+      setStep('error')
+      return
+    }
+
+    // 5. Exchange auth code using the detected platform's backend endpoint
+    setStep('exchanging')
     const payload = { code, state }
 
     const exchange = async () => {
@@ -164,21 +194,21 @@ export default function GoogleCallbackPage() {
         let rawItems: unknown = []
         let handle = ''
 
-        if (platform === 'ga4') {
-          const result = await authApi.googleCallback(payload)
-          rawItems = result.properties
-          handle   = result.token_handle
-        } else if (platform === 'google_ads') {
+        if (detected === 'google_ads') {
           const result = await authApi.googleAdsCallback(payload)
           rawItems = result.accounts
           handle   = result.token_handle
-        } else {
+        } else if (detected === 'search_console') {
           const result = await authApi.searchConsoleCallback(payload)
           rawItems = result.sites
           handle   = result.token_handle
+        } else {
+          const result = await authApi.googleCallback(payload)
+          rawItems = result.properties
+          handle   = result.token_handle
         }
 
-        setItems(toListItems(platform, rawItems))
+        setItems(toListItems(detected, rawItems))
         setTokenHandle(handle)
         setStep('select')
       } catch (err: unknown) {
@@ -189,27 +219,25 @@ export default function GoogleCallbackPage() {
     }
 
     exchange()
-  }, [platform, clientId, code, state])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [code, state])  // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Step 2: user picks an item → save connection ──────────────────────────
+  // ── Save handler: user picks an item → create connection ──────────────────
   const handleSave = async () => {
     if (!selected || !clientId || !platform) return
     setStep('saving')
     try {
-      const meta    = PLATFORM_META[platform]
-      const item    = items.find((i) => i.id === selected)!
-      const payload: Parameters<typeof connectionsApi.create>[0] = {
+      const meta = PLATFORM_META[platform]
+      const item = items.find((i) => i.id === selected)!
+      const createPayload: Parameters<typeof connectionsApi.create>[0] = {
         client_id:    clientId,
         platform:     meta.platformValue,
         account_id:   selected,
         account_name: item.label,
         token_handle: tokenHandle,
       }
-      if (item.currency) payload.currency = item.currency
+      if (item.currency) createPayload.currency = item.currency
 
-      await connectionsApi.create(payload)
-
-      // sessionStorage keys already cleared in Step 0 detection
+      await connectionsApi.create(createPayload)
 
       setStep('done')
       setTimeout(() => {
@@ -222,12 +250,12 @@ export default function GoogleCallbackPage() {
     }
   }
 
-  const meta = platform ? PLATFORM_META[platform] : PLATFORM_META.ga4
+  const meta    = PLATFORM_META[platform]
   const backUrl = clientId ? `/dashboard/clients/${clientId}` : '/dashboard/integrations'
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
-  if (step === 'exchanging') {
+  if (step === 'init' || step === 'exchanging') {
     return (
       <PageShell meta={meta}>
         <div className="flex flex-col items-center gap-4 py-12">
@@ -283,16 +311,9 @@ export default function GoogleCallbackPage() {
   }
 
   // step === 'select'
-  const selectLabel =
-    platform === 'ga4'
-      ? 'Choose which GA4 property to connect to this client.'
-      : platform === 'google_ads'
-      ? 'Choose which Google Ads account to connect to this client.'
-      : 'Choose which Search Console site to connect to this client.'
-
   return (
     <PageShell meta={meta}>
-      <p className="text-sm text-slate-500 mb-6">{selectLabel}</p>
+      <p className="text-sm text-slate-500 mb-6">{meta.selectLabel}</p>
 
       {items.length === 0 ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 mb-6">
@@ -344,7 +365,7 @@ export default function GoogleCallbackPage() {
             disabled={!selected || !clientId}
             className="rounded-lg bg-indigo-700 px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-800 transition-colors disabled:opacity-50"
           >
-            Connect this {platform === 'ga4' ? 'property' : platform === 'google_ads' ? 'account' : 'site'}
+            Connect this {meta.itemNoun}
           </button>
         )}
       </div>
