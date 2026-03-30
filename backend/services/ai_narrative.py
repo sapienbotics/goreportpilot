@@ -1,5 +1,5 @@
 """
-AI Narrative Engine — uses GPT-4o to write report commentary.
+AI Narrative Engine — uses GPT-4.1 to write report commentary.
 See docs/reportpilot-feature-design-blueprint.md Section 7 for prompt architecture.
 """
 import json
@@ -45,8 +45,10 @@ TONE_MODIFIERS: Dict[str, str] = {
         "Structure with clear transitions between topics."
     ),
     "conversational": (
-        "Write conversationally, as if explaining to a busy business owner over coffee. "
-        "Avoid jargon. Use analogies where helpful. Keep it warm but data-backed."
+        "Write in a warm, friendly conversational tone — as if a trusted advisor is explaining results "
+        "to a busy business owner over coffee. Use natural language, occasional contractions, and relatable "
+        "analogies. Avoid jargon. Show genuine enthusiasm for wins and empathy for concerns. "
+        "Keep it data-backed but never dry or clinical."
     ),
     "executive": (
         "Write an executive brief. Lead with the single most important number. "
@@ -58,8 +60,10 @@ TONE_MODIFIERS: Dict[str, str] = {
     ),
     # Aliases used in the DB / UI
     "friendly": (
-        "Write conversationally, as if explaining to a busy business owner over coffee. "
-        "Avoid jargon. Use analogies where helpful. Keep it warm but data-backed."
+        "Write in a warm, friendly conversational tone — as if a trusted advisor is explaining results "
+        "to a busy business owner over coffee. Use natural language, occasional contractions, and relatable "
+        "analogies. Avoid jargon. Show genuine enthusiasm for wins and empathy for concerns. "
+        "Keep it data-backed but never dry or clinical."
     ),
     "technical": (
         "Write a thorough analytical review. Include percentage changes, period comparisons, and statistical context. "
@@ -97,7 +101,7 @@ _SECTION_INSTRUCTIONS: Dict[str, str] = {
 
 
 def _build_section_instructions(sections: list[str]) -> str:
-    """Build the numbered section list for the GPT-4o prompt."""
+    """Build the numbered section list for the GPT-4.1 prompt."""
     lines = []
     for i, key in enumerate(sections, start=1):
         template = _SECTION_INSTRUCTIONS.get(key, f'"{key}" — narrative for this section')
@@ -267,7 +271,7 @@ Return ONLY valid JSON, no markdown code blocks, no explanation outside the JSON
     try:
         ai = _get_openai_client()
         response = await ai.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4.1",
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT + language_instruction},
                 {"role": "user", "content": user_prompt},

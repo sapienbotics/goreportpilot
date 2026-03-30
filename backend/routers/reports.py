@@ -27,6 +27,30 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _sanitize_data_for_ai(data: dict) -> dict:
+    """
+    Return a deep copy of *data* with all float values rounded to 2 decimal places.
+
+    Prevents raw floats (e.g. 2.9600000001, 0.030000000000000002) from appearing
+    verbatim in AI-generated report text.  NaN and Infinity are replaced with 0.
+    """
+    import copy
+    import math
+
+    def _clean(obj):
+        if isinstance(obj, float):
+            if not math.isfinite(obj):
+                return 0.0
+            return round(obj, 2)
+        if isinstance(obj, dict):
+            return {k: _clean(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [_clean(item) for item in obj]
+        return obj
+
+    return _clean(copy.deepcopy(data))
+
+
 def _map_db_row(row: dict, client_name: str | None = None) -> dict:
     """
     Translate raw Supabase report row to the field names expected by
@@ -76,6 +100,7 @@ async def _generate_report_internal(
     period_end: str,
     template: str = "full",
     visual_template: str = "modern_clean",
+    csv_sources: list[dict] | None = None,
     supabase=None,
 ) -> dict:
     """
@@ -204,14 +229,20 @@ async def _generate_report_internal(
         mock_all["meta_ads"] = meta_data  # replace Meta Ads section with real data
     raw_data = mock_all
 
+    # Inject ad-hoc CSV sources supplied at generation time
+    if csv_sources:
+        raw_data["csv_sources"] = csv_sources
+
     # Always stamp the correct currency on the meta_ads section, even when using mock data,
     # so charts, AI narrative, and report generators all see the right currency.
     raw_data.setdefault("meta_ads", {})["currency"] = meta_currency
 
     # 3 — AI narrative (async I/O)
+    # Round all floats before passing to GPT-4o so the AI doesn't copy raw
+    # floating-point noise (e.g. 2.9600000001) into generated report text.
     from services.ai_narrative import generate_narrative  # noqa: PLC0415
     narrative = await generate_narrative(
-        data=raw_data,
+        data=_sanitize_data_for_ai(raw_data),
         client_name=client["name"],
         client_goals=client.get("goals_context"),
         tone=client.get("ai_tone", "professional"),
@@ -267,6 +298,7 @@ async def _generate_report_internal(
             cfg_custom if cfg_custom.get("title") else None,
             branding,
             visual_template,
+            client.get("report_language", "en") or "en",
         ),
     )
 
@@ -279,8 +311,18 @@ async def _generate_report_internal(
 
     with open(pptx_path, "wb") as f:
         f.write(pptx_bytes)
-    with open(pdf_path, "wb") as f:
-        f.write(pdf_bytes)
+
+    if pdf_bytes is not None:
+        with open(pdf_path, "wb") as f:
+            f.write(pdf_bytes)
+        db_pdf_path: str | None = pdf_path
+    else:
+        db_pdf_path = None  # Non-Latin language, LibreOffice unavailable — PPTX only
+        logger.info(
+            "PDF not saved for report %s — non-Latin language with no LibreOffice. "
+            "PPTX download will be offered instead.",
+            report_id,
+        )
 
     logger.info("Report files saved to %s", report_dir)
 
@@ -324,11 +366,12 @@ async def _generate_report_internal(
         "period_start":  period_start,
         "period_end":    period_end,
         "pptx_file_url": pptx_path,         # actual DB column name
-        "pdf_file_url":  pdf_path,          # actual DB column name
+        "pdf_file_url":  db_pdf_path,       # None when non-Latin + no LibreOffice
         "ai_narrative":  narrative,         # actual DB column name
         "sections": {
             "data_summary":   data_summary,
             "meta_currency":  meta_currency,
+            "ai_model":       "gpt-4.1",
             # Compact raw_data for section regeneration (daily arrays omitted to save space)
             "narrative_data": {
                 "ga4": {k: v for k, v in raw_data.get("ga4", {}).items() if k != "daily"},
@@ -370,6 +413,7 @@ async def generate_report(
         period_end=request.period_end,
         template=request.template,
         visual_template=request.visual_template,
+        csv_sources=request.csv_sources,
     )
     return ReportResponse(**_map_db_row(row, client_name=client_name))
 
@@ -541,7 +585,10 @@ async def download_pdf(
 
     pdf_path = os.path.join(REPORTS_BASE_DIR, report_id, "report.pdf")
     if not os.path.exists(pdf_path):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="PDF file not found on server")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="PDF not available for this report. The report language may require LibreOffice for PDF rendering — please download the PPTX instead.",
+        )
 
     safe_title = result.data.get("title", "report").replace(" — ", " - ").replace(" ", "_")[:80]
     return FileResponse(pdf_path, media_type="application/pdf", filename=f"{safe_title}.pdf")
