@@ -236,7 +236,7 @@ async function build() {
     addChartCard(s, 0.8, 1.5, 5.6, 3.0, "{{chart_device_breakdown}}");
     addChartCard(s, 6.8, 1.5, 5.7, 3.0, "{{chart_top_pages}}");
 
-    s.addText("{{website_narrative}}", {
+    s.addText("{{engagement_narrative}}", {
       x: 0.8, y: 4.8, w: W - 1.6, h: 2.0,
       fontSize: 12, fontFace: FONT, color: C.text,
       lineSpacingMultiple: 1.35, valign: "top",

@@ -290,7 +290,7 @@ async function build() {
   addTwoChartSlide(
     pres, "Website Engagement",
     "{{chart_device_breakdown}}", "{{chart_top_pages}}",
-    "{{website_narrative}}", 5
+    "{{engagement_narrative}}", 5
   );
 
   // ══════════════════════════════════════════════════════════════════════════

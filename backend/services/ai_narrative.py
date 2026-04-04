@@ -84,6 +84,7 @@ FALLBACK_NARRATIVE: Dict[str, str] = {
     "google_ads_performance": "Google Ads data collected. AI narrative pending.",
     "seo_performance": "SEO data collected. AI narrative pending.",
     "csv_performance": "Custom data collected. AI narrative pending.",
+    "engagement_analysis": "Engagement data collected. AI narrative pending.",
 }
 
 
@@ -97,6 +98,7 @@ _SECTION_INSTRUCTIONS: Dict[str, str] = {
     "google_ads_performance": '"{key}" — 2-3 paragraphs analyzing Google Ads search campaign performance',
     "seo_performance": '"{key}" — 2-3 paragraphs analyzing organic search performance from Google Search Console',
     "csv_performance": '"{key}" — 2 paragraphs summarizing the custom data source metrics',
+    "engagement_analysis": '"{key}" — 1-2 paragraphs analyzing website engagement: device breakdown (mobile vs desktop vs tablet), top pages by views/engagement, and user behavior insights',
 }
 
 
@@ -158,6 +160,10 @@ async def generate_narrative(
             "executive_summary", "website_performance", "paid_advertising",
             "key_wins", "concerns", "next_steps",
         ]
+        # Add engagement analysis if device/pages data present
+        ga4_data = data.get("ga4", {})
+        if ga4_data.get("device_breakdown") or ga4_data.get("top_pages"):
+            requested_sections.insert(-3, "engagement_analysis")
         # Add Google Ads section if data present
         if data.get("google_ads", {}).get("summary"):
             requested_sections.insert(-3, "google_ads_performance")

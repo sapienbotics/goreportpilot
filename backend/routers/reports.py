@@ -260,7 +260,7 @@ async def _generate_report_internal(
     )
     _profile = profile_result.data or {}
     branding = {
-        "agency_name":     _profile.get("agency_name") or "Your Agency",
+        "agency_name":     (_profile.get("agency_name") or "").strip() or "Your Agency",
         "agency_logo_url": _profile.get("agency_logo_url") or "",
         "brand_color":     _profile.get("brand_color") or "#4338CA",
         "client_logo_url": client.get("logo_url") or "",

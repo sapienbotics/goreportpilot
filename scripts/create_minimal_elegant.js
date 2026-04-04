@@ -260,7 +260,7 @@ async function build() {
 
     addChartLeft(s, "{{chart_device_breakdown}}");
     addChartRight(s, "{{chart_top_pages}}");
-    addNarrativeTwoChart(s, "{{website_narrative}}");
+    addNarrativeTwoChart(s, "{{engagement_narrative}}");
 
     addFooter(s, 5);
   }

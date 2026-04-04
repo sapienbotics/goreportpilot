@@ -280,7 +280,7 @@ def _build_replacements(
     while len(kpis) < 6:
         kpis.append(("", "", ""))
 
-    agency_name = br.get("agency_name") or client_info.get("agency_name") or "Your Agency"
+    agency_name = (br.get("agency_name") or "").strip() or (client_info.get("agency_name") or "").strip() or "Your Agency"
     report_date = datetime.now().strftime("%B %d, %Y")
     p_start = data.get("period_start", "")
     p_end   = data.get("period_end", "")
@@ -304,6 +304,7 @@ def _build_replacements(
         "{{report_date}}":           report_date,
         "{{executive_summary}}":     _narrative_to_text(narrative.get("executive_summary", "")),
         "{{website_narrative}}":     _narrative_to_text(narrative.get("website_performance", "")),
+        "{{engagement_narrative}}":  _narrative_to_text(narrative.get("engagement_analysis", "")),
         "{{ads_narrative}}":         _narrative_to_text(narrative.get("paid_advertising", "")),
         "{{key_wins}}":              _list_to_text(narrative.get("key_wins", "")),
         "{{concerns}}":              _list_to_text(narrative.get("concerns", "")),
@@ -1165,12 +1166,13 @@ def generate_pptx_report(
         # New 19-slide mapping.
         # Intentionally only maps ONE slide per narrative type — each slide that
         # shares the same placeholder key would otherwise show identical text.
-        # Slides not listed here (e.g. website_engagement, website_audience,
-        # bounce_rate_analysis) are chart-heavy; their {{website_narrative}}
-        # token is cleared by the leftover-placeholder cleanup pass below.
+        # Slides not listed here (e.g. website_audience, bounce_rate_analysis)
+        # are chart-heavy; their leftover placeholder tokens are cleared by the
+        # cleanup pass below.
         _NARRATIVE_SLIDES = {
             SLIDE_INDEX["executive_summary"]:   "{{executive_summary}}",
             SLIDE_INDEX["website_traffic"]:     "{{website_narrative}}",
+            SLIDE_INDEX["website_engagement"]:  "{{engagement_narrative}}",
             SLIDE_INDEX["meta_ads_overview"]:   "{{ads_narrative}}",
             SLIDE_INDEX["google_ads_overview"]: "{{google_ads_narrative}}",
             SLIDE_INDEX["seo_overview"]:        "{{seo_narrative}}",
