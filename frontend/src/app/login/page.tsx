@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useForm } from 'react-hook-form'
@@ -25,6 +26,11 @@ function LoginForm() {
   const searchParams = useSearchParams()
   const callbackError = searchParams.get('error')
 
+  const [showResendConfirmation, setShowResendConfirmation] = useState(false)
+  const [resending, setResending] = useState(false)
+  const [resendSuccess, setResendSuccess] = useState(false)
+  const [lastEmail, setLastEmail] = useState('')
+
   const {
     register,
     handleSubmit,
@@ -35,8 +41,11 @@ function LoginForm() {
   })
 
   const onSubmit = async (data: LoginFormData) => {
+    setShowResendConfirmation(false)
+    setResendSuccess(false)
+
     const supabase = createClient()
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data: authData, error } = await supabase.auth.signInWithPassword({
       email: data.email,
       password: data.password,
     })
@@ -46,8 +55,35 @@ function LoginForm() {
       return
     }
 
+    // Enforce email confirmation
+    if (authData.user && !authData.user.email_confirmed_at) {
+      await supabase.auth.signOut()
+      setLastEmail(data.email)
+      setShowResendConfirmation(true)
+      setError('root', {
+        message: 'Please verify your email address before signing in. Check your inbox for a confirmation link.',
+      })
+      return
+    }
+
     router.push('/dashboard')
     router.refresh()
+  }
+
+  const handleResendConfirmation = async () => {
+    setResending(true)
+    setResendSuccess(false)
+    const supabase = createClient()
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email: lastEmail,
+    })
+    if (error) {
+      setError('root', { message: 'Failed to resend confirmation email. Please try again.' })
+    } else {
+      setResendSuccess(true)
+    }
+    setResending(false)
   }
 
   return (
@@ -72,10 +108,35 @@ function LoginForm() {
                 </div>
               )}
 
-              {/* Form-level error (wrong credentials) */}
+              {/* Form-level error (wrong credentials, unconfirmed email) */}
               {errors.root && (
                 <div className="rounded-lg bg-rose-50 border border-rose-200 p-3 text-sm text-rose-700">
                   {errors.root.message}
+                </div>
+              )}
+
+              {/* Resend confirmation email */}
+              {showResendConfirmation && (
+                <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 space-y-2">
+                  {resendSuccess ? (
+                    <p className="text-sm text-emerald-700">
+                      Confirmation email sent! Check your inbox and spam folder.
+                    </p>
+                  ) : (
+                    <>
+                      <p className="text-xs text-slate-500">Didn&apos;t receive the email?</p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleResendConfirmation}
+                        disabled={resending}
+                        className="w-full"
+                      >
+                        {resending ? 'Sending...' : 'Resend Confirmation Email'}
+                      </Button>
+                    </>
+                  )}
                 </div>
               )}
 
@@ -95,7 +156,15 @@ function LoginForm() {
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="password">Password</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="password">Password</Label>
+                  <Link
+                    href="/forgot-password"
+                    className="text-sm text-indigo-600 hover:text-indigo-500"
+                  >
+                    Forgot password?
+                  </Link>
+                </div>
                 <Input
                   id="password"
                   type="password"
@@ -114,7 +183,7 @@ function LoginForm() {
                 className="w-full bg-indigo-700 hover:bg-indigo-800 text-white"
                 disabled={isSubmitting}
               >
-                {isSubmitting ? 'Signing in…' : 'Sign In'}
+                {isSubmitting ? 'Signing in\u2026' : 'Sign In'}
               </Button>
             </form>
 
@@ -126,7 +195,7 @@ function LoginForm() {
             </p>
             <p className="mt-3 text-center text-xs text-slate-400">
               <Link href="/terms" className="hover:underline">Terms</Link>
-              {' · '}
+              {' \u00B7 '}
               <Link href="/privacy" className="hover:underline">Privacy</Link>
             </p>
           </CardContent>

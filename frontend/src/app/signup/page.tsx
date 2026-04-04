@@ -11,17 +11,21 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Mail } from 'lucide-react'
 
 const signupSchema = z.object({
   email: z.string().min(1, 'Email is required').email('Please enter a valid email'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
 })
 
 type SignupFormData = z.infer<typeof signupSchema>
 
 export default function SignupPage() {
-  const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const [signupComplete, setSignupComplete] = useState(false)
+  const [signupEmail, setSignupEmail] = useState('')
   const [serverError, setServerError] = useState<string | null>(null)
+  const [resending, setResending] = useState(false)
+  const [resendSuccess, setResendSuccess] = useState(false)
 
   const {
     register,
@@ -47,7 +51,24 @@ export default function SignupPage() {
       return
     }
 
-    setSuccessMessage('Check your email for a confirmation link.')
+    setSignupEmail(data.email)
+    setSignupComplete(true)
+  }
+
+  const handleResend = async () => {
+    setResending(true)
+    setResendSuccess(false)
+    const supabase = createClient()
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email: signupEmail,
+    })
+    if (error) {
+      setServerError(error.message)
+    } else {
+      setResendSuccess(true)
+    }
+    setResending(false)
   }
 
   return (
@@ -60,13 +81,46 @@ export default function SignupPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-xl text-slate-900">Create your account</CardTitle>
-            <CardDescription>Start automating your client reports today.</CardDescription>
+            <CardTitle className="text-xl text-slate-900">
+              {signupComplete ? 'Check your email' : 'Create your account'}
+            </CardTitle>
+            <CardDescription>
+              {signupComplete
+                ? 'One more step to activate your account.'
+                : 'Start automating your client reports today.'}
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            {successMessage ? (
-              <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-4 text-sm text-emerald-800">
-                {successMessage}
+            {signupComplete ? (
+              <div className="space-y-4">
+                <div className="flex flex-col items-center gap-3 py-4">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-indigo-50">
+                    <Mail className="h-6 w-6 text-indigo-600" />
+                  </div>
+                  <p className="text-sm text-slate-700 text-center leading-relaxed">
+                    We&apos;ve sent a confirmation link to{' '}
+                    <strong className="text-slate-900">{signupEmail}</strong>.
+                    Click the link in the email to activate your account.
+                  </p>
+                </div>
+
+                {resendSuccess && (
+                  <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-700">
+                    Confirmation email resent! Check your inbox and spam folder.
+                  </div>
+                )}
+
+                <div className="text-center">
+                  <p className="text-xs text-slate-500 mb-2">Didn&apos;t receive the email?</p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleResend}
+                    disabled={resending || resendSuccess}
+                  >
+                    {resending ? 'Sending...' : resendSuccess ? 'Email Sent' : 'Resend Confirmation Email'}
+                  </Button>
+                </div>
               </div>
             ) : (
               <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -96,7 +150,7 @@ export default function SignupPage() {
                   <Input
                     id="password"
                     type="password"
-                    placeholder="Min. 6 characters"
+                    placeholder="Min. 8 characters"
                     autoComplete="new-password"
                     {...register('password')}
                     aria-invalid={!!errors.password}
@@ -111,7 +165,7 @@ export default function SignupPage() {
                   className="w-full bg-indigo-700 hover:bg-indigo-800 text-white"
                   disabled={isSubmitting}
                 >
-                  {isSubmitting ? 'Creating account…' : 'Create Account'}
+                  {isSubmitting ? 'Creating account\u2026' : 'Create Account'}
                 </Button>
 
                 <p className="text-xs text-slate-400 text-center">
