@@ -6,6 +6,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import JSONResponse
 
 from middleware.auth import get_current_user_id
 from middleware.plan_enforcement import get_user_subscription
@@ -40,6 +41,18 @@ def _time_ago(iso: str) -> str:
 @router.get("/stats")
 async def get_dashboard_stats(user_id: str = Depends(get_current_user_id)) -> dict:
     """Return aggregated metrics for the authenticated user's dashboard."""
+    try:
+        return await _build_dashboard_stats(user_id)
+    except Exception as exc:
+        logger.error("Dashboard stats error for user %s: %s", user_id, exc)
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Failed to load dashboard stats. Please try again."},
+        )
+
+
+async def _build_dashboard_stats(user_id: str) -> dict:
+    """Internal helper — builds the full stats dict."""
     supabase = get_supabase_admin()
     now = datetime.now(timezone.utc)
 
@@ -59,6 +72,7 @@ async def get_dashboard_stats(user_id: str = Depends(get_current_user_id)) -> di
     )
     clients = clients_result.data or []
     total_clients = len(clients)
+    client_ids = [c["id"] for c in clients]
     client_map = {c["id"]: c["name"] for c in clients}
 
     # ── Reports ──────────────────────────────────────────────────────────────
@@ -99,23 +113,22 @@ async def get_dashboard_stats(user_id: str = Depends(get_current_user_id)) -> di
             })
 
     # ── Connection health ─────────────────────────────────────────────────────
-    connections_result = (
-        supabase.table("connections")
-        .select("id, client_id, platform, status, account_name")
-        .in_("client_id", [c["id"] for c in clients] if clients else ["none"])
-        .execute()
-    )
-    connections = connections_result.data or []
+    connections: list[dict] = []
+    if client_ids:
+        connections_result = (
+            supabase.table("connections")
+            .select("id, client_id, platform, status, account_name")
+            .in_("client_id", client_ids)
+            .execute()
+        )
+        connections = connections_result.data or []
+
     health: dict[str, dict] = {}
     for conn in connections:
         platform = conn.get("platform", "unknown")
         if platform not in health:
             health[platform] = {"connected": 0, "healthy": 0, "issues": 0}
         health[platform]["connected"] += 1
-        # Use the status column as source of truth.
-        # The backend token manager updates status to 'expired'/'error' when
-        # a refresh fails. We do NOT use token_expires_at here — access tokens
-        # expire in 1 hour but the backend auto-refreshes them; that's not an issue.
         if conn.get("status") == "active":
             health[platform]["healthy"] += 1
         else:
@@ -149,7 +162,6 @@ async def get_dashboard_stats(user_id: str = Depends(get_current_user_id)) -> di
             platform_label = {"ga4": "Google Analytics", "meta_ads": "Meta Ads"}.get(
                 conn.get("platform", ""), conn.get("platform", "")
             )
-            # Find client name — need client_id from connection
             activity.append({
                 "type": "connection_added",
                 "description": f"{platform_label} connected",
