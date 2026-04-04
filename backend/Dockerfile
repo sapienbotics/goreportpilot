@@ -13,7 +13,7 @@ RUN apt-get update && \
         fonts-noto-extra \
         # Required by matplotlib / Pillow at runtime
         libglib2.0-0 \
-        libgl1-mesa-glx \
+        libgl1 \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Working directory ─────────────────────────────────────────────────────────
