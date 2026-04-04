@@ -80,7 +80,7 @@ export default function ClientDetailPage({ params }: Props) {
         if (data.logo_url)     setClientLogo(data.logo_url as string)
         if (data.report_config) {
           const rc = data.report_config
-          setReportConfig(prev => ({ ...DEFAULT_REPORT_CONFIG, ...rc, sections: { ...DEFAULT_REPORT_CONFIG.sections, ...rc.sections } }))
+          setReportConfig(() => ({ ...DEFAULT_REPORT_CONFIG, ...rc, sections: { ...DEFAULT_REPORT_CONFIG.sections, ...rc.sections } }))
         }
       })
       .catch(() => setError('Client not found or failed to load.'))

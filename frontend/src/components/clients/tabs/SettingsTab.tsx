@@ -3,7 +3,7 @@ import {
   Globe, Mail, Building2, Pencil, Trash2, Check, X as XIcon,
   Upload, Loader2,
 } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import LanguageSelector, { LANGUAGES } from '@/components/clients/LanguageSelector'
 import type { Client } from '@/types'

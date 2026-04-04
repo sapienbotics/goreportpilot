@@ -1,6 +1,6 @@
 'use client'
 import Link from 'next/link'
-import { FileText, Link2, Calendar, ChevronRight, BarChart2, Building2, Globe, Mail } from 'lucide-react'
+import { FileText, Link2, Calendar, ChevronRight, Building2, Globe, Mail } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { Client, Report, Connection } from '@/types'
 

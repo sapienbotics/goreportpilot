@@ -18,6 +18,7 @@ interface Props {
 }
 
 export default function SchedulesTab({
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   client, schedule,
   schedEnabled, setSchedEnabled,
   schedForm, setSchedForm,

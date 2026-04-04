@@ -13,7 +13,6 @@ import {
   Palette,
   Calendar,
   ArrowRight,
-  Check,
 } from 'lucide-react'
 import { Logo } from '@/components/ui/Logo'
 import MobileNav from '@/components/landing/mobile-nav'
@@ -190,7 +189,7 @@ export default function LandingPage() {
                 className="text-3xl md:text-4xl font-bold text-slate-900"
                 style={{ fontFamily: 'var(--font-plus-jakarta-sans)' }}
               >
-                Reporting Shouldn't Eat Your Weekends
+                Reporting Shouldn&apos;t Eat Your Weekends
               </h2>
             </div>
             <div className="grid md:grid-cols-3 gap-6">
@@ -302,7 +301,7 @@ export default function LandingPage() {
                 className="text-3xl md:text-4xl font-bold text-slate-900"
                 style={{ fontFamily: 'var(--font-plus-jakarta-sans)' }}
               >
-                Everything Agencies Need. Nothing They Don't.
+                Everything Agencies Need. Nothing They Don&apos;t.
               </h2>
             </div>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">

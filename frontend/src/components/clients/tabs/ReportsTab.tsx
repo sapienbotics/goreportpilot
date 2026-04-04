@@ -1,5 +1,5 @@
 'use client'
-import { useRef, useState, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import Link from 'next/link'
 import {
   FileText, Sparkles, Calendar, ChevronRight, Settings2,
@@ -42,6 +42,7 @@ interface Props {
 }
 
 export default function ReportsTab({
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   clientId, reports, reportsLoading,
   periodStart, periodEnd, setPeriodStart, setPeriodEnd,
   selectedTemplate, setSelectedTemplate,

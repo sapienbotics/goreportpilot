@@ -156,8 +156,6 @@ export default function IntegrationsPage() {
     void platformId  // referenced to avoid lint warning
   }
 
-  const selectedClient = clients.find((c) => c.id === selectedClientId) ?? null
-
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="max-w-7xl mx-auto space-y-6">

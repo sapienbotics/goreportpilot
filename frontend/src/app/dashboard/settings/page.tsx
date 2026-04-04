@@ -387,7 +387,7 @@ function EmailTab({
       </p>
       <FieldRow label="Sender name">
         <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Acme Digital Agency" />
-        <p className="mt-1 text-xs text-slate-400">Shown as "From" name in clients' inboxes.</p>
+        <p className="mt-1 text-xs text-slate-400">Shown as &quot;From&quot; name in clients&apos; inboxes.</p>
       </FieldRow>
       <FieldRow label="Reply-to email">
         <Input value={reply} onChange={(e) => setReply(e.target.value)} type="email" placeholder="hello@acme.com" />
