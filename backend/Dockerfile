@@ -20,11 +20,11 @@ RUN apt-get update && \
 WORKDIR /app
 
 # ── Python dependencies (cached layer) ────────────────────────────────────────
-COPY requirements.txt .
+COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # ── Application code ──────────────────────────────────────────────────────────
-COPY . .
+COPY backend/ .
 
 # ── Persistent storage directories ───────────────────────────────────────────
 RUN mkdir -p /app/reports /app/uploads /app/static
