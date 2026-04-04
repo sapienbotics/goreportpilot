@@ -103,7 +103,7 @@ export default function SettingsPage() {
 
   if (loading) {
     return (
-      <div className="max-w-2xl mx-auto space-y-4">
+      <div className="max-w-7xl mx-auto space-y-4">
         <div className="h-8 w-48 rounded bg-slate-100 animate-pulse" />
         <div className="h-96 rounded-xl bg-slate-100 animate-pulse" />
       </div>
@@ -111,7 +111,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
+    <div className="max-w-7xl mx-auto space-y-6">
       {/* Page header */}
       <div>
         <h1

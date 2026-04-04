@@ -22,16 +22,20 @@ class Settings(BaseSettings):
     # Google OAuth
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
-    GOOGLE_REDIRECT_URI: str = "http://localhost:3000/api/auth/callback/google-analytics"
+    GOOGLE_REDIRECT_URI: str = ""
 
     # Meta OAuth
     META_APP_ID: str = ""
     META_APP_SECRET: str = ""
-    META_REDIRECT_URI: str = "http://localhost:3000/api/auth/callback/meta-ads"
+    META_REDIRECT_URI: str = ""
 
     # Google Ads
     GOOGLE_ADS_DEVELOPER_TOKEN: str = ""
     GOOGLE_ADS_LOGIN_CUSTOMER_ID: str = ""
+    GOOGLE_ADS_REDIRECT_URI: str = ""
+
+    # Search Console
+    SEARCH_CONSOLE_REDIRECT_URI: str = ""
 
     # OpenAI
     OPENAI_API_KEY: str = ""
@@ -66,6 +70,18 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:3000"
     BACKEND_URL: str = "http://localhost:8000"
     ENVIRONMENT: str = "development"
+
+    def model_post_init(self, __context: object) -> None:
+        """Derive redirect URIs from FRONTEND_URL when not explicitly set."""
+        _defaults = {
+            "GOOGLE_REDIRECT_URI": "/api/auth/callback/google-analytics",
+            "META_REDIRECT_URI": "/api/auth/callback/meta-ads",
+            "GOOGLE_ADS_REDIRECT_URI": "/api/auth/callback/google-ads",
+            "SEARCH_CONSOLE_REDIRECT_URI": "/api/auth/callback/search-console",
+        }
+        for attr, path in _defaults.items():
+            if not getattr(self, attr):
+                object.__setattr__(self, attr, f"{self.FRONTEND_URL}{path}")
 
 
 settings = Settings()

@@ -41,6 +41,7 @@ class ClientUpdate(BaseModel):
     notes: str | None = None
     is_active: bool | None = None
     report_config: dict | None = None  # Per-client report customisation (sections, KPIs, template)
+    report_language: str | None = None  # BCP-47 language code, e.g. "en", "fr", "de"
 
     @field_validator("ai_tone")
     @classmethod
@@ -66,6 +67,7 @@ class ClientResponse(BaseModel):
     notes: str | None = None
     is_active: bool
     report_config: dict | None = None  # Per-client section toggles, KPI selection, template
+    report_language: str | None = None  # BCP-47 language code, e.g. "en", "fr", "de"
     created_at: datetime
     updated_at: datetime
 
@@ -87,6 +89,7 @@ class ReportGenerateRequest(BaseModel):
     period_end: str    # "YYYY-MM-DD"
     template: str = "full"  # "full" | "summary" | "brief"
     visual_template: str = "modern_clean"  # "modern_clean" | "dark_executive" | "colorful_agency"
+    csv_sources: list[dict] | None = None  # ad-hoc CSV data for this report only
 
 
 class ReportResponse(BaseModel):

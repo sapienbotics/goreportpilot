@@ -6,6 +6,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/client'
+import { Logo } from '@/components/ui/Logo'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -53,10 +54,8 @@ function LoginForm() {
     <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
       <div className="w-full max-w-[400px]">
         {/* Logo */}
-        <div className="text-center mb-8">
-          <span className="text-2xl font-bold text-indigo-700" style={{ fontFamily: 'var(--font-plus-jakarta-sans)' }}>
-            ReportPilot
-          </span>
+        <div className="text-center mb-8 flex justify-center">
+          <Logo size="lg" />
         </div>
 
         <Card>

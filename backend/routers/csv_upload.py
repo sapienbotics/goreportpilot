@@ -87,8 +87,7 @@ async def upload_csv(
 
     # --- Parse CSV ---
     try:
-        csv_text = content.decode("utf-8-sig")  # strip BOM if present
-        parsed = parse_kpi_csv(csv_text)
+        parsed = parse_kpi_csv(content, filename)
     except Exception as exc:
         logger.warning("CSV parse error for client %s: %s", client_id, exc)
         raise HTTPException(
@@ -177,14 +176,52 @@ async def upload_csv(
 
 
 # ---------------------------------------------------------------------------
+# POST /csv-parse  — parse-only, no DB writes
+# ---------------------------------------------------------------------------
+
+@router.post("/csv-parse")
+async def parse_csv_only(
+    file: UploadFile = File(...),
+    _user_id: str = Depends(get_current_user_id),
+) -> dict:
+    """
+    Parse a CSV file and return metrics without creating any database records.
+    Used by the report generation flow to attach ad-hoc data to a single report.
+    """
+    filename = file.filename or "upload.csv"
+    if not filename.lower().endswith(".csv"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Only .csv files are accepted.",
+        )
+
+    content = await file.read()
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File exceeds the 1 MB limit ({len(content):,} bytes received).",
+        )
+
+    try:
+        parsed = parse_kpi_csv(content, filename)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Could not parse CSV: {exc}",
+        )
+
+    return parsed
+
+
+# ---------------------------------------------------------------------------
 # GET /csv-templates
 # ---------------------------------------------------------------------------
 
 @router.get("/csv-templates")
-async def list_csv_templates(
-    _user_id: str = Depends(get_current_user_id),
-) -> dict:
-    """Return the list of available CSV template names with descriptions."""
+async def list_csv_templates() -> dict:
+    """Return the list of available CSV template names with descriptions.
+    No auth required — templates are static, publicly shareable files.
+    """
     templates = [
         {"name": name, "description": _TEMPLATE_DESCRIPTIONS.get(name, "")}
         for name in TEMPLATE_NAMES
@@ -199,11 +236,10 @@ async def list_csv_templates(
 @router.get("/csv-templates/{name}")
 async def download_csv_template(
     name: str,
-    _user_id: str = Depends(get_current_user_id),
 ) -> PlainTextResponse:
     """
     Download a pre-built CSV template as a text/csv file.
-    The template shows the expected column headers and one example row.
+    No auth required — templates are static, publicly shareable files.
     """
     if name not in TEMPLATE_NAMES:
         raise HTTPException(

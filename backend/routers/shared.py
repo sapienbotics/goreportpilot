@@ -16,7 +16,7 @@ import hashlib
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
@@ -125,11 +125,14 @@ async def create_share_link(
     share_url = f"{settings.FRONTEND_URL}/shared/{share_hash}"
     logger.info("Share link created for report %s: %s", report_id, share_hash)
 
+    row = result.data[0]
     return {
-        "share_hash":    share_hash,
-        "share_url":     share_url,
-        "expires_at":    expires_at,
-        "has_password":  password_hash is not None,
+        "share_hash":   share_hash,
+        "share_url":    share_url,
+        "expires_at":   expires_at,
+        "has_password": password_hash is not None,
+        "is_active":    True,
+        "created_at":   row.get("created_at", ""),
     }
 
 
@@ -171,16 +174,17 @@ async def get_share_links(
 
     links = [
         {
-            "share_hash":  row["share_hash"],
-            "share_url":   f"{settings.FRONTEND_URL}/shared/{row['share_hash']}",
-            "expires_at":  row.get("expires_at"),
+            "share_hash":   row["share_hash"],
+            "share_url":    f"{settings.FRONTEND_URL}/shared/{row['share_hash']}",
+            "expires_at":   row.get("expires_at"),
             "has_password": row.get("password_hash") is not None,
-            "created_at":  row["created_at"],
+            "is_active":    row.get("is_active", True),
+            "created_at":   row["created_at"],
         }
         for row in (result.data or [])
     ]
 
-    return {"share_links": links, "total": len(links)}
+    return {"links": links, "total": len(links)}
 
 
 # ---------------------------------------------------------------------------
@@ -310,17 +314,17 @@ async def get_report_analytics(
 # Public endpoint: GET /api/shared/{hash}
 # ---------------------------------------------------------------------------
 
-@public_router.get("/{share_hash}")
-async def get_shared_report(share_hash: str) -> dict:
+def _check_shared_link(
+    supabase: Any,
+    share_hash: str,
+    *,
+    require_no_password: bool = False,
+) -> dict:
     """
-    Fetch a publicly shared report by its hash.
-
-    Returns 401 with {requires_password: true} if the link is password-protected.
-    Returns 410 if the link has expired.
-    Returns 404 if the link is not found or has been revoked.
+    Shared helper: look up a shared_reports row, validate is_active + expiry.
+    Returns the row dict on success.  Raises HTTPException on any failure.
+    When require_no_password=True also raises if the link has a password.
     """
-    supabase = get_supabase_admin()
-
     shared_result = (
         supabase.table("shared_reports")
         .select("id,report_id,password_hash,expires_at,is_active")
@@ -336,7 +340,7 @@ async def get_shared_report(share_hash: str) -> dict:
 
     shared = shared_result.data
 
-    if not shared["is_active"]:
+    if not shared.get("is_active", True):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Share link not found or has been revoked.",
@@ -358,18 +362,19 @@ async def get_shared_report(share_hash: str) -> dict:
         except HTTPException:
             raise
         except Exception:
-            pass  # If we can't parse the date, allow access
+            pass
 
-    # Password-protected: return minimal response prompting for verification
-    if shared.get("password_hash"):
+    if require_no_password and shared.get("password_hash"):
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
+            status_code=status.HTTP_403_FORBIDDEN,
             detail="This report is password-protected.",
-            headers={"X-Requires-Password": "true"},
         )
 
-    # Fetch the report
-    report_id = shared["report_id"]
+    return shared
+
+
+def _fetch_report_data(supabase: Any, report_id: str) -> dict:
+    """Fetch report + client + profile data and return a SharedReportData-shaped dict."""
     report_result = (
         supabase.table("reports")
         .select("id,user_id,client_id,title,period_start,period_end,ai_narrative,sections,status")
@@ -383,43 +388,138 @@ async def get_shared_report(share_hash: str) -> dict:
             detail="Report not found.",
         )
 
-    report = report_result.data
+    report  = report_result.data
     sections = report.get("sections") or {}
 
-    # Fetch client name
     client_result = (
         supabase.table("clients")
-        .select("name,report_config")
+        .select("name")
         .eq("id", report["client_id"])
         .single()
         .execute()
     )
-    client = client_result.data or {}
+    client      = client_result.data or {}
     client_name = client.get("name", "")
 
-    # Fetch agency branding
     profile_result = (
         supabase.table("profiles")
-        .select("agency_name")
+        .select("agency_name,agency_logo_url")
         .eq("id", report["user_id"])
         .maybe_single()
         .execute()
     )
-    profile = profile_result.data or {}
-    agency_name = profile.get("agency_name") or ""
+    profile    = profile_result.data or {}
+    agency_name     = profile.get("agency_name") or ""
+    agency_logo_url = profile.get("agency_logo_url") or None
 
     return {
-        "report_id":        report["id"],
-        "client_name":      client_name,
-        "period_start":     str(report.get("period_start", "")),
-        "period_end":       str(report.get("period_end", "")),
-        "agency_name":      agency_name,
-        "narrative":        report.get("ai_narrative"),
-        "kpi_summary":      sections.get("data_summary") if isinstance(sections, dict) else None,
-        "meta_currency":    sections.get("meta_currency", "USD") if isinstance(sections, dict) else "USD",
-        "title":            report.get("title", ""),
-        "requires_password": False,
+        "report_title":  report.get("title", ""),
+        "client_name":   client_name,
+        "period_start":  str(report.get("period_start", "")),
+        "period_end":    str(report.get("period_end", "")),
+        "agency_name":   agency_name,
+        "agency_logo_url": agency_logo_url,
+        "narrative":     report.get("ai_narrative") or {},
+        "data_summary":  sections.get("data_summary") if isinstance(sections, dict) else {},
+        "meta_currency": sections.get("meta_currency", "USD") if isinstance(sections, dict) else "USD",
     }
+
+
+@public_router.get("/{share_hash}")
+async def get_shared_report_meta(share_hash: str) -> dict:
+    """
+    Return lightweight metadata for a share link so the frontend can decide
+    whether to show a password gate, expired state, or proceed to fetch data.
+
+    Always returns HTTP 200 with:
+      { is_active, requires_password, expired, report_title, client_name }
+
+    Returns 404 if the hash is not found, 410 if the link has expired.
+    """
+    supabase = get_supabase_admin()
+
+    shared_result = (
+        supabase.table("shared_reports")
+        .select("id,report_id,password_hash,expires_at,is_active")
+        .eq("share_hash", share_hash)
+        .single()
+        .execute()
+    )
+    if not shared_result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Share link not found or has been revoked.",
+        )
+
+    shared = shared_result.data
+
+    if not shared.get("is_active", True):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Share link not found or has been revoked.",
+        )
+
+    # Check expiry
+    expired = False
+    if shared.get("expires_at"):
+        try:
+            expires_dt = datetime.fromisoformat(
+                str(shared["expires_at"]).replace("Z", "+00:00")
+            )
+            if expires_dt.tzinfo is None:
+                expires_dt = expires_dt.replace(tzinfo=timezone.utc)
+            if expires_dt < datetime.now(timezone.utc):
+                raise HTTPException(
+                    status_code=status.HTTP_410_GONE,
+                    detail="This share link has expired.",
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+
+    # Fetch minimal preview info (title + client name) from the linked report
+    report_id = shared["report_id"]
+    report_result = (
+        supabase.table("reports")
+        .select("title,client_id")
+        .eq("id", report_id)
+        .single()
+        .execute()
+    )
+    report = report_result.data or {}
+    client_result = (
+        supabase.table("clients")
+        .select("name")
+        .eq("id", report.get("client_id", ""))
+        .single()
+        .execute()
+    )
+    client      = client_result.data or {}
+    client_name = client.get("name", "")
+
+    return {
+        "is_active":        True,
+        "requires_password": bool(shared.get("password_hash")),
+        "expired":          expired,
+        "report_title":     report.get("title", ""),
+        "client_name":      client_name,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Public endpoint: GET /api/shared/{hash}/data
+# ---------------------------------------------------------------------------
+
+@public_router.get("/{share_hash}/data")
+async def get_shared_report_data(share_hash: str) -> dict:
+    """
+    Return full report data for a non-password-protected shared link.
+    For password-protected links use POST /{hash}/verify which returns the same payload.
+    """
+    supabase = get_supabase_admin()
+    shared   = _check_shared_link(supabase, share_hash, require_no_password=True)
+    return _fetch_report_data(supabase, shared["report_id"])
 
 
 # ---------------------------------------------------------------------------
@@ -433,27 +533,16 @@ async def verify_share_password(
 ) -> dict:
     """
     Verify the password for a password-protected share link.
-    Returns {verified: true} on success, 401 on mismatch.
+    Returns full SharedReportData on success (same shape as GET /{hash}/data).
+    Returns 401 on password mismatch, 404 if revoked, 410 if expired.
     """
     supabase = get_supabase_admin()
+    shared   = _check_shared_link(supabase, share_hash)
 
-    shared_result = (
-        supabase.table("shared_reports")
-        .select("password_hash,is_active,expires_at")
-        .eq("share_hash", share_hash)
-        .single()
-        .execute()
-    )
-    if not shared_result.data or not shared_result.data["is_active"]:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Share link not found or has been revoked.",
-        )
-
-    stored_hash = shared_result.data.get("password_hash")
+    stored_hash = shared.get("password_hash")
     if not stored_hash:
-        # Link has no password — verification always succeeds
-        return {"verified": True}
+        # Link has no password — verification always succeeds; return report data
+        return _fetch_report_data(supabase, shared["report_id"])
 
     submitted_hash = hashlib.sha256(body.password.encode()).hexdigest()
     if submitted_hash != stored_hash:
@@ -462,7 +551,8 @@ async def verify_share_password(
             detail="Incorrect password.",
         )
 
-    return {"verified": True}
+    # Password correct — return full report data
+    return _fetch_report_data(supabase, shared["report_id"])
 
 
 # ---------------------------------------------------------------------------
@@ -488,7 +578,7 @@ async def log_share_view(
         .single()
         .execute()
     )
-    if not shared_result.data or not shared_result.data["is_active"]:
+    if not shared_result.data or not shared_result.data.get("is_active", True):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Share link not found or has been revoked.",

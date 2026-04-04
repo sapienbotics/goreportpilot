@@ -22,8 +22,10 @@ Automates the workflow of pulling data from Google Analytics, Meta Ads, and Goog
 | Auth | Supabase Auth | (included with Supabase) | User signup/login, Google SSO, JWT |
 | AI | OpenAI API (GPT-4o) | latest | Narrative commentary generation |
 | Report Gen | python-pptx 0.6.23+ | latest stable | PowerPoint generation |
-| Report Gen | ReportLab 4.x | latest stable | PDF generation |
+| Report Gen | LibreOffice (headless) | 7.x+ | Primary PDF generation — PPTX→PDF with full Unicode support |
+| Report Gen | ReportLab 4.x | latest stable | PDF fallback (Latin languages) when LibreOffice unavailable |
 | Charts | matplotlib 3.8+ | latest stable | Static chart images for reports |
+| Fonts | Google Noto fonts | latest | Full script coverage in PDFs (Devanagari, CJK, Arabic, etc.) |
 | Scheduling | FastAPI BackgroundTasks + APScheduler | latest | Scheduled report generation and delivery |
 | Email | Resend | latest | Branded report delivery emails |
 | Frontend Hosting | Vercel | — | Next.js deployment |
@@ -374,6 +376,25 @@ The full schema is defined in `supabase/migrations/001_initial_schema.sql`.
 12. **DO NOT import from relative paths in frontend.** Always use the `@/` alias (e.g., `import { Button } from '@/components/ui/button'`).
 
 13. **DO NOT skip error handling on API responses.** Every fetch call must handle network errors, 4xx, and 5xx responses gracefully with user-friendly messages.
+
+14. **DO NOT forget LibreOffice for PDF generation.** The backend uses `soffice --headless --convert-to pdf` as the primary PDF path (handles all scripts including Hindi, Japanese, Arabic). For non-Latin reports, if LibreOffice is absent, `generate_pdf_report()` returns `None` and the frontend shows "PDF unavailable — download PPTX instead." LibreOffice is installed via `apt-get` in the Docker image. For local dev: `winget install LibreOffice.LibreOffice` (Windows) or `brew install --cask libreoffice` (Mac).
+
+15. **DO NOT use ReportLab as the primary PDF path for non-Latin languages.** ReportLab with DejaVu Sans cannot render Devanagari, CJK, or Arabic. The correct order is: LibreOffice first → ReportLab fallback (Latin only) → None (non-Latin without LibreOffice).
+
+---
+
+## System Dependencies (Local Development)
+
+| Tool | Purpose | Install |
+|---|---|---|
+| Node.js 20+ | Frontend | https://nodejs.org/ |
+| Python 3.11+ | Backend | https://www.python.org/ |
+| LibreOffice 7.x+ | PPTX→PDF conversion (all scripts) | `winget install LibreOffice.LibreOffice` / `brew install --cask libreoffice` |
+| Noto fonts | Non-Latin PDF rendering (optional for LibreOffice) | `apt-get install fonts-noto-core fonts-noto-cjk` |
+
+After installing LibreOffice, verify: `soffice --version` or `libreoffice --version`
+
+See `docs/PROJECT-HANDOFF.md` for full setup guide including Docker deployment instructions.
 
 ---
 

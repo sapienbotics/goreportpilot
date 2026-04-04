@@ -8,13 +8,12 @@ import { useEffect, useState, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import {
-  BarChart2, TrendingUp, Megaphone, Search, FileText,
+  BarChart2, TrendingUp, Megaphone, Search,
   CheckCircle, AlertTriangle, ExternalLink, Loader2,
   Link2, Unlink, RefreshCw, ChevronDown,
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { clientsApi, connectionsApi, authApi } from '@/lib/api'
-import CSVUploadDialog from '@/components/clients/CSVUploadDialog'
 import type { Client, Connection } from '@/types'
 
 // ── Platform definitions ──────────────────────────────────────────────────────
@@ -26,14 +25,13 @@ interface PlatformDef {
   description: string
   icon: React.ReactNode
   sessionKey?: string              // sessionStorage key for clientId (OAuth platforms)
-  isCsv?: boolean                  // handled differently — shows CSV dialog
   oauthType?: 'google' | 'meta' | 'google-ads' | 'search-console'
 }
 
 const PLATFORMS: PlatformDef[] = [
   {
-    id: 'google_analytics',
-    connectionPlatform: 'google_analytics',
+    id: 'ga4',
+    connectionPlatform: 'ga4',
     name: 'Google Analytics 4',
     description: 'Sessions, users, traffic sources, and conversion events from GA4 properties.',
     icon: <BarChart2 className="h-6 w-6 text-orange-500" />,
@@ -67,22 +65,11 @@ const PLATFORMS: PlatformDef[] = [
     sessionKey: 'gsc_connect_client_id',
     oauthType: 'search-console',
   },
-  {
-    id: 'csv_upload',
-    connectionPlatform: 'csv_',   // prefix — CSV connections use csv_<slug>
-    name: 'CSV / Manual Data',
-    description: 'Upload data from LinkedIn Ads, TikTok, Mailchimp, Shopify, or any custom source.',
-    icon: <FileText className="h-6 w-6 text-slate-500" />,
-    isCsv: true,
-  },
 ]
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function findConnection(connections: Connection[], platform: PlatformDef): Connection | undefined {
-  if (platform.isCsv) {
-    return connections.find((c) => c.platform.startsWith('csv_'))
-  }
   return connections.find((c) => c.platform === platform.connectionPlatform)
 }
 
@@ -99,7 +86,6 @@ export default function IntegrationsPage() {
   const [connectionsLoading,   setConnectionsLoading]   = useState(false)
   const [connecting,           setConnecting]           = useState<Record<string, boolean>>({})
   const [disconnecting,        setDisconnecting]        = useState<Record<string, boolean>>({})
-  const [showCsvUpload,        setShowCsvUpload]        = useState(false)
 
   // Load clients on mount
   useEffect(() => {
@@ -133,7 +119,7 @@ export default function IntegrationsPage() {
   // ── OAuth connect handlers ─────────────────────────────────────────────────
 
   const handleConnect = async (platform: PlatformDef) => {
-    if (!selectedClientId || platform.isCsv) return
+    if (!selectedClientId) return
     setConnecting((prev) => ({ ...prev, [platform.id]: true }))
     try {
       // Clear ALL Google-related keys first to prevent stale key detection
@@ -174,7 +160,7 @@ export default function IntegrationsPage() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <div className="max-w-7xl mx-auto space-y-6">
 
       {/* Header */}
       <div>
@@ -300,53 +286,32 @@ export default function IntegrationsPage() {
                         <div className="mt-4 flex flex-wrap gap-2">
                           {/* Not yet connected OR needs reconnect → show Connect */}
                           {(!conn || needsReconnect) && (
-                            platform.isCsv ? (
-                              <button
-                                onClick={() => setShowCsvUpload(true)}
-                                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-indigo-300 hover:text-indigo-700 transition-colors"
-                              >
-                                <FileText className="h-3.5 w-3.5" />
-                                Upload CSV
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => handleConnect(platform)}
-                                disabled={isConnecting}
-                                className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-800 transition-colors disabled:opacity-60"
-                              >
-                                {isConnecting
-                                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                  : <Link2 className="h-3.5 w-3.5" />
-                                }
-                                {needsReconnect ? 'Reconnect' : `Connect ${platform.name}`}
-                              </button>
-                            )
+                            <button
+                              onClick={() => handleConnect(platform)}
+                              disabled={isConnecting}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-800 transition-colors disabled:opacity-60"
+                            >
+                              {isConnecting
+                                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                : <Link2 className="h-3.5 w-3.5" />
+                              }
+                              {needsReconnect ? 'Reconnect' : `Connect ${platform.name}`}
+                            </button>
                           )}
 
-                          {/* Connected → show Disconnect (+ re-upload for CSV) */}
+                          {/* Connected → show Disconnect */}
                           {isConnected && (
-                            <>
-                              {platform.isCsv && (
-                                <button
-                                  onClick={() => setShowCsvUpload(true)}
-                                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:border-indigo-300 hover:text-indigo-700 transition-colors"
-                                >
-                                  <FileText className="h-3.5 w-3.5" />
-                                  Re-upload CSV
-                                </button>
-                              )}
-                              <button
-                                onClick={() => conn && handleDisconnect(conn, platform.id)}
-                                disabled={isDisconnecting}
-                                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-500 hover:border-rose-200 hover:text-rose-600 transition-colors disabled:opacity-60"
-                              >
-                                {isDisconnecting
-                                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                  : <Unlink className="h-3.5 w-3.5" />
-                                }
-                                Disconnect
-                              </button>
-                            </>
+                            <button
+                              onClick={() => conn && handleDisconnect(conn, platform.id)}
+                              disabled={isDisconnecting}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-500 hover:border-rose-200 hover:text-rose-600 transition-colors disabled:opacity-60"
+                            >
+                              {isDisconnecting
+                                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                : <Unlink className="h-3.5 w-3.5" />
+                              }
+                              Disconnect
+                            </button>
                           )}
                         </div>
                       )}
@@ -369,18 +334,6 @@ export default function IntegrationsPage() {
             )
           })}
         </div>
-      )}
-
-      {/* CSV Upload dialog */}
-      {showCsvUpload && selectedClient && (
-        <CSVUploadDialog
-          clientId={selectedClient.id}
-          onClose={() => setShowCsvUpload(false)}
-          onSuccess={() => {
-            setShowCsvUpload(false)
-            loadConnections(selectedClientId)
-          }}
-        />
       )}
 
       {/* Data privacy note */}

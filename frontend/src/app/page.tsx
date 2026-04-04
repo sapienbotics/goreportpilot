@@ -15,6 +15,7 @@ import {
   ArrowRight,
   Check,
 } from 'lucide-react'
+import { Logo } from '@/components/ui/Logo'
 import MobileNav from '@/components/landing/mobile-nav'
 import PricingToggle from '@/components/landing/pricing-toggle'
 import FaqAccordion from '@/components/landing/faq-accordion'
@@ -28,12 +29,7 @@ export default function LandingPage() {
       {/* ─── NAVIGATION ─── */}
       <nav className="sticky top-0 z-50 bg-white/95 backdrop-blur-sm border-b border-slate-100">
         <div className="mx-auto max-w-7xl px-6 h-16 flex items-center justify-between">
-          <span
-            className="text-xl font-bold text-indigo-700"
-            style={{ fontFamily: 'var(--font-plus-jakarta-sans)' }}
-          >
-            ReportPilot
-          </span>
+          <Logo size="md" />
 
           {/* Desktop links */}
           <div className="hidden md:flex items-center gap-8">
@@ -111,7 +107,7 @@ export default function LandingPage() {
                       </p>
                     </div>
                     <span className="rounded-md bg-white/20 px-2.5 py-1 text-white text-xs font-semibold">
-                      ReportPilot
+                      GoReportPilot
                     </span>
                   </div>
 
@@ -370,7 +366,7 @@ export default function LandingPage() {
                 className="text-3xl md:text-4xl font-bold text-slate-900"
                 style={{ fontFamily: 'var(--font-plus-jakarta-sans)' }}
               >
-                How ReportPilot Compares
+                How GoReportPilot Compares
               </h2>
             </div>
 
@@ -388,7 +384,7 @@ export default function LandingPage() {
                       DashThis
                     </th>
                     <th className="text-center py-4 px-4 bg-indigo-50 text-indigo-700 font-bold text-xs uppercase tracking-wide">
-                      ReportPilot
+                      GoReportPilot
                     </th>
                   </tr>
                 </thead>
@@ -482,12 +478,9 @@ export default function LandingPage() {
         <div className="mx-auto max-w-7xl px-6">
           <div className="grid md:grid-cols-3 gap-10">
             <div>
-              <p
-                className="text-xl font-bold text-white mb-3"
-                style={{ fontFamily: 'var(--font-plus-jakarta-sans)' }}
-              >
-                ReportPilot
-              </p>
+              <div className="mb-3">
+                <Logo size="sm" variant="dark" />
+              </div>
               <p className="text-slate-400 text-sm leading-relaxed">
                 AI-powered client reporting for digital marketing agencies and freelancers.
                 Automated. Branded. Professional.
@@ -522,7 +515,7 @@ export default function LandingPage() {
                 {[
                   { label: 'About', href: '#' },
                   { label: 'Blog', href: '#' },
-                  { label: 'Contact', href: 'mailto:hello@reportpilot.co' },
+                  { label: 'Contact', href: 'mailto:hello@goreportpilot.com' },
                   { label: 'Privacy Policy', href: '/privacy' },
                   { label: 'Terms of Service', href: '/terms' },
                 ].map(({ label, href }) => (

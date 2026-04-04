@@ -219,10 +219,22 @@ def generate_traffic_sources_chart(
     output_path: str,
     brand_color: str = "#4338CA",
     theme_name: str = "light",
-) -> str:
+) -> str | None:
     """Horizontal bar chart of traffic sources by session count."""
+    # A single traffic source doesn't make a useful comparison chart
+    if isinstance(sources, (list, tuple)) and len(sources) < 2:
+        return None
+    if isinstance(sources, dict) and len(sources) < 2:
+        return None
     theme = CHART_THEMES.get(theme_name, CHART_THEMES["light"])
     colors = _setup_chart_style(theme, brand_color)
+
+    # Normalise: real GA4 returns dict[str, int]; mock returns list[dict]
+    if isinstance(sources, dict):
+        sources = [
+            {"source": k, "sessions": v}
+            for k, v in sorted(sources.items(), key=lambda x: x[1], reverse=True)
+        ]
 
     labels = [s["source"] for s in sources]
     values = [s["sessions"] for s in sources]
@@ -313,8 +325,10 @@ def generate_campaign_performance_chart(
     currency_symbol: str = "$",
     brand_color: str = "#4338CA",
     theme_name: str = "light",
-) -> str:
+) -> str | None:
     """Grouped bar chart — top 5 campaigns by spend and conversions."""
+    if not campaigns or len(campaigns) < 2:
+        return None
     theme = CHART_THEMES.get(theme_name, CHART_THEMES["light"])
     colors = _setup_chart_style(theme, brand_color)
 
@@ -371,8 +385,10 @@ def generate_device_breakdown_chart(
     output_path: str,
     brand_color: str = "#4338CA",
     theme_name: str = "light",
-) -> str:
+) -> str | None:
     """Donut chart of sessions by device type (Desktop/Mobile/Tablet)."""
+    if not device_data or len(device_data) < 2:
+        return None
     theme = CHART_THEMES.get(theme_name, CHART_THEMES["light"])
     colors = _setup_chart_style(theme, brand_color)
 
@@ -408,8 +424,10 @@ def generate_top_pages_chart(
     output_path: str,
     brand_color: str = "#4338CA",
     theme_name: str = "light",
-) -> str:
+) -> str | None:
     """Horizontal bar chart of top landing pages by sessions."""
+    if not pages_data or len(pages_data) < 2:
+        return None
     theme = CHART_THEMES.get(theme_name, CHART_THEMES["light"])
     colors = _setup_chart_style(theme, brand_color)
 
@@ -479,8 +497,10 @@ def generate_top_countries_chart(
     output_path: str,
     brand_color: str = "#4338CA",
     theme_name: str = "light",
-) -> str:
+) -> str | None:
     """Horizontal bar chart of top countries by sessions."""
+    if not countries_data or len(countries_data) < 2:
+        return None
     theme = CHART_THEMES.get(theme_name, CHART_THEMES["light"])
     colors = _setup_chart_style(theme, brand_color)
 
@@ -513,8 +533,10 @@ def generate_audience_demographics_chart(
     output_path: str,
     brand_color: str = "#4338CA",
     theme_name: str = "light",
-) -> str:
+) -> str | None:
     """Grouped bar chart: age groups x gender, by conversions."""
+    if not age_gender_data or len(age_gender_data) < 2:
+        return None
     theme = CHART_THEMES.get(theme_name, CHART_THEMES["light"])
     colors = _setup_chart_style(theme, brand_color)
 
@@ -555,8 +577,10 @@ def generate_placements_chart(
     currency_symbol: str = "$",
     brand_color: str = "#4338CA",
     theme_name: str = "light",
-) -> str:
+) -> str | None:
     """Horizontal bar chart of ad placements by spend."""
+    if not placements_data or len(placements_data) < 2:
+        return None
     theme = CHART_THEMES.get(theme_name, CHART_THEMES["light"])
     colors = _setup_chart_style(theme, brand_color)
 
@@ -678,8 +702,10 @@ def generate_search_terms_chart(
     output_path: str,
     brand_color: str = "#4338CA",
     theme_name: str = "light",
-) -> str:
+) -> str | None:
     """Horizontal bar chart of top search terms by clicks with impressions overlay."""
+    if not search_terms or len(search_terms) < 2:
+        return None
     theme = CHART_THEMES.get(theme_name, CHART_THEMES["light"])
     colors = _setup_chart_style(theme, brand_color)
 
@@ -758,8 +784,10 @@ def generate_top_queries_chart(
     output_path: str,
     brand_color: str = "#4338CA",
     theme_name: str = "light",
-) -> str:
+) -> str | None:
     """Horizontal bar chart of top search queries by clicks with CTR annotation."""
+    if not queries_data or len(queries_data) < 2:
+        return None
     theme = CHART_THEMES.get(theme_name, CHART_THEMES["light"])
     colors = _setup_chart_style(theme, brand_color)
 
@@ -794,17 +822,22 @@ def generate_csv_comparison_chart(
     output_path: str,
     brand_color: str = "#4338CA",
     theme_name: str = "light",
-) -> str:
+) -> str | None:
     """Horizontal bar chart: current vs previous values. Green for improved, red for declined."""
+    metrics_raw = csv_source.get("metrics", [])
+    if not metrics_raw or len(metrics_raw) < 2:
+        return None
     theme = CHART_THEMES.get(theme_name, CHART_THEMES["light"])
     colors = _setup_chart_style(theme, brand_color)
 
-    metrics = csv_source.get("metrics", [])[:6]
+    metrics = metrics_raw[:6]
     labels = [m["name"] for m in metrics]
     current = [m["current_value"] for m in metrics]
     previous = [m.get("previous_value", 0) for m in metrics]
 
-    fig, ax = plt.subplots(figsize=_FIGSIZE)
+    # Use a wider, taller figsize than default so the horizontal bars
+    # are readable when placed on the slide (avoids the squeezed 5:1 look).
+    fig, ax = plt.subplots(figsize=(8, 4))
     ax.set_facecolor(theme["axes_bg"])
     x = range(len(labels))
     width = 0.35
@@ -825,7 +858,7 @@ def generate_csv_comparison_chart(
 
     ax.set_yticks(list(x))
     ax.set_yticklabels(labels, fontsize=9)
-    ax.set_title(f"{csv_source.get('name', 'Custom')} — Current vs Previous")
+    ax.set_title(f"{csv_source.get('source_name', csv_source.get('name', 'Custom'))} — Current vs Previous")
     ax.legend(["Previous", "Current"], loc="lower right")
     ax.invert_yaxis()
     fig.tight_layout()
@@ -879,7 +912,7 @@ def generate_all_charts(
              ga4["device_breakdown"], os.path.join(output_dir, "device_breakdown.png"),
              brand_color=brand_color, theme_name=theme_name)
 
-    if ga4.get("top_pages") and len(ga4["top_pages"]) >= 3:
+    if ga4.get("top_pages") and len(ga4["top_pages"]) >= 2:
         _try("top_pages", generate_top_pages_chart,
              ga4["top_pages"], os.path.join(output_dir, "top_pages.png"),
              brand_color=brand_color, theme_name=theme_name)
@@ -970,7 +1003,7 @@ def generate_all_charts(
     # ── CSV source charts — one per source ──────────────────────────────────
     for csv_source in data.get("csv_sources", []):
         if csv_source.get("metrics") and len(csv_source["metrics"]) >= 2:
-            safe_name = csv_source["name"].lower().replace(" ", "_").replace("/", "_")
+            safe_name = csv_source.get("source_name", csv_source.get("name", "custom")).lower().replace(" ", "_").replace("/", "_")
             _try(f"csv_{safe_name}", generate_csv_comparison_chart,
                  csv_source, os.path.join(output_dir, f"csv_{safe_name}.png"),
                  brand_color=brand_color, theme_name=theme_name)

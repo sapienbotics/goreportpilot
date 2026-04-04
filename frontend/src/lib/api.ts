@@ -97,12 +97,24 @@ export const clientsApi = {
 // Reports API
 // ---------------------------------------------------------------------------
 
+export interface CSVSourcePayload {
+  source_name: string
+  metrics: Array<{
+    name: string
+    current_value: number
+    previous_value: number | null
+    unit: string
+    change: number | null
+  }>
+}
+
 export interface ReportGeneratePayload {
   client_id: string
   period_start: string // "YYYY-MM-DD"
   period_end: string   // "YYYY-MM-DD"
   template?: string    // "full" | "summary" | "brief" — defaults to "full"
   visual_template?: string // "modern_clean" | "dark_executive" | "colorful_agency"
+  csv_sources?: CSVSourcePayload[]
 }
 
 // ---------------------------------------------------------------------------

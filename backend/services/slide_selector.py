@@ -135,7 +135,7 @@ def select_slides(
         # CSV: add one entry per source
         if slide_id == "csv_data":
             for csv_source in data.get("csv_sources", []):
-                selected.append(f"csv_data_{csv_source['name']}")
+                selected.append(f"csv_data_{csv_source.get('source_name', csv_source.get('name', 'custom'))}")
             continue
 
         selected.append(slide_id)
@@ -238,12 +238,12 @@ def select_kpis(data: dict, currency_symbol: str = "$") -> list[dict]:
         })
     if ga4.get("bounce_rate"):
         all_kpis.append({
-            "label": "BOUNCE RATE", "value": f"{ga4['bounce_rate']}%",
+            "label": "BOUNCE RATE", "value": f"{float(ga4['bounce_rate']):.1f}%",
             "change": _fmt_change(ga4.get("bounce_rate_change")), "priority": 6,
         })
     if ga4.get("conversion_rate") and ga4.get("conversions", 0) > 0:
         all_kpis.append({
-            "label": "CONV. RATE", "value": f"{ga4['conversion_rate']}%",
+            "label": "CONV. RATE", "value": f"{float(ga4['conversion_rate']):.2f}%",
             "change": _fmt_change(ga4.get("conversion_rate_change")), "priority": 8,
         })
     if ga4.get("new_users"):
@@ -275,7 +275,7 @@ def select_kpis(data: dict, currency_symbol: str = "$") -> list[dict]:
             })
         if meta.get("ctr"):
             all_kpis.append({
-                "label": "CTR", "value": f"{meta['ctr']}%",
+                "label": "CTR", "value": f"{float(meta['ctr']):.2f}%",
                 "change": None, "priority": 5,
             })
 

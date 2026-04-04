@@ -2,9 +2,9 @@
 
 // All reports page — lists every report generated across all clients.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { FileText, Calendar, Building2, ChevronRight, Download } from 'lucide-react'
+import { FileText, Calendar, Building2, ChevronRight, Download, Search, X as XIcon } from 'lucide-react'
 import { reportsApi, downloadFileWithAuth } from '@/lib/api'
 import type { Report } from '@/types'
 
@@ -26,6 +26,35 @@ export default function ReportsPage() {
   const [loading, setLoading]   = useState(true)
   const [error,   setError]     = useState<string | null>(null)
   const [dlId,    setDlId]      = useState<string | null>(null)
+
+  // Filters
+  const [filterSearch,  setFilterSearch]  = useState('')
+  const [filterStatus,  setFilterStatus]  = useState('')
+  const [filterClient,  setFilterClient]  = useState('')
+  const [filterDateFrom, setFilterDateFrom] = useState('')
+  const [filterDateTo,   setFilterDateTo]   = useState('')
+
+  const clientOptions = useMemo(() => {
+    const names = Array.from(new Set(reports.map(r => r.client_name).filter(Boolean))) as string[]
+    return names.sort()
+  }, [reports])
+
+  const filtered = useMemo(() => {
+    return reports.filter(r => {
+      if (filterSearch  && !r.title.toLowerCase().includes(filterSearch.toLowerCase())) return false
+      if (filterStatus  && r.status !== filterStatus) return false
+      if (filterClient  && r.client_name !== filterClient) return false
+      if (filterDateFrom && r.period_end < filterDateFrom) return false
+      if (filterDateTo   && r.period_start > filterDateTo)  return false
+      return true
+    })
+  }, [reports, filterSearch, filterStatus, filterClient, filterDateFrom, filterDateTo])
+
+  const hasFilters = filterSearch || filterStatus || filterClient || filterDateFrom || filterDateTo
+  const clearFilters = () => {
+    setFilterSearch(''); setFilterStatus(''); setFilterClient('')
+    setFilterDateFrom(''); setFilterDateTo('')
+  }
 
   useEffect(() => {
     const fetch = async () => {
@@ -78,7 +107,9 @@ export default function ReportsPage() {
           All Reports
         </h1>
         <p className="mt-1 text-sm text-slate-400">
-          {reports.length} report{reports.length !== 1 ? 's' : ''} generated
+          {filtered.length !== reports.length
+            ? `${filtered.length} of ${reports.length} report${reports.length !== 1 ? 's' : ''}`
+            : `${reports.length} report${reports.length !== 1 ? 's' : ''} generated`}
         </p>
       </div>
 
@@ -102,6 +133,78 @@ export default function ReportsPage() {
           >
             View Clients
           </Link>
+        </div>
+      )}
+
+      {/* Filter bar */}
+      {reports.length > 0 && (
+        <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-3">
+          <div className="flex flex-wrap gap-2">
+            {/* Search */}
+            <div className="relative flex-1 min-w-[180px]">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+              <input
+                type="text"
+                value={filterSearch}
+                onChange={e => setFilterSearch(e.target.value)}
+                placeholder="Search reports…"
+                className="w-full rounded-md border border-slate-200 bg-white pl-8 pr-3 py-1.5 text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            {/* Status */}
+            <select
+              value={filterStatus}
+              onChange={e => setFilterStatus(e.target.value)}
+              className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="">All statuses</option>
+              <option value="draft">Draft</option>
+              <option value="approved">Approved</option>
+              <option value="generating">Generating</option>
+              <option value="sent">Sent</option>
+              <option value="failed">Failed</option>
+            </select>
+            {/* Client */}
+            {clientOptions.length > 0 && (
+              <select
+                value={filterClient}
+                onChange={e => setFilterClient(e.target.value)}
+                className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="">All clients</option>
+                {clientOptions.map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            )}
+            {/* Clear */}
+            {hasFilters && (
+              <button
+                onClick={clearFilters}
+                className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-500 hover:bg-slate-50 transition-colors"
+              >
+                <XIcon className="h-3 w-3" />
+                Clear filters
+              </button>
+            )}
+          </div>
+          {/* Date range */}
+          <div className="flex flex-wrap gap-2 items-center">
+            <span className="text-xs text-slate-400">Period:</span>
+            <input
+              type="date"
+              value={filterDateFrom}
+              onChange={e => setFilterDateFrom(e.target.value)}
+              className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+            <span className="text-xs text-slate-400">to</span>
+            <input
+              type="date"
+              value={filterDateTo}
+              onChange={e => setFilterDateTo(e.target.value)}
+              className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
         </div>
       )}
 
@@ -129,7 +232,17 @@ export default function ReportsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {reports.map((report) => (
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="py-10 text-center">
+                    <p className="text-sm text-slate-400">No reports match your filters.</p>
+                    <button onClick={clearFilters} className="mt-1.5 text-xs text-indigo-600 hover:underline">
+                      Clear filters
+                    </button>
+                  </td>
+                </tr>
+              )}
+              {filtered.map((report) => (
                 <tr
                   key={report.id}
                   className="hover:bg-slate-50/60 transition-colors group"

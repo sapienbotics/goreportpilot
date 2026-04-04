@@ -5,6 +5,7 @@ Both functions are synchronous — call via asyncio.to_thread() in async endpoin
 """
 import io
 import os
+import re
 import logging
 import subprocess
 import tempfile
@@ -102,7 +103,9 @@ def _download_image(url: str) -> io.BytesIO | None:
         local_subpath = url[len("/static/"):]
     else:
         import re as _re
-        _m = _re.match(r"https?://localhost(?::\d+)?/static/(.*)", url)
+        from config import settings as _settings
+        _backend = _re.escape(_settings.BACKEND_URL.rstrip("/"))
+        _m = _re.match(rf"(?:https?://localhost(?::\d+)?|{_backend})/static/(.*)", url)
         if _m:
             local_subpath = _m.group(1)
     if local_subpath is not None:
@@ -261,6 +264,7 @@ def _build_replacements(
     client_info: Dict[str, Any],
     branding: dict | None,
     custom_section: dict | None,
+    template: str = "full",
 ) -> dict[str, str]:
     """Build the {{placeholder}} → value replacement dictionary."""
     br = branding or {}
@@ -281,12 +285,22 @@ def _build_replacements(
     p_start = data.get("period_start", "")
     p_end   = data.get("period_end", "")
 
+    # Template-specific label — avoids "Performance Report" appearing twice on cover
+    _template_labels = {
+        "summary": "Summary Report",
+        "brief":   "Executive Brief",
+    }
+    report_type_label = _template_labels.get(template, "Monthly Performance Report")
+
     replacements = {
         "{{client_name}}":           client_info.get("name", "Client"),
         "{{report_period}}":         f"{p_start} to {p_end}",
         "{{agency_name}}":           agency_name,
-        "{{agency_email}}":          br.get("agency_email", ""),
-        "{{report_type}}":           "Performance Report",
+        # When no agency email is configured, substitute a "Confidential • Page N"
+        # token so the next_steps footer renders properly.  _renumber_slide_footers
+        # will replace "Page 99" with the actual sequential page number.
+        "{{agency_email}}":          br.get("agency_email") or "Confidential  \u2022  Page 99",
+        "{{report_type}}":           report_type_label,
         "{{report_date}}":           report_date,
         "{{executive_summary}}":     _narrative_to_text(narrative.get("executive_summary", "")),
         "{{website_narrative}}":     _narrative_to_text(narrative.get("website_performance", "")),
@@ -306,6 +320,12 @@ def _build_replacements(
         replacements[f"{{{{kpi_{i}_label}}}}"]  = label
         replacements[f"{{{{kpi_{i}_value}}}}"]  = value
         replacements[f"{{{{kpi_{i}_change}}}}"] = change
+
+    # CSV slide placeholders are intentionally NOT included here.
+    # Each CSV source gets its own duplicate of the csv_data template slide,
+    # populated individually by _populate_csv_slide() after slide deletion.
+    # Any leftover {{csv_*}} tokens on non-CSV slides are cleared by the
+    # leftover-placeholder cleanup pass in generate_pptx_report().
 
     return replacements
 
@@ -330,14 +350,65 @@ def _replace_placeholders_in_slide(slide: Any, replacements: dict[str, str]) -> 
                     run.text = ""
 
 
+def _renumber_slide_footers(prs: Any) -> None:
+    """
+    After slide deletion the footer 'Page N' values reflect the original template
+    numbering. Walk every remaining slide and overwrite 'Page N' with the correct
+    sequential number.
+    """
+    for idx, slide in enumerate(prs.slides, 1):
+        for shape in slide.shapes:
+            if not shape.has_text_frame:
+                continue
+            for para in shape.text_frame.paragraphs:
+                full_text = "".join(run.text for run in para.runs)
+                if re.search(r"Page\s+\d+", full_text):
+                    for run in para.runs:
+                        if re.search(r"Page\s+\d+", run.text):
+                            run.text = re.sub(r"Page\s+\d+", f"Page {idx}", run.text)
+
+
+def _remove_static_email_cta(prs: Any) -> None:
+    """
+    Remove shapes that contain generic email-only call-to-action text such as
+    'Questions? Reply to this email' or 'schedule a call'.
+    These are static template elements that should only appear in emailed reports.
+    """
+    _patterns = [
+        r"questions\?",
+        r"reply to this email",
+        r"schedule a call",
+        r"have questions\?",
+    ]
+    combined = re.compile("|".join(_patterns), re.IGNORECASE)
+    for slide in prs.slides:
+        to_remove = []
+        for shape in slide.shapes:
+            if shape.has_text_frame:
+                text = shape.text_frame.text
+                if combined.search(text):
+                    to_remove.append(shape)
+        for shape in to_remove:
+            _delete_shape(slide, shape)
+
+
 def _replace_charts(prs: Any, charts: Dict[str, str]) -> None:
     """Replace chart placeholder text boxes with actual chart PNG images.
 
     When a chart file exists: embeds the PNG and clears the placeholder text.
-    When no chart is available: deletes the placeholder shape entirely
-    (since our slide selector guarantees we only show slides with data).
+    When no chart is available: deletes the placeholder shape.
+
+    Dual-chart slide handling:
+    When a slide has two chart placeholders (e.g. device_breakdown + top_pages)
+    and only ONE chart has data, the available chart is automatically expanded
+    to fill the combined bounding box of both placeholder areas so no blank
+    half-slide is left visible.
+
+    CSV chart placeholders ({{chart_csv_data}} / {{chart_csv_*}}) are
+    intentionally excluded — they are embedded per-source in _populate_csv_slide()
+    after slide duplication.
     """
-    chart_mapping = {
+    chart_mapping: dict[str, str | None] = {
         # GA4 charts
         "{{chart_sessions}}":           charts.get("sessions"),
         "{{chart_traffic}}":            charts.get("traffic_sources"),
@@ -361,57 +432,95 @@ def _replace_charts(prs: Any, charts: Dict[str, str]) -> None:
         "{{chart_top_queries}}":        charts.get("top_queries"),
     }
 
-    # Add CSV chart mappings dynamically
-    for key, path in charts.items():
-        if key.startswith("csv_"):
-            chart_mapping[f"{{{{chart_{key}}}}}"] = path
+    # Known chart pairs that share a slide side-by-side.
+    # If one is missing, the other gets centered on the slide.
+    _DUAL_PAIRS: dict[str, str] = {
+        "{{chart_device_breakdown}}": "{{chart_top_pages}}",
+        "{{chart_top_pages}}":        "{{chart_device_breakdown}}",
+    }
 
-    available = [v for v in chart_mapping.values() if v]
-    logger.debug("_replace_charts: %d chart paths available: %s",
-                 len(available), list(charts.keys()))
+    # Pie/donut-style charts — keep original width when solo, just center.
+    # All other chart types may expand to a moderate max width.
+    _PIE_CHART_HINTS = ("device", "breakdown", "pie", "donut", "returning")
+    _SLIDE_W = prs.slide_width                         # 13.33" in EMU
+    _MAX_BAR_W = int(8.5 * 914400)                     # bar/line charts: 8.5" max
+
+    logger.debug("_replace_charts: charts available: %s", list(charts.keys()))
 
     replaced = 0
     for slide in prs.slides:
-        shapes_to_process: list[tuple] = []
+        # ── Collect all chart placeholder shapes on this slide ────────────────
+        shapes_on_slide: list[tuple] = []   # (shape, chart_path, placeholder)
         for shape in slide.shapes:
             if not shape.has_text_frame:
                 continue
             text = shape.text_frame.text.strip()
-            for placeholder, chart_path in chart_mapping.items():
-                if placeholder in text:
-                    shapes_to_process.append((shape, chart_path, placeholder))
+            for ph, cp in chart_mapping.items():
+                if ph in text:
+                    shapes_on_slide.append((shape, cp, ph))
                     break
 
-        for shape, chart_path, placeholder in shapes_to_process:
-            # ── Chart file exists → embed image ──────────────────────────
+        if not shapes_on_slide:
+            continue
+
+        # ── Dual-chart centering pre-pass ─────────────────────────────────────
+        # Build a lookup of placeholder → (shape, chart_path) for this slide
+        ph_map: dict[str, tuple] = {ph: (sh, cp) for sh, cp, ph in shapes_on_slide}
+
+        # When one chart of a known pair is absent, compute a *centered*
+        # geometry for the surviving chart rather than stretching it to
+        # the full combined width (which distorts pie charts).
+        solo_geom: dict[str, tuple[int, int, int, int]] = {}
+        for ph, (sh, cp) in ph_map.items():
+            partner_ph = _DUAL_PAIRS.get(ph)
+            if partner_ph and partner_ph in ph_map:
+                _has      = bool(cp and os.path.exists(cp))
+                _psh, _pcp = ph_map[partner_ph]
+                _p_has    = bool(_pcp and os.path.exists(_pcp))
+                if _has and not _p_has:
+                    # Determine chart category from placeholder name
+                    ph_lower = ph.lower()
+                    is_pie = any(hint in ph_lower for hint in _PIE_CHART_HINTS)
+
+                    combined_top    = min(sh.top,  _psh.top)
+                    combined_bottom = max(sh.top + sh.height, _psh.top + _psh.height)
+                    combined_h      = combined_bottom - combined_top
+
+                    if is_pie:
+                        # Pie/donut: keep original single-slot width, center it
+                        w = sh.width
+                    else:
+                        # Bar/line: expand up to _MAX_BAR_W, but not full slide
+                        w = min(sh.width + _psh.width, _MAX_BAR_W)
+
+                    l = (_SLIDE_W - w) // 2   # horizontally centered
+                    solo_geom[ph] = (l, combined_top, w, combined_h)
+                    logger.info(
+                        "Solo chart centering: %s (%s) → %.2f\"×%.2f\" centered",
+                        ph, "pie" if is_pie else "bar",
+                        w / 914400, combined_h / 914400,
+                    )
+
+        # ── Embed or delete each chart placeholder ────────────────────────────
+        for shape, chart_path, placeholder in shapes_on_slide:
             if chart_path and os.path.exists(chart_path):
-                slide.shapes.add_picture(
-                    chart_path,
-                    shape.left, shape.top,
-                    shape.width, shape.height,
-                )
+                if placeholder in solo_geom:
+                    s_l, s_t, s_w, s_h = solo_geom[placeholder]
+                    slide.shapes.add_picture(chart_path, s_l, s_t, s_w, s_h)
+                else:
+                    slide.shapes.add_picture(
+                        chart_path, shape.left, shape.top, shape.width, shape.height,
+                    )
                 for para in shape.text_frame.paragraphs:
                     for run in para.runs:
                         run.text = ""
                 replaced += 1
-                logger.debug("Replaced %s with image %s", placeholder, chart_path)
-                continue
+                logger.debug("Replaced %s with image", placeholder)
+            else:
+                logger.info("No chart for %s — removing placeholder shape", placeholder)
+                _delete_shape(slide, shape)
 
-            # ── No chart data → show fallback message ────────────────────
-            logger.info("No chart file for %s — showing fallback text", placeholder)
-            for para in shape.text_frame.paragraphs:
-                for run in para.runs:
-                    run.text = ""
-            p = shape.text_frame.paragraphs[0]
-            p.alignment = PP_ALIGN.CENTER
-            run = p.add_run()
-            run.text = "No data available for this period"
-            run.font.size = Pt(11)
-            run.font.color.rgb = _SLATE_400
-            run.font.italic = True
-
-    logger.info("_replace_charts: %d/%d chart placeholders replaced with images",
-                replaced, len(available))
+    logger.info("_replace_charts: %d chart(s) embedded", replaced)
 
 
 def _colorize_kpi_changes(prs: Any, data: Dict[str, Any]) -> None:
@@ -761,6 +870,200 @@ def _populate_bullet_list(
             cr.font.color.rgb = template_color
 
 
+# ── CSV slide helpers ────────────────────────────────────────────────────────
+
+# Shared unit-alias lookup used by both _populate_csv_slide and select_kpis
+_CSV_UNIT_ALIASES: dict[str, str] = {
+    "%": "percent",
+    "$": "currency", "₹": "currency", "€": "currency",
+    "£": "currency", "¥": "currency", "rs": "currency",
+}
+
+
+def _fmt_csv_value(raw: Any, unit: str, cur_sym: str) -> str:
+    """
+    Format a single CSV metric value with its unit.
+
+    unit must already be normalised to lowercase semantic form
+    ("currency" | "percent" | "number").
+    Uses 2 decimal places for currency values < 10 (e.g. ₹0.24 not ₹0).
+    """
+    try:
+        num = float(str(raw)) if raw != "" else None
+    except (ValueError, TypeError):
+        num = None
+    if num is None:
+        return str(raw) if raw != "" else ""
+    if unit == "currency":
+        return f"{cur_sym}{num:,.2f}" if num < 10 else f"{cur_sym}{num:,.0f}"
+    if unit == "percent":
+        return f"{num:.2f}%"
+    return f"{int(num):,}" if num == int(num) else f"{num:,.2f}"
+
+
+def _duplicate_slide(prs: Any, source_slide_idx: int) -> int:
+    """
+    Duplicate the slide at *source_slide_idx* and append the copy at the end.
+
+    Copies the entire shape tree (text boxes, solid background shapes).
+    Does NOT copy embedded images — suitable for template slides whose
+    images are inserted programmatically after duplication.
+
+    Returns the 0-based index of the newly created slide.
+    """
+    import copy as _copy
+    source = prs.slides[source_slide_idx]
+    new_slide = prs.slides.add_slide(source.slide_layout)
+
+    src_tree = source.shapes._spTree
+    dst_tree = new_slide.shapes._spTree
+
+    # Replace the new slide's default shapes with a deep copy of the source
+    for elem in list(dst_tree):
+        dst_tree.remove(elem)
+    for elem in src_tree:
+        dst_tree.append(_copy.deepcopy(elem))
+
+    return len(prs.slides) - 1
+
+
+def _populate_csv_slide(
+    slide: Any,
+    csv_src: dict,
+    cur_sym: str,
+    charts: Dict[str, str],
+) -> None:
+    """
+    Populate ONE CSV template slide with data from *csv_src*.
+
+    - Replaces all {{csv_source_name}}, {{csv_kpi_N_label/value/change}} tokens.
+    - Embeds the matching CSV chart image, respecting the KPI-card clearance
+      rule (chart starts at ≥ 4.30" to avoid overlapping KPI values).
+    - When no chart image exists the placeholder shape is silently deleted.
+    """
+    source_name = csv_src.get("source_name", csv_src.get("name", "Custom Data"))
+
+    # ── Build per-source replacement dict ────────────────────────────────────
+    src_repl: dict[str, str] = {"{{csv_source_name}}": source_name}
+
+    csv_metrics = list(csv_src.get("metrics", []))[:6]
+    while len(csv_metrics) < 6:
+        csv_metrics.append({})
+
+    for i, metric in enumerate(csv_metrics):
+        unit = _CSV_UNIT_ALIASES.get(
+            (metric.get("unit") or "number").lower().strip(),
+            (metric.get("unit") or "number").lower().strip(),
+        )
+        raw_curr = metric.get("current_value", "")
+        raw_prev = metric.get("previous_value")
+        val_str  = _fmt_csv_value(raw_curr, unit, cur_sym)
+
+        try:
+            curr_num = float(str(raw_curr)) if raw_curr != "" else None
+            prev_num = float(str(raw_prev)) if raw_prev is not None else None
+        except (ValueError, TypeError):
+            curr_num = prev_num = None
+
+        if curr_num is not None and prev_num is not None and prev_num > 0:
+            chg = round((curr_num - prev_num) / prev_num * 100, 1)
+            change_str = f"+{chg}%" if chg >= 0 else f"{chg}%"
+        else:
+            change_str = ""
+
+        src_repl[f"{{{{csv_kpi_{i}_label}}}}"]  = (metric.get("name") or "").upper()
+        src_repl[f"{{{{csv_kpi_{i}_value}}}}"]  = val_str
+        src_repl[f"{{{{csv_kpi_{i}_change}}}}"] = change_str
+
+    _replace_placeholders_in_slide(slide, src_repl)
+
+    # ── Embed CSV chart image ─────────────────────────────────────────────────
+    # Chart key in the charts dict is "csv_{safe_source_name}"
+    safe_name  = source_name.lower().replace(" ", "_").replace("/", "_")
+    chart_path = charts.get(f"csv_{safe_name}")
+
+    # Fallback: when there is exactly ONE csv_* chart available and the
+    # safe_name didn't match exactly (e.g. chart generator used a slightly
+    # different normalisation), use that one chart.  With multiple sources
+    # we intentionally skip the fallback to avoid showing the wrong chart.
+    if not chart_path:
+        csv_chart_paths = [
+            _p for _k, _p in charts.items()
+            if _k.startswith("csv_") and _p and os.path.exists(_p)
+        ]
+        if len(csv_chart_paths) == 1:
+            chart_path = csv_chart_paths[0]
+
+    _SLIDE_WIDTH_EMU = int(13.33 * 914400)   # standard widescreen width
+    _MAX_CHART_W_EMU = int(8.0 * 914400)    # max chart width for bar charts
+
+    for shape in list(slide.shapes):
+        if not shape.has_text_frame:
+            continue
+        text = shape.text_frame.text.strip()
+        if "{{chart_csv_data}}" in text or text.startswith("{{chart_csv_"):
+            if chart_path and os.path.exists(chart_path):
+                # Template placeholder gives us the correct top and height
+                # (Phase 2 positioned it 0.20" below the last KPI card).
+                # Override width to max 8.0" and center horizontally so the
+                # comparison bar chart maintains a readable ~2:1 aspect ratio
+                # instead of being squeezed across the full 11.70" placeholder.
+                chart_w = min(shape.width, _MAX_CHART_W_EMU)
+                chart_l = (_SLIDE_WIDTH_EMU - chart_w) // 2
+                slide.shapes.add_picture(
+                    chart_path,
+                    chart_l,
+                    shape.top,
+                    chart_w,
+                    shape.height,
+                )
+                for para in shape.text_frame.paragraphs:
+                    for run in para.runs:
+                        run.text = ""
+            else:
+                _delete_shape(slide, shape)
+            break
+
+
+def _reorder_slides(prs: Any, desired_index_order: list[int]) -> None:
+    """
+    Physically reorder slides in *prs* to match *desired_index_order*.
+
+    *desired_index_order* is a permutation of range(len(prs.slides)) that
+    lists current slide indices in the desired output order.  Indices that
+    are omitted are appended at the end in their current relative order.
+
+    Manipulates prs.slides._sldIdLst (the XML slide-reference list) directly —
+    the standard python-pptx approach for slide reordering.
+    """
+    n = len(prs.slides)
+    if not desired_index_order or n == 0:
+        return
+
+    # Append any indices not explicitly listed (preserve relative order)
+    listed_set = set(desired_index_order)
+    full_order = desired_index_order + [i for i in range(n) if i not in listed_set]
+
+    # Validate
+    if sorted(full_order) != list(range(n)):
+        logger.warning(
+            "_reorder_slides: invalid index list (len=%d, expected %d) — skipping reorder",
+            len(full_order), n,
+        )
+        return
+
+    slide_id_list = prs.slides._sldIdLst
+    all_sld_ids = list(slide_id_list)   # snapshot of current sldId elements
+
+    # Clear the list, then re-append in desired order
+    for elem in all_sld_ids:
+        slide_id_list.remove(elem)
+    for i in full_order:
+        slide_id_list.append(all_sld_ids[i])
+
+    logger.debug("Slides reordered: %s → %s", list(range(n)), full_order)
+
+
 # Keys that get formatted population instead of plain text replacement.
 # These are popped from replacements before the generic pass so the
 # generic _replace_placeholders_in_slide() doesn't flatten them first.
@@ -824,7 +1127,7 @@ def generate_pptx_report(
     # Build the full replacement map, then split out the keys that get
     # rich formatting (paragraphs / bullet lists) so the generic pass
     # doesn't flatten them to a single unstyled run first.
-    replacements = _build_replacements(data, narrative, client_info, branding, custom_section)
+    replacements = _build_replacements(data, narrative, client_info, branding, custom_section, template)
     formatted_content: dict[str, str] = {}
     for key in _FORMATTED_KEYS:
         if key in replacements:
@@ -859,20 +1162,19 @@ def generate_pptx_report(
             7: ("{{next_steps}}", "\u2192", _hex_to_rgb((branding or {}).get("brand_color") or "#4338CA")),
         }
     else:
-        # New 19-slide mapping
+        # New 19-slide mapping.
+        # Intentionally only maps ONE slide per narrative type — each slide that
+        # shares the same placeholder key would otherwise show identical text.
+        # Slides not listed here (e.g. website_engagement, website_audience,
+        # bounce_rate_analysis) are chart-heavy; their {{website_narrative}}
+        # token is cleared by the leftover-placeholder cleanup pass below.
         _NARRATIVE_SLIDES = {
             SLIDE_INDEX["executive_summary"]:   "{{executive_summary}}",
             SLIDE_INDEX["website_traffic"]:     "{{website_narrative}}",
             SLIDE_INDEX["meta_ads_overview"]:   "{{ads_narrative}}",
             SLIDE_INDEX["google_ads_overview"]: "{{google_ads_narrative}}",
             SLIDE_INDEX["seo_overview"]:        "{{seo_narrative}}",
-            SLIDE_INDEX.get("website_engagement", 4):   "{{website_narrative}}",
-            SLIDE_INDEX.get("website_audience", 5):     "{{website_narrative}}",
-            SLIDE_INDEX.get("bounce_rate_analysis", 6): "{{website_narrative}}",
-            SLIDE_INDEX.get("meta_ads_audience", 8):    "{{ads_narrative}}",
-            SLIDE_INDEX.get("meta_ads_creative", 9):    "{{ads_narrative}}",
-            SLIDE_INDEX.get("google_ads_keywords", 11): "{{google_ads_narrative}}",
-            SLIDE_INDEX.get("conversion_funnel", 14):   "{{website_narrative}}",
+            SLIDE_INDEX.get("conversion_funnel", 14): "{{website_narrative}}",
         }
         _LIST_SLIDES = {
             SLIDE_INDEX["key_wins"]:   ("{{key_wins}}",    "\u2713", RGBColor(0x05, 0x96, 0x69)),
@@ -951,7 +1253,9 @@ def generate_pptx_report(
                             run.font.size = Pt(11)
                     break
 
-    # ── Charts ────────────────────────────────────────────────────────────────
+    # ── Non-CSV charts ────────────────────────────────────────────────────────
+    # CSV chart placeholders are intentionally skipped here; they are embedded
+    # per-source by _populate_csv_slide() below, after slide duplication.
     _replace_charts(prs, charts)
 
     # ── KPI colour coding ─────────────────────────────────────────────────────
@@ -988,6 +1292,131 @@ def generate_pptx_report(
             except Exception as e:
                 logger.warning("Could not delete slide %d: %s", idx, e)
 
+    # ── Purge orphaned slide parts ────────────────────────────────────────────
+    # drop_rel() removes the relationship but the Part object stays in the
+    # package's internal part collection.  When add_slide() later creates
+    # duplicates it can pick a /ppt/slides/slideN.xml name that collides
+    # with an orphan, causing the orphan to overwrite the new slide during
+    # save (python-pptx #689).  A save→reload cycle writes only reachable
+    # parts to the byte stream, then reloads — cleanly eliminating orphans.
+    if slides_to_delete:
+        _buf = io.BytesIO()
+        prs.save(_buf)
+        _buf.seek(0)
+        prs = Presentation(_buf)
+        logger.debug("Presentation reloaded after deleting %d slide(s) — orphaned parts purged",
+                     len(slides_to_delete))
+
+    # ── CSV multi-slide population ────────────────────────────────────────────
+    # After unused slides are deleted, find the csv_data template slide
+    # (identified by its {{csv_source_name}} placeholder).  For N CSV sources,
+    # duplicate it N-1 times so every source gets its own slide, then populate
+    # each with per-source data and the matching chart image.
+    #
+    # These variables are declared outside the if-block so the slide-reorder
+    # step below can reference them regardless of whether CSV data was present.
+    _csv_tpl_idx: int | None = None
+    _csv_slide_indices: list[int] = []
+
+    if not use_legacy:
+        csv_sources_list = data.get("csv_sources", [])
+        if csv_sources_list:
+            cur_sym = _currency_symbol(data)
+
+            # ── Deduplication guard: drop sources with repeated names ─────────
+            _seen_csv_names: set[str] = set()
+            _unique_csv: list[dict] = []
+            for _src in csv_sources_list:
+                _sname = (_src.get("source_name") or _src.get("name") or "Custom").strip()
+                if _sname not in _seen_csv_names:
+                    _seen_csv_names.add(_sname)
+                    _unique_csv.append(_src)
+                else:
+                    logger.warning(
+                        "Duplicate CSV source '%s' skipped — each source name must be unique",
+                        _sname,
+                    )
+            csv_sources_list = _unique_csv
+
+            # Locate the csv_data template slide by its placeholder text
+            for _idx, _sl in enumerate(prs.slides):
+                for _sh in _sl.shapes:
+                    if _sh.has_text_frame and "{{csv_source_name}}" in _sh.text_frame.text:
+                        _csv_tpl_idx = _idx
+                        break
+                if _csv_tpl_idx is not None:
+                    break
+
+            if _csv_tpl_idx is not None:
+                # First entry = existing template slide; subsequent = freshly duplicated copies.
+                # The first source reuses the template slide directly (no duplication needed).
+                _csv_slide_indices = [_csv_tpl_idx]
+                for _ in range(len(csv_sources_list) - 1):
+                    new_idx = _duplicate_slide(prs, _csv_tpl_idx)
+                    _csv_slide_indices.append(new_idx)
+
+                # Populate each slide with its corresponding source
+                for _slide_idx, _csv_src in zip(_csv_slide_indices, csv_sources_list):
+                    _populate_csv_slide(prs.slides[_slide_idx], _csv_src, cur_sym, charts)
+                logger.info(
+                    "CSV slides populated: %d source(s) → slide indices %s",
+                    len(csv_sources_list), _csv_slide_indices,
+                )
+            else:
+                logger.warning("csv_data template slide not found after deletion — CSV data not shown")
+
+    # ── Leftover placeholder cleanup ──────────────────────────────────────────
+    # Clear any remaining {{...}} tokens that weren't substituted above.
+    # This handles {{website_narrative}} on chart-heavy detail slides (4/5/6),
+    # unreferenced optional sections, and any {{csv_*}} tokens on non-CSV slides.
+    _leftover_re = re.compile(r"\{\{[^}]+\}\}")
+    for _slide in prs.slides:
+        for _shape in _slide.shapes:
+            if not _shape.has_text_frame:
+                continue
+            for _para in _shape.text_frame.paragraphs:
+                _full = "".join(r.text for r in _para.runs)
+                if _leftover_re.search(_full):
+                    _cleaned = _leftover_re.sub("", _full).strip()
+                    if _para.runs:
+                        _para.runs[0].text = _cleaned
+                        for _run in _para.runs[1:]:
+                            _run.text = ""
+
+    # ── Slide reordering ──────────────────────────────────────────────────────
+    # Duplicated CSV slides are appended at the end by _duplicate_slide().
+    # Move them back to their correct logical position: immediately after the
+    # original csv_data template slide and before the key_wins/concerns/next_steps
+    # conclusion slides.
+    # Logical order: Cover → Exec → KPIs → GA4 → Ads → SEO → Funnel →
+    #                ALL CSV slides → Key Wins → Concerns → Next Steps → Custom
+    if _csv_tpl_idx is not None and len(_csv_slide_indices) > 1:
+        _n = len(prs.slides)
+        _extra_csv = _csv_slide_indices[1:]    # the slides that were appended
+        _extra_set  = set(_extra_csv)
+        _non_extra  = [i for i in range(_n) if i not in _extra_set]
+        try:
+            _orig_pos = _non_extra.index(_csv_slide_indices[0])
+            _desired  = (
+                _non_extra[:_orig_pos + 1]   # everything up to and including original
+                + _extra_csv                  # the duplicates — placed right after
+                + _non_extra[_orig_pos + 1:]  # conclusion slides and anything after
+            )
+            _reorder_slides(prs, _desired)
+            logger.info(
+                "CSV slides reordered: %d extra slide(s) moved to position %d+",
+                len(_extra_csv), _orig_pos + 1,
+            )
+        except (ValueError, Exception) as _reorder_err:
+            logger.warning("Could not reorder CSV slides: %s", _reorder_err)
+
+    # ── Post-deletion clean-up ────────────────────────────────────────────────
+    # Renumber footers AFTER all slide operations (deletion, duplication,
+    # reordering) so "Page N" reflects the true final slide position.
+    _renumber_slide_footers(prs)
+    # Remove email-only CTA shapes ("Questions? Reply to this email …")
+    _remove_static_email_cta(prs)
+
     # Save to bytes
     output = io.BytesIO()
     prs.save(output)
@@ -1000,6 +1429,73 @@ def generate_pptx_report(
 # ── PDF report — PPTX→PDF via LibreOffice with ReportLab fallback ──────────
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# Languages whose scripts ReportLab cannot render without special fonts
+_NON_LATIN_LANGUAGES: frozenset[str] = frozenset({
+    "hi",  # Hindi (Devanagari)
+    "ar",  # Arabic
+    "ja",  # Japanese
+    "zh",  # Chinese
+    "ko",  # Korean
+    "th",  # Thai
+    "he",  # Hebrew
+    "bn",  # Bengali
+    "ta",  # Tamil
+    "te",  # Telugu
+    "mr",  # Marathi (Devanagari)
+})
+
+# Noto font family names per language (used by matplotlib font manager lookup)
+_NOTO_FONT_FAMILIES: dict[str, list[str]] = {
+    "hi": ["Noto Sans Devanagari", "Noto Sans"],
+    "mr": ["Noto Sans Devanagari", "Noto Sans"],
+    "ar": ["Noto Sans Arabic", "Noto Sans"],
+    "ja": ["Noto Sans CJK JP", "Noto Sans JP", "Noto Sans"],
+    "zh": ["Noto Sans CJK SC", "Noto Sans SC", "Noto Sans"],
+    "ko": ["Noto Sans CJK KR", "Noto Sans KR", "Noto Sans"],
+    "th": ["Noto Sans Thai", "Noto Sans"],
+    "he": ["Noto Sans Hebrew", "Noto Sans"],
+    "bn": ["Noto Sans Bengali", "Noto Sans"],
+    "ta": ["Noto Sans Tamil", "Noto Sans"],
+    "te": ["Noto Sans Telugu", "Noto Sans"],
+}
+
+_noto_registered: dict[str, str] = {}  # language → registered font name
+
+
+def _try_register_noto_font(language: str) -> str | None:
+    """
+    Try to find and register a Noto font for *language* with ReportLab.
+    Returns the registered font name on success, None if unavailable.
+    Caches results so registration only happens once per process lifetime.
+    """
+    if language in _noto_registered:
+        return _noto_registered[language]
+
+    families = _NOTO_FONT_FAMILIES.get(language, ["Noto Sans"])
+    try:
+        import matplotlib.font_manager as _fm
+        from reportlab.pdfbase import pdfmetrics as _pm
+        from reportlab.pdfbase.ttfonts import TTFont as _TTF
+
+        for family in families:
+            try:
+                path = _fm.findfont(_fm.FontProperties(family=family))
+                # findfont never raises; check the path contains a recognisable name
+                if "Noto" in path or "noto" in path:
+                    font_name = f"Noto-{language}"
+                    _pm.registerFont(_TTF(font_name, path))
+                    _noto_registered[language] = font_name
+                    logger.info("Registered Noto font '%s' for language '%s'", path, language)
+                    return font_name
+            except Exception:
+                continue
+    except Exception as _e:
+        logger.debug("Noto font registration failed for '%s': %s", language, _e)
+
+    _noto_registered[language] = ""  # cache miss so we don't retry
+    return None
+
+
 def generate_pdf_report(
     data: Dict[str, Any],
     narrative: Dict[str, str],
@@ -1010,41 +1506,106 @@ def generate_pdf_report(
     custom_section: dict | None = None,
     branding: dict | None = None,
     visual_template: str = "modern_clean",
-) -> bytes:
+    language: str = "en",
+) -> bytes | None:
     """
     Generate PDF by first creating PPTX then converting via LibreOffice.
-    Falls back to the ReportLab-based PDF generator if LibreOffice is unavailable.
+    Falls back to the ReportLab-based PDF generator for Latin languages when
+    LibreOffice is unavailable.
+
+    For non-Latin languages (Hindi, Arabic, CJK …) LibreOffice is the only path
+    that renders the script correctly.  When LibreOffice is unavailable AND the
+    language is non-Latin, returns None so the caller can skip the PDF and show
+    "Download PPTX" instead — much better UX than a PDF full of boxes.
     """
-    # First generate the PPTX
-    pptx_bytes = generate_pptx_report(
-        data, narrative, charts, client_info,
-        enabled_sections, template, custom_section, branding, visual_template,
+    logger.info(
+        "PDF generation started: client=%s, language=%s, visual=%s",
+        client_info.get("name"), language, visual_template,
     )
 
-    # Try LibreOffice conversion
+    # First generate the PPTX (always correct — python-pptx is Unicode-safe)
+    try:
+        pptx_bytes = generate_pptx_report(
+            data, narrative, charts, client_info,
+            enabled_sections, template, custom_section, branding, visual_template,
+        )
+        logger.info("PPTX generated (%d bytes) — attempting LibreOffice conversion", len(pptx_bytes))
+    except Exception as _pptx_err:
+        logger.error("PPTX generation failed inside generate_pdf_report: %s", _pptx_err, exc_info=True)
+        raise
+
+    # ── Path 1: LibreOffice (ALL languages — best quality) ───────────────────
+    # Tries ALL common install locations across Windows, macOS, Linux, Docker.
     with tempfile.TemporaryDirectory() as tmpdir:
         pptx_path = os.path.join(tmpdir, "report.pptx")
         with open(pptx_path, "wb") as f:
             f.write(pptx_bytes)
 
-        try:
-            subprocess.run(
-                ["soffice", "--headless", "--convert-to", "pdf", "--outdir", tmpdir, pptx_path],
-                timeout=60, check=True, capture_output=True,
-            )
-            pdf_path = os.path.join(tmpdir, "report.pdf")
-            if os.path.exists(pdf_path):
-                with open(pdf_path, "rb") as f:
-                    logger.info("PDF generated via LibreOffice for %s", client_info.get("name"))
-                    return f.read()
-        except (subprocess.SubprocessError, FileNotFoundError) as e:
-            logger.info("LibreOffice not available (%s), falling back to ReportLab PDF", e)
+        for soffice_cmd in (
+            "soffice",              # Windows / macOS (brew), many Linux distros
+            "libreoffice",          # Some Linux packages use this name
+            r"C:\Program Files\LibreOffice\program\soffice.exe",  # Windows default install
+            "/usr/bin/soffice",     # Debian/Ubuntu apt full path
+            "/usr/bin/libreoffice", # Alternative full path
+            "/Applications/LibreOffice.app/Contents/MacOS/soffice",  # macOS manual install
+        ):
+            try:
+                logger.debug("Trying LibreOffice: %s", soffice_cmd)
+                result = subprocess.run(
+                    [soffice_cmd, "--headless", "--convert-to", "pdf",
+                     "--outdir", tmpdir, pptx_path],
+                    timeout=60, check=True, capture_output=True,
+                )
+                pdf_out = os.path.join(tmpdir, "report.pdf")
+                if os.path.exists(pdf_out):
+                    with open(pdf_out, "rb") as f:
+                        pdf_data = f.read()
+                    logger.info(
+                        "PDF generated via LibreOffice (%s) for %s — %d bytes",
+                        soffice_cmd, client_info.get("name"), len(pdf_data),
+                    )
+                    return pdf_data
+                else:
+                    logger.warning(
+                        "LibreOffice (%s) exited 0 but no PDF found at %s. stdout=%s",
+                        soffice_cmd, pdf_out,
+                        (result.stdout or b"").decode("utf-8", errors="replace")[:300],
+                    )
+            except FileNotFoundError:
+                logger.debug("LibreOffice binary not found: %s", soffice_cmd)
+            except subprocess.TimeoutExpired:
+                logger.warning("LibreOffice conversion timed out (60 s) — %s", soffice_cmd)
+            except subprocess.CalledProcessError as _cpe:
+                logger.warning(
+                    "LibreOffice (%s) exited with code %d. stderr: %s",
+                    soffice_cmd, _cpe.returncode,
+                    (_cpe.stderr or b"").decode("utf-8", errors="replace")[:500],
+                )
+            except Exception as _lo_err:
+                logger.warning("LibreOffice unexpected error (%s): %s", soffice_cmd, _lo_err)
 
-    # Fallback: ReportLab-based PDF
-    return _generate_pdf_reportlab(
-        data, narrative, charts, client_info,
-        enabled_sections, template, custom_section, branding,
-    )
+    logger.info("LibreOffice not available or conversion failed for client=%s", client_info.get("name"))
+
+    # ── Path 2: non-Latin language + no LibreOffice → PPTX-only ─────────────
+    if language in _NON_LATIN_LANGUAGES:
+        logger.warning(
+            "PDF skipped: language '%s' requires LibreOffice for correct script rendering "
+            "(Devanagari/CJK/Arabic). Client will be offered PPTX download instead.",
+            language,
+        )
+        return None  # Caller saves None → frontend shows "Download PPTX"
+
+    # ── Path 3: ReportLab fallback (Latin languages only) ────────────────────
+    logger.info("Falling back to ReportLab PDF for language=%s", language)
+    try:
+        return _generate_pdf_reportlab(
+            data, narrative, charts, client_info,
+            enabled_sections, template, custom_section, branding,
+            language=language,
+        )
+    except Exception as _rl_err:
+        logger.error("ReportLab PDF generation failed: %s", _rl_err, exc_info=True)
+        return None  # Do not crash — caller handles None gracefully
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1060,13 +1621,35 @@ def _generate_pdf_reportlab(
     template: str = "full",
     custom_section: dict | None = None,
     branding: dict | None = None,
+    language: str = "en",
 ) -> bytes:
     """
     Generate a clean PDF report using ReportLab (used when LibreOffice is unavailable).
+    For non-Latin languages, attempts to use a Noto font; adds a rendering notice
+    if the font is not available on this server.
     """
     _br         = branding or {}
     agency_name = _br.get("agency_name") or client_info.get("agency_name") or "Your Agency"
     _brand_rl   = _hex_to_rl(_br.get("brand_color") or "#4338CA")
+
+    # ── Non-Latin language font handling ─────────────────────────────────────
+    _pdf_body = _PDF_BODY_FONT
+    _pdf_bold = _PDF_BOLD_FONT
+    _needs_unicode_font = language in _NON_LATIN_LANGUAGES
+    _unicode_font_missing = False
+    if _needs_unicode_font:
+        noto_name = _try_register_noto_font(language)
+        if noto_name:
+            _pdf_body = noto_name
+            _pdf_bold = noto_name  # Noto Bold may not always be separate; use regular as fallback
+            logger.info("Using Noto font '%s' for language '%s' in PDF", noto_name, language)
+        else:
+            _unicode_font_missing = True
+            logger.warning(
+                "No suitable font found for language '%s' — PDF may show boxes for non-ASCII text. "
+                "Install LibreOffice or Noto fonts on the server for correct rendering.",
+                language,
+            )
 
     agency_logo_img = _download_image(_br.get("agency_logo_url", ""))
     client_logo_img = _download_image(_br.get("client_logo_url", ""))
@@ -1088,9 +1671,9 @@ def _generate_pdf_reportlab(
         canvas.setFillColor(_brand_rl)
         canvas.rect(0, _page_h - band_h, _page_w, band_h, fill=1, stroke=0)
         canvas.setFillColor(rl_colors.white)
-        canvas.setFont(_PDF_BOLD_FONT, 12)
+        canvas.setFont(_pdf_bold, 12)
         canvas.drawString(_lm, _page_h - 0.9 * inch, agency_name.upper())
-        canvas.setFont(_PDF_BODY_FONT, 9)
+        canvas.setFont(_pdf_body, 9)
         canvas.drawString(_lm, _page_h - 1.18 * inch, "CLIENT PERFORMANCE REPORT")
         if agency_logo_img:
             try:
@@ -1112,7 +1695,7 @@ def _generate_pdf_reportlab(
         canvas.setStrokeColor(_brand_rl)
         canvas.setLineWidth(1.5)
         canvas.line(_lm, y_line, _page_w - _lm, y_line)
-        canvas.setFont(_PDF_BODY_FONT, 8)
+        canvas.setFont(_pdf_body, 8)
         canvas.setFillColor(_RL_SLATE_500)
         canvas.drawString(_lm, _page_h - 0.42 * inch, agency_name)
         canvas.drawRightString(_page_w - _lm, _page_h - 0.42 * inch, f"Page {doc.page}")
@@ -1123,7 +1706,7 @@ def _generate_pdf_reportlab(
         canvas.setStrokeColor(_RL_SLATE_200)
         canvas.setLineWidth(0.5)
         canvas.line(_lm, 0.52 * inch, _page_w - _lm, 0.52 * inch)
-        canvas.setFont(_PDF_BODY_FONT, 8)
+        canvas.setFont(_pdf_body, 8)
         canvas.setFillColor(_RL_SLATE_400)
         canvas.drawString(_lm, 0.34 * inch,
                           f"Prepared by {agency_name}  \u2022  Confidential  \u2022  {report_date}")
@@ -1140,22 +1723,22 @@ def _generate_pdf_reportlab(
 
     h1 = ParagraphStyle("RPH1", parent=ss["Heading1"],
                         fontSize=18, textColor=_brand_rl, spaceBefore=18, spaceAfter=4,
-                        leading=22, fontName=_PDF_BOLD_FONT)
+                        leading=22, fontName=_pdf_bold)
     body = ParagraphStyle("RPBody", parent=ss["Normal"],
                           fontSize=11, textColor=_RL_SLATE_700, spaceBefore=4, spaceAfter=4,
-                          leading=18, fontName=_PDF_BODY_FONT)
+                          leading=18, fontName=_pdf_body)
     label_s = ParagraphStyle("RPLabel", parent=ss["Normal"],
                               fontSize=9, textColor=_RL_SLATE_400, spaceAfter=2, leading=11,
-                              fontName=_PDF_BOLD_FONT)
+                              fontName=_pdf_bold)
     value_s = ParagraphStyle("RPValue", parent=ss["Normal"],
                               fontSize=20, textColor=_RL_SLATE_900, spaceAfter=2, leading=24,
-                              fontName=_PDF_BOLD_FONT)
+                              fontName=_pdf_bold)
     chg_pos = ParagraphStyle("RPChgPos", parent=ss["Normal"],
-                              fontSize=10, textColor=_RL_EMERALD, leading=13, fontName=_PDF_BOLD_FONT)
+                              fontSize=10, textColor=_RL_EMERALD, leading=13, fontName=_pdf_bold)
     chg_neg = ParagraphStyle("RPChgNeg", parent=ss["Normal"],
-                              fontSize=10, textColor=_RL_ROSE,    leading=13, fontName=_PDF_BOLD_FONT)
+                              fontSize=10, textColor=_RL_ROSE,    leading=13, fontName=_pdf_bold)
     chg_na  = ParagraphStyle("RPChgNa",  parent=ss["Normal"],
-                              fontSize=10, textColor=_RL_SLATE_400, leading=13, fontName=_PDF_BODY_FONT)
+                              fontSize=10, textColor=_RL_SLATE_400, leading=13, fontName=_pdf_body)
 
     def _chg_style(val: float | None) -> ParagraphStyle:
         if val is None: return chg_na
@@ -1183,10 +1766,25 @@ def _generate_pdf_reportlab(
     story: list[Any] = []
 
     # Cover page
+    # ── Unicode font warning banner (non-Latin languages without Noto) ───────
+    if _unicode_font_missing:
+        story.append(Paragraph(
+            "⚠ PDF rendering note: This report is in a non-Latin language but a compatible "
+            "font (Noto) was not found on the server. Text may appear as boxes. "
+            "Install LibreOffice on the server, or install Noto fonts, for correct rendering. "
+            "The PPTX download renders correctly.",
+            ParagraphStyle("RPFontWarning", parent=ss["Normal"],
+                           fontSize=9, textColor=rl_colors.HexColor("#92400E"),
+                           backColor=rl_colors.HexColor("#FEF3C7"),
+                           borderColor=rl_colors.HexColor("#F59E0B"),
+                           borderWidth=1, borderPadding=6,
+                           leading=14, spaceBefore=0, spaceAfter=10),
+        ))
+
     story.append(Paragraph(
         client_name,
         ParagraphStyle("RPClientName", parent=ss["Normal"],
-                       fontSize=30, textColor=_RL_SLATE_900, fontName=_PDF_BOLD_FONT,
+                       fontSize=30, textColor=_RL_SLATE_900, fontName=_pdf_bold,
                        leading=36, spaceBefore=6, spaceAfter=10),
     ))
     if client_logo_img:
@@ -1201,12 +1799,12 @@ def _generate_pdf_reportlab(
     story.append(Paragraph(
         f"{template_label}  \u2022  {p_start} to {p_end}",
         ParagraphStyle("RPSub", parent=ss["Normal"], fontSize=13,
-                       textColor=_RL_SLATE_500, fontName=_PDF_BODY_FONT, leading=17, spaceAfter=6),
+                       textColor=_RL_SLATE_500, fontName=_pdf_body, leading=17, spaceAfter=6),
     ))
     story.append(Paragraph(
         f"Prepared by {agency_name}  \u2022  Powered by ReportPilot  \u2022  {report_date}",
         ParagraphStyle("RPPrep", parent=ss["Normal"], fontSize=10,
-                       textColor=_RL_SLATE_400, fontName=_PDF_BODY_FONT, leading=14, spaceAfter=16),
+                       textColor=_RL_SLATE_400, fontName=_pdf_body, leading=14, spaceAfter=16),
     ))
     story.append(HRFlowable(width="100%", thickness=1.5, color=_brand_rl, spaceAfter=0))
     story.append(PageBreak())
@@ -1322,6 +1920,101 @@ def _generate_pdf_reportlab(
                 if clean:
                     story.append(Paragraph(f'<font color="{bc}"><b>{i}.</b></font>\u2002{clean}', step_s))
             story.append(Spacer(1, 0.1 * inch))
+
+    # CSV Data Sources
+    csv_sources_list = data.get("csv_sources", [])
+    if csv_sources_list:
+        for csv_src in csv_sources_list:
+            src_name = csv_src.get("source_name", csv_src.get("name", "Custom Data"))
+            metrics  = csv_src.get("metrics", [])
+            if not metrics:
+                continue
+            _section_heading(f"Supplementary Data — {src_name}")
+            # Build a 3-column KPI table for the CSV metrics
+            csv_col_w = (_page_w - 2 * _lm) / 3
+            csv_label_s = ParagraphStyle("RPCsvLabel", parent=label_s)
+            csv_value_s = ParagraphStyle("RPCsvVal",   parent=body,
+                                          fontSize=14, textColor=_RL_SLATE_900,
+                                          fontName=_pdf_bold, leading=18)
+            csv_chg_s   = ParagraphStyle("RPCsvChg",  parent=body,
+                                          fontSize=9,  textColor=_RL_SLATE_400,
+                                          fontName=_pdf_body, leading=11)
+
+            def _csv_kpi_cell(lbl: str, val: str, chg: str) -> list:
+                return [
+                    Paragraph(lbl.upper(), csv_label_s),
+                    Paragraph(val or "—", csv_value_s),
+                    Paragraph(chg, csv_chg_s),
+                ]
+
+            # Group metrics into rows of 3
+            rows = []
+            row: list = []
+            for metric in metrics:
+                m_unit = metric.get("unit", "number")
+                m_curr = metric.get("current_value")
+                m_name = metric.get("name", "")
+                # Format value
+                try:
+                    m_num = float(str(m_curr)) if m_curr is not None else None
+                except (ValueError, TypeError):
+                    m_num = None
+                if m_num is not None:
+                    if m_unit == "currency":
+                        m_val = f"{cur_sym}{m_num:,.0f}"
+                    elif m_unit == "percent":
+                        m_val = f"{m_num:.2f}%"
+                    else:
+                        m_val = f"{int(m_num):,}" if m_num == int(m_num) else f"{m_num:,.2f}"
+                else:
+                    m_val = str(m_curr) if m_curr is not None else "—"
+                # Format change
+                m_prev = metric.get("previous_value")
+                try:
+                    p_num = float(str(m_prev)) if m_prev is not None else None
+                except (ValueError, TypeError):
+                    p_num = None
+                if m_num is not None and p_num is not None and p_num > 0:
+                    m_chg_pct = round((m_num - p_num) / p_num * 100, 1)
+                    m_chg = f"+{m_chg_pct}%" if m_chg_pct >= 0 else f"{m_chg_pct}%"
+                else:
+                    m_chg = ""
+                row.append(_csv_kpi_cell(m_name, m_val, m_chg))
+                if len(row) == 3:
+                    rows.append(row)
+                    row = []
+            if row:
+                # Pad incomplete last row
+                while len(row) < 3:
+                    row.append(_csv_kpi_cell("", "", ""))
+                rows.append(row)
+
+            if rows:
+                csv_table = Table(rows, colWidths=[csv_col_w] * 3,
+                                  rowHeights=[0.9 * inch] * len(rows))
+                csv_table.setStyle(TableStyle([
+                    ("BACKGROUND", (0, 0), (-1, -1), _RL_SLATE_50),
+                    ("TOPPADDING",    (0, 0), (-1, -1), 8),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                    ("LEFTPADDING",   (0, 0), (-1, -1), 12),
+                    ("RIGHTPADDING",  (0, 0), (-1, -1), 12),
+                    ("VALIGN",        (0, 0), (-1, -1), "TOP"),
+                    ("GRID",          (0, 0), (-1, -1), 1.5, rl_colors.white),
+                ]))
+                story.append(csv_table)
+                story.append(Spacer(1, 0.15 * inch))
+
+            # Embed CSV chart if available
+            safe_name = src_name.lower().replace(" ", "_").replace("/", "_")
+            csv_chart_path = charts.get(f"csv_{safe_name}")
+            if csv_chart_path and os.path.exists(csv_chart_path):
+                try:
+                    csv_img = RLImage(csv_chart_path, width=6.5 * inch, height=2.9 * inch)
+                    csv_img.hAlign = "CENTER"
+                    story.append(csv_img)
+                    story.append(Spacer(1, 0.15 * inch))
+                except Exception as _csv_img_err:
+                    logger.debug("Could not embed CSV chart in PDF: %s", _csv_img_err)
 
     # Custom Section
     if (_section_enabled(enabled_sections, "custom_section")

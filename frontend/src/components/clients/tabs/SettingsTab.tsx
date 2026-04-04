@@ -5,7 +5,7 @@ import {
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import LanguageSelector from '@/components/clients/LanguageSelector'
+import LanguageSelector, { LANGUAGES } from '@/components/clients/LanguageSelector'
 import type { Client } from '@/types'
 
 interface Props {
@@ -134,10 +134,23 @@ export default function SettingsTab({
 
           <Field label="Report language">
             {editing ? (
-              <LanguageSelector value={editValues.report_language ?? 'en'} onChange={lang => setEditValues(v => ({ ...v, report_language: lang }))} />
-            ) : (
-              <span className="text-slate-700">{client.report_language && client.report_language !== 'en' ? client.report_language.toUpperCase() : 'English (default)'}</span>
-            )}
+              <LanguageSelector
+                value={editValues.report_language ?? 'en'}
+                onChange={lang => setEditValues(v => ({ ...v, report_language: lang }))}
+                showLabel={false}
+              />
+            ) : (() => {
+              const lang = LANGUAGES.find(l => l.code === (client.report_language ?? 'en'))
+              return (
+                <span className="flex items-center gap-1.5 text-slate-700">
+                  <span>{lang?.flag ?? '🇺🇸'}</span>
+                  <span>{lang?.name ?? 'English'}</span>
+                  {!client.report_language && (
+                    <span className="text-slate-400 text-xs">(default)</span>
+                  )}
+                </span>
+              )
+            })()}
           </Field>
         </CardContent>
       </Card>

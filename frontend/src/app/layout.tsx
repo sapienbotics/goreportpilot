@@ -17,21 +17,24 @@ const plusJakartaSans = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "ReportPilot — AI-Powered Client Reports for Marketing Agencies",
+  title: "GoReportPilot — AI-Powered Client Reports",
   description:
-    "Generate professional marketing reports with AI insights in 5 minutes. Connect Google Analytics & Meta Ads, get AI-written narratives, export to PowerPoint & PDF.",
+    "Generate branded PowerPoint reports with AI narrative insights. Connect GA4, Meta Ads, Google Ads — reports ready in minutes.",
   keywords: "marketing reports, client reporting, AI reports, agency reporting, Google Analytics reports, Meta Ads reports",
+  icons: {
+    icon: "/favicon.svg",
+  },
   openGraph: {
-    title: "ReportPilot — AI-Powered Client Reports",
-    description: "Generate professional marketing reports with AI insights in 5 minutes.",
+    title: "GoReportPilot — AI-Powered Client Reports",
+    description: "Generate branded PowerPoint reports with AI narrative insights. Connect GA4, Meta Ads, Google Ads — reports ready in minutes.",
     type: "website",
-    url: "https://reportpilot.co",
-    siteName: "ReportPilot",
+    url: "https://goreportpilot.com",
+    siteName: "GoReportPilot",
   },
   twitter: {
     card: "summary_large_image",
-    title: "ReportPilot — AI-Powered Client Reports",
-    description: "Generate professional marketing reports with AI insights in 5 minutes.",
+    title: "GoReportPilot — AI-Powered Client Reports",
+    description: "Generate branded PowerPoint reports with AI narrative insights. Connect GA4, Meta Ads, Google Ads — reports ready in minutes.",
   },
 };
 

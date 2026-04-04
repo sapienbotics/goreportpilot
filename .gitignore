@@ -5,9 +5,10 @@ __pycache__/
 venv/
 .venv/
 
-# Environment variables
+# Environment variables — NEVER commit these
 .env
 .env.local
+.env.production
 .env.*.local
 frontend/.env.local
 backend/.env
@@ -33,7 +34,11 @@ build/
 
 # Generated reports (local dev)
 backend/generated_reports/
+backend/static/logos/
 test_generated_pptx/
+
+# Vercel
+.vercel/
 
 # Supabase
 supabase/.temp/

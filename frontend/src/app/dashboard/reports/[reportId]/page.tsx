@@ -491,7 +491,7 @@ export default function ReportDetailPage() {
 
   if (loading) {
     return (
-      <div className="max-w-4xl mx-auto space-y-4">
+      <div className="max-w-7xl mx-auto space-y-4">
         <div className="h-8 w-64 rounded bg-slate-100 animate-pulse" />
         <div className="h-40 rounded-xl bg-slate-100 animate-pulse" />
         <div className="grid grid-cols-3 gap-4">
@@ -503,7 +503,7 @@ export default function ReportDetailPage() {
 
   if (!report) {
     return (
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-7xl mx-auto">
         <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {error ?? 'Report not found.'}
         </div>
@@ -521,7 +521,7 @@ export default function ReportDetailPage() {
   const KPI_CONFIGS = buildKpiConfigs(getCurrencySymbol(report.meta_currency))
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-7xl mx-auto space-y-6">
 
       {/* ── Send dialog (rendered at top level so it overlays everything) ── */}
       {showSendDialog && (
@@ -592,14 +592,24 @@ export default function ReportDetailPage() {
             {dlPptx ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
             PPTX
           </button>
-          <button
-            onClick={handleDownloadPdf}
-            disabled={dlPdf}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-60"
-          >
-            {dlPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-            PDF
-          </button>
+          {report.pdf_url !== null && report.pdf_url !== undefined ? (
+            <button
+              onClick={handleDownloadPdf}
+              disabled={dlPdf}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-60"
+            >
+              {dlPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+              PDF
+            </button>
+          ) : (
+            <span
+              title="PDF not available — this report language requires LibreOffice for PDF rendering. Download PPTX instead."
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-400 cursor-not-allowed select-none"
+            >
+              <FileText className="h-4 w-4" />
+              PDF unavailable
+            </span>
+          )}
         </div>
       </div>
 

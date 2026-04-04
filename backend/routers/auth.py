@@ -382,7 +382,7 @@ async def get_google_ads_auth_url(
     state = secrets.token_urlsafe(32)
     params = {
         "client_id":     settings.GOOGLE_CLIENT_ID,
-        "redirect_uri":  settings.GOOGLE_REDIRECT_URI,
+        "redirect_uri":  settings.GOOGLE_ADS_REDIRECT_URI,
         "response_type": "code",
         "scope":         _GOOGLE_ADS_SCOPES,
         "access_type":   "offline",
@@ -409,7 +409,7 @@ async def google_ads_callback(
             "code":          body.code,
             "client_id":     settings.GOOGLE_CLIENT_ID,
             "client_secret": settings.GOOGLE_CLIENT_SECRET,
-            "redirect_uri":  settings.GOOGLE_REDIRECT_URI,
+            "redirect_uri":  settings.GOOGLE_ADS_REDIRECT_URI,
             "grant_type":    "authorization_code",
         })
     if token_resp.status_code != 200:
@@ -467,7 +467,7 @@ async def get_search_console_auth_url(
     state = secrets.token_urlsafe(32)
     params = {
         "client_id":     settings.GOOGLE_CLIENT_ID,
-        "redirect_uri":  settings.GOOGLE_REDIRECT_URI,
+        "redirect_uri":  settings.SEARCH_CONSOLE_REDIRECT_URI,
         "response_type": "code",
         "scope":         _SEARCH_CONSOLE_SCOPES,
         "access_type":   "offline",
@@ -493,7 +493,7 @@ async def search_console_callback(
             "code":          body.code,
             "client_id":     settings.GOOGLE_CLIENT_ID,
             "client_secret": settings.GOOGLE_CLIENT_SECRET,
-            "redirect_uri":  settings.GOOGLE_REDIRECT_URI,
+            "redirect_uri":  settings.SEARCH_CONSOLE_REDIRECT_URI,
             "grant_type":    "authorization_code",
         })
     if token_resp.status_code != 200:

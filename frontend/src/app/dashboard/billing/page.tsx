@@ -185,7 +185,7 @@ export default function BillingPage() {
       const options = {
         key: razorpay_key_id,
         subscription_id,
-        name: 'ReportPilot',
+        name: 'GoReportPilot',
         description: `${planKey.charAt(0).toUpperCase() + planKey.slice(1)} Plan — ${billingCycle}`,
         handler: async (response: { razorpay_payment_id: string; razorpay_subscription_id: string; razorpay_signature: string }) => {
           await billingApi.verifyPayment({
@@ -236,7 +236,7 @@ export default function BillingPage() {
 
   if (loading) {
     return (
-      <div className="max-w-5xl mx-auto space-y-6">
+      <div className="max-w-7xl mx-auto space-y-6">
         <div className="h-8 w-48 bg-slate-200 rounded animate-pulse" />
         <div className="h-32 bg-slate-200 rounded-lg animate-pulse" />
         <div className="grid grid-cols-3 gap-4">
@@ -251,7 +251,7 @@ export default function BillingPage() {
   const isPastDue = sub?.status === 'past_due'
 
   return (
-    <div className="max-w-5xl mx-auto space-y-8">
+    <div className="max-w-7xl mx-auto space-y-8">
       <h1 className="text-2xl font-bold text-slate-900">Billing & Subscription</h1>
 
       {/* ── Trial/Status banners ─────────────────────────────────────────── */}

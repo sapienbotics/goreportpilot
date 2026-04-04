@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { clientsApi, reportsApi, connectionsApi, authApi, scheduledReportsApi, uploadClientLogo, customSectionApi } from '@/lib/api'
 import type { ScheduledReport, ScheduledReportPayload } from '@/lib/api'
+import type { ParsedCSV } from '@/components/reports/CSVUploadForReport'
 import { cn } from '@/lib/utils'
 import type { Client, Report, Connection, ReportConfig } from '@/types'
 import { DEFAULT_REPORT_CONFIG } from '@/types'
@@ -95,7 +96,6 @@ export default function ClientDetailPage({ params }: Props) {
   const [connectingGads,     setConnectingGads]     = useState(false)
   const [connectingGsc,      setConnectingGsc]      = useState(false)
   const [disconnecting,      setDisconnecting]      = useState<string | null>(null)
-  const [showCsvUpload,      setShowCsvUpload]      = useState(false)
 
   const refreshConnections = useCallback(async () => {
     try {
@@ -187,11 +187,21 @@ export default function ClientDetailPage({ params }: Props) {
   const [visualTemplate,   setVisualTemplate]   = useState<'modern_clean' | 'dark_executive' | 'colorful_agency' | 'bold_geometric' | 'minimal_elegant' | 'gradient_modern'>('modern_clean')
   const [generating,       setGenerating]       = useState(false)
   const [genError,         setGenError]         = useState<string | null>(null)
+  const [csvFiles,         setCsvFiles]         = useState<ParsedCSV[]>([])
 
   const handleGenerate = async () => {
     setGenerating(true); setGenError(null)
     try {
-      const report = await reportsApi.generate({ client_id: clientId, period_start: periodStart, period_end: periodEnd, template: selectedTemplate, visual_template: visualTemplate })
+      const report = await reportsApi.generate({
+        client_id:       clientId,
+        period_start:    periodStart,
+        period_end:      periodEnd,
+        template:        selectedTemplate,
+        visual_template: visualTemplate,
+        csv_sources:     csvFiles.length > 0
+          ? csvFiles.map(c => ({ source_name: c.sourceName, metrics: c.metrics }))
+          : undefined,
+      })
       router.push(`/dashboard/reports/${report.id}`)
     } catch (err: unknown) {
       setGenError(err instanceof Error ? err.message : 'Failed to generate report.')
@@ -408,8 +418,6 @@ export default function ClientDetailPage({ params }: Props) {
           connectingGads={connectingGads}
           connectingGsc={connectingGsc}
           disconnecting={disconnecting}
-          showCsvUpload={showCsvUpload}
-          setShowCsvUpload={setShowCsvUpload}
           handleConnectGa4={handleConnectGa4}
           handleConnectMeta={handleConnectMeta}
           handleConnectGoogleAds={handleConnectGoogleAds}
@@ -440,6 +448,8 @@ export default function ClientDetailPage({ params }: Props) {
           configSaved={configSaved}
           customImgInputRef={customImgInputRef}
           customImgUploading={customImgUploading}
+          csvFiles={csvFiles}
+          setCsvFiles={setCsvFiles}
           handleGenerate={handleGenerate}
           handleSaveConfig={handleSaveConfig}
           handleCustomSectionImageUpload={handleCustomSectionImageUpload}

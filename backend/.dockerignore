@@ -1,0 +1,28 @@
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+.env
+.env.*
+*.egg-info
+dist/
+build/
+.git
+.gitignore
+venv/
+.venv/
+env/
+node_modules/
+# Generated report and upload files — use a Docker volume instead
+reports/
+uploads/
+# Large binary blobs that shouldn't be in the image
+*.pptx
+*.pdf
+# Test files
+tests/
+*.test.py
+# IDE
+.vscode/
+.idea/

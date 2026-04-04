@@ -1,13 +1,14 @@
 'use client'
-import { useRef } from 'react'
+import { useRef, useState, useMemo } from 'react'
 import Link from 'next/link'
 import {
   FileText, Sparkles, Calendar, ChevronRight, Settings2,
-  Check, Loader2, Image as ImageIcon,
+  Check, Loader2, Image as ImageIcon, Search, X as XIcon, Upload,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import RichTextEditor from '@/components/clients/RichTextEditor'
+import CSVUploadForReport, { type ParsedCSV } from '@/components/reports/CSVUploadForReport'
 import type { Report, ReportConfig } from '@/types'
 
 type TemplateValue = 'full' | 'summary' | 'brief'
@@ -33,6 +34,8 @@ interface Props {
   configSaved: boolean
   customImgInputRef: React.RefObject<HTMLInputElement>
   customImgUploading: boolean
+  csvFiles: ParsedCSV[]
+  setCsvFiles: React.Dispatch<React.SetStateAction<ParsedCSV[]>>
   handleGenerate: () => void
   handleSaveConfig: () => void
   handleCustomSectionImageUpload: (e: React.ChangeEvent<HTMLInputElement>) => void
@@ -47,8 +50,38 @@ export default function ReportsTab({
   reportConfig, setReportConfig,
   savingConfig, configSaved,
   customImgInputRef, customImgUploading,
+  csvFiles, setCsvFiles,
   handleGenerate, handleSaveConfig, handleCustomSectionImageUpload,
 }: Props) {
+  const [showCsvUpload, setShowCsvUpload] = useState(false)
+
+  function removeCsv(index: number) {
+    setCsvFiles(prev => prev.filter((_, i) => i !== index))
+  }
+  const [historySearch,     setHistorySearch]     = useState('')
+  const [historyStatus,     setHistoryStatus]     = useState<'all' | 'draft' | 'approved' | 'generating' | 'sent' | 'failed'>('all')
+  const [historyDateFrom,   setHistoryDateFrom]   = useState('')
+  const [historyDateTo,     setHistoryDateTo]     = useState('')
+
+  const filteredReports = useMemo(() => {
+    return reports.filter(r => {
+      if (historySearch && !r.title.toLowerCase().includes(historySearch.toLowerCase())) return false
+      if (historyStatus !== 'all' && r.status !== historyStatus) return false
+      if (historyDateFrom && r.period_end < historyDateFrom) return false
+      if (historyDateTo   && r.period_start > historyDateTo)  return false
+      return true
+    })
+  }, [reports, historySearch, historyStatus, historyDateFrom, historyDateTo])
+
+  const clearFilters = () => {
+    setHistorySearch('')
+    setHistoryStatus('all')
+    setHistoryDateFrom('')
+    setHistoryDateTo('')
+  }
+
+  const hasFilters = historySearch || historyStatus !== 'all' || historyDateFrom || historyDateTo
+
   return (
     <div className="space-y-6">
       {/* Generate Report */}
@@ -122,6 +155,44 @@ export default function ReportsTab({
                   <label className="block text-xs font-medium text-slate-500 mb-1.5">Period end</label>
                   <Input type="date" value={periodEnd} onChange={e => setPeriodEnd(e.target.value)} />
                 </div>
+              </div>
+
+              {/* CSV Data Sources */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+                  Additional Data Sources <span className="normal-case font-normal">(optional)</span>
+                </label>
+                <p className="text-xs text-slate-400 mb-2">
+                  Upload CSVs for platforms not directly integrated — LinkedIn Ads, TikTok, Shopify, Mailchimp, etc.
+                </p>
+                {csvFiles.length > 0 && (
+                  <ul className="mb-2 space-y-1.5">
+                    {csvFiles.map((csv, i) => (
+                      <li key={i} className="flex items-center justify-between rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <FileText className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+                          <span className="text-sm font-medium text-slate-800 truncate">{csv.sourceName}</span>
+                          <span className="text-xs text-slate-400 shrink-0">{csv.metrics.length} metrics</span>
+                        </div>
+                        <button
+                          onClick={() => removeCsv(i)}
+                          className="ml-2 text-slate-400 hover:text-rose-500 transition-colors"
+                          title="Remove"
+                        >
+                          <XIcon className="h-3.5 w-3.5" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowCsvUpload(true)}
+                  className="flex items-center justify-center gap-2 w-full rounded-lg border border-dashed border-slate-300 px-3 py-2 text-sm text-slate-500 hover:border-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+                >
+                  <Upload className="h-4 w-4" />
+                  {csvFiles.length === 0 ? 'Add CSV Data Source' : 'Add Another CSV'}
+                </button>
               </div>
 
               {genError && <p className="text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{genError}</p>}
@@ -220,18 +291,85 @@ export default function ReportsTab({
           <CardTitle className="text-base text-slate-700 flex items-center gap-2">
             <FileText className="h-4 w-4 text-slate-400" />
             Report History
+            {reports.length > 0 && (
+              <span className="ml-1 text-xs font-normal text-slate-400">({reports.length})</span>
+            )}
           </CardTitle>
         </CardHeader>
         <CardContent>
+          {/* Filter bar */}
+          {!reportsLoading && reports.length > 0 && (
+            <div className="mb-4 space-y-2">
+              <div className="flex flex-wrap gap-2">
+                {/* Search */}
+                <div className="relative flex-1 min-w-[160px]">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                  <input
+                    type="text"
+                    value={historySearch}
+                    onChange={e => setHistorySearch(e.target.value)}
+                    placeholder="Search reports…"
+                    className="w-full rounded-md border border-slate-200 bg-white pl-8 pr-3 py-1.5 text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                {/* Status filter */}
+                <select
+                  value={historyStatus}
+                  onChange={e => setHistoryStatus(e.target.value as typeof historyStatus)}
+                  className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="all">All statuses</option>
+                  <option value="draft">Draft</option>
+                  <option value="approved">Approved</option>
+                  <option value="generating">Generating</option>
+                  <option value="sent">Sent</option>
+                  <option value="failed">Failed</option>
+                </select>
+                {/* Clear */}
+                {hasFilters && (
+                  <button
+                    onClick={clearFilters}
+                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-500 hover:bg-slate-50 transition-colors"
+                  >
+                    <XIcon className="h-3 w-3" />
+                    Clear
+                  </button>
+                )}
+              </div>
+              {/* Date range row */}
+              <div className="flex flex-wrap gap-2 items-center">
+                <span className="text-xs text-slate-400">Period:</span>
+                <input
+                  type="date"
+                  value={historyDateFrom}
+                  onChange={e => setHistoryDateFrom(e.target.value)}
+                  className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <span className="text-xs text-slate-400">to</span>
+                <input
+                  type="date"
+                  value={historyDateTo}
+                  onChange={e => setHistoryDateTo(e.target.value)}
+                  className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+          )}
+
           {reportsLoading ? (
             <div className="space-y-2">
               {[1,2].map(i => <div key={i} className="h-12 rounded-lg bg-slate-100 animate-pulse" />)}
             </div>
           ) : reports.length === 0 ? (
             <p className="text-sm text-slate-400 py-2">No reports generated yet. Use the form above to generate your first report.</p>
+          ) : filteredReports.length === 0 ? (
+            <div className="py-6 text-center">
+              <p className="text-sm text-slate-400">No reports match your filters.</p>
+              <button onClick={clearFilters} className="mt-2 text-xs text-indigo-600 hover:underline">Clear filters</button>
+            </div>
           ) : (
             <ul className="divide-y divide-slate-100">
-              {reports.map(report => (
+              {filteredReports.map(report => (
                 <li key={report.id}>
                   <Link href={`/dashboard/reports/${report.id}`} className="flex items-center justify-between py-3 hover:bg-slate-50 -mx-2 px-2 rounded-lg transition-colors group">
                     <div className="flex items-start gap-3">
@@ -245,7 +383,15 @@ export default function ReportsTab({
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${report.status === 'draft' || report.status === 'approved' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                        report.status === 'draft' || report.status === 'approved'
+                          ? 'bg-emerald-50 text-emerald-700'
+                          : report.status === 'generating'
+                          ? 'bg-amber-50 text-amber-700'
+                          : report.status === 'failed'
+                          ? 'bg-rose-50 text-rose-600'
+                          : 'bg-slate-100 text-slate-500'
+                      }`}>
                         {report.status}
                       </span>
                       <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-slate-500 transition-colors" />
@@ -257,6 +403,14 @@ export default function ReportsTab({
           )}
         </CardContent>
       </Card>
+
+      {/* CSV Upload Modal */}
+      {showCsvUpload && (
+        <CSVUploadForReport
+          onAdd={(csv) => setCsvFiles(prev => [...prev, csv])}
+          onClose={() => setShowCsvUpload(false)}
+        />
+      )}
     </div>
   )
 }

@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { LayoutDashboard, Users, FileText, Link2, Settings, CreditCard, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { Logo } from '@/components/ui/Logo'
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -25,12 +26,7 @@ export function Sidebar({ onClose }: SidebarProps) {
     <aside className="w-64 shrink-0 border-r border-slate-200 bg-white flex flex-col h-full">
       {/* Logo area */}
       <div className="flex items-center justify-between h-16 px-6 border-b border-slate-200">
-        <span
-          className="text-xl font-bold text-indigo-700"
-          style={{ fontFamily: 'var(--font-plus-jakarta-sans)' }}
-        >
-          ReportPilot
-        </span>
+        <Logo size="sm" />
         {/* Close button — only shown on mobile overlay */}
         {onClose && (
           <button onClick={onClose} className="md:hidden p-1 rounded text-slate-400 hover:text-slate-600">

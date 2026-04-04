@@ -135,6 +135,7 @@ def _parse_ga4_responses(
     daily_resp: dict,
     sources_resp: dict,
     pages_resp: dict,
+    devices_resp: dict | None = None,
 ) -> dict:
     """
     Normalise GA4 API responses into the same dict shape that mock_data.py produces
@@ -206,12 +207,27 @@ def _parse_ga4_responses(
             "pageviews": round(_met_val(row, 1)),
         })
 
-    return {
+    # Device breakdown (optional — present when devices_resp is supplied)
+    device_breakdown = []
+    if devices_resp:
+        for row in devices_resp.get("rows", []):
+            raw_device = _dim_val(row, 0)
+            device_breakdown.append({
+                "device":      raw_device.capitalize() if raw_device else "Other",
+                "sessions":    round(_met_val(row, 0)),
+                "users":       round(_met_val(row, 1)),
+                "bounce_rate": round(_met_val(row, 2), 1),
+            })
+
+    result: dict = {
         "summary":         summary,
-        "daily_data":      daily_data,
+        "daily":           daily_data,  # key name matches chart_generator expectation
         "traffic_sources": traffic_sources,
         "top_pages":       top_pages,
     }
+    if device_breakdown:
+        result["device_breakdown"] = device_breakdown
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -266,7 +282,7 @@ async def pull_ga4_data(
     prev_start = prev_end - timedelta(days=span - 1)
     prev_range = [{"startDate": prev_start.isoformat(), "endDate": prev_end.isoformat()}]
 
-    main_resp, prev_resp, daily_resp, sources_resp, pages_resp = await asyncio.gather(
+    main_resp, prev_resp, daily_resp, sources_resp, pages_resp, devices_resp = await asyncio.gather(
         _run_ga4_report(access_token, property_id, {
             "dateRanges": current_range,
             "metrics":    metrics_base,
@@ -295,6 +311,16 @@ async def pull_ga4_data(
             "orderBys":   [{"metric": {"metricName": "sessions"}, "desc": True}],
             "limit":      10,
         }),
+        _run_ga4_report(access_token, property_id, {
+            "dateRanges": current_range,
+            "dimensions": [{"name": "deviceCategory"}],
+            "metrics":    [
+                {"name": "sessions"},
+                {"name": "totalUsers"},
+                {"name": "bounceRate"},
+            ],
+            "orderBys":   [{"metric": {"metricName": "sessions"}, "desc": True}],
+        }),
     )
 
-    return _parse_ga4_responses(main_resp, prev_resp, daily_resp, sources_resp, pages_resp)
+    return _parse_ga4_responses(main_resp, prev_resp, daily_resp, sources_resp, pages_resp, devices_resp)

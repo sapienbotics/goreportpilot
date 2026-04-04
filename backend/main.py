@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import shutil
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -9,7 +10,11 @@ from fastapi.staticfiles import StaticFiles
 
 from config import settings
 
-logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.INFO if settings.ENVIRONMENT == "production" else logging.DEBUG,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+logger = logging.getLogger("reportpilot")
 
 # ── Static directory for logos ────────────────────────────────────────────────
 _BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -35,6 +40,7 @@ async def _scheduler_loop() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """FastAPI lifespan — start background tasks on startup, cancel on shutdown."""
+    logger.info("ReportPilot API starting — environment=%s", settings.ENVIRONMENT)
     scheduler_task = asyncio.create_task(_scheduler_loop())
     logger.info("Background scheduler started (checks every 60 min)")
     yield
@@ -56,9 +62,13 @@ app = FastAPI(
 )
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
+_origins = [settings.FRONTEND_URL]
+if settings.ENVIRONMENT == "development":
+    _origins.extend(["http://localhost:3000", "http://127.0.0.1:3000"])
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.FRONTEND_URL],
+    allow_origins=_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -72,7 +82,30 @@ app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "service": "reportpilot-api"}
+    """Health check endpoint for Railway deployment monitoring."""
+    health: dict = {
+        "status": "healthy",
+        "service": "reportpilot-api",
+        "environment": settings.ENVIRONMENT,
+    }
+
+    # Check Supabase connectivity
+    try:
+        from services.supabase_client import get_supabase_admin  # noqa: PLC0415
+        sb = get_supabase_admin()
+        sb.table("profiles").select("id").limit(1).execute()
+        health["supabase"] = "connected"
+    except Exception as e:
+        health["supabase"] = f"error: {str(e)[:100]}"
+        health["status"] = "degraded"
+
+    # Check OpenAI API key is set
+    health["openai"] = "configured" if settings.OPENAI_API_KEY else "missing"
+
+    # Check LibreOffice availability
+    health["libreoffice"] = "available" if shutil.which("soffice") or shutil.which("libreoffice") else "unavailable"
+
+    return health
 
 
 # ── Routers ───────────────────────────────────────────────────────────────────

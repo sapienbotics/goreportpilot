@@ -3,19 +3,23 @@
 import { Globe } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-const LANGUAGES = [
+export const LANGUAGES = [
   { code: 'en', name: 'English',     flag: '🇺🇸' },
   { code: 'es', name: 'Español',     flag: '🇪🇸' },
-  { code: 'pt', name: 'Português',   flag: '🇧🇷' },
   { code: 'fr', name: 'Français',    flag: '🇫🇷' },
   { code: 'de', name: 'Deutsch',     flag: '🇩🇪' },
+  { code: 'pt', name: 'Português',   flag: '🇧🇷' },
+  { code: 'it', name: 'Italiano',    flag: '🇮🇹' },
+  { code: 'nl', name: 'Nederlands',  flag: '🇳🇱' },
+  { code: 'sv', name: 'Svenska',     flag: '🇸🇪' },
+  { code: 'no', name: 'Norsk',       flag: '🇳🇴' },
+  { code: 'da', name: 'Dansk',       flag: '🇩🇰' },
+  { code: 'fi', name: 'Suomi',       flag: '🇫🇮' },
+  { code: 'ja', name: '日本語',      flag: '🇯🇵' },
+  { code: 'zh', name: '中文',        flag: '🇨🇳' },
   { code: 'hi', name: 'हिन्दी',     flag: '🇮🇳' },
   { code: 'ar', name: 'العربية',     flag: '🇸🇦' },
-  { code: 'ja', name: '日本語',      flag: '🇯🇵' },
-  { code: 'it', name: 'Italiano',    flag: '🇮🇹' },
   { code: 'ko', name: '한국어',      flag: '🇰🇷' },
-  { code: 'zh', name: '中文',        flag: '🇨🇳' },
-  { code: 'nl', name: 'Nederlands',  flag: '🇳🇱' },
   { code: 'tr', name: 'Türkçe',     flag: '🇹🇷' },
 ]
 
@@ -23,17 +27,20 @@ interface Props {
   value: string
   onChange: (code: string) => void
   disabled?: boolean
+  showLabel?: boolean   // set false when embedded in a labelled Field row
 }
 
-export default function LanguageSelector({ value, onChange, disabled }: Props) {
+export default function LanguageSelector({ value, onChange, disabled, showLabel = true }: Props) {
   const selected = LANGUAGES.find((l) => l.code === value) ?? LANGUAGES[0]
 
   return (
     <div className="flex flex-col gap-1.5">
-      <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700">
-        <Globe className="h-4 w-4 text-indigo-600" />
-        Report Language
-      </label>
+      {showLabel && (
+        <label className="flex items-center gap-1.5 text-sm font-medium text-slate-700">
+          <Globe className="h-4 w-4 text-indigo-600" />
+          Report Language
+        </label>
+      )}
 
       <div className="relative">
         {/* Flag preview badge overlaid on the left of the select */}

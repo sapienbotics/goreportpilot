@@ -31,6 +31,7 @@ const PLATFORM_LABELS: Record<string, string> = {
   ga4: 'Google Analytics',
   meta_ads: 'Meta Ads',
   google_ads: 'Google Ads',
+  search_console: 'Search Console',
 }
 
 function MetricCard({

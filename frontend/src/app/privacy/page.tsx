@@ -3,10 +3,11 @@
 
 import Link from 'next/link'
 import type { Metadata } from 'next'
+import { Logo } from '@/components/ui/Logo'
 
 export const metadata: Metadata = {
-  title: 'Privacy Policy — ReportPilot',
-  description: 'How ReportPilot collects, uses, and protects your data.',
+  title: 'Privacy Policy — GoReportPilot',
+  description: 'How GoReportPilot collects, uses, and protects your data.',
 }
 
 const LAST_UPDATED = 'March 23, 2026'
@@ -17,12 +18,8 @@ export default function PrivacyPage() {
       {/* Nav */}
       <nav className="border-b border-slate-100 bg-white/95 backdrop-blur-sm sticky top-0 z-50">
         <div className="mx-auto max-w-5xl px-6 h-16 flex items-center justify-between">
-          <Link
-            href="/"
-            className="text-xl font-bold text-indigo-700"
-            style={{ fontFamily: 'var(--font-plus-jakarta-sans)' }}
-          >
-            ReportPilot
+          <Link href="/">
+            <Logo size="sm" />
           </Link>
           <div className="flex items-center gap-4 text-sm">
             <Link href="/terms" className="text-slate-600 hover:text-slate-900">Terms</Link>
