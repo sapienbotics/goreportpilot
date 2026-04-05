@@ -41,7 +41,7 @@ export default function PrivacyPage() {
             <h2 className="text-xl font-semibold text-slate-900 mb-3">1. Who We Are</h2>
             <p>
               ReportPilot is operated by <strong>SapienBotics</strong>, a sole proprietorship registered in
-              New Delhi, India (GSTIN: 09CYVPS3328G1ZQ). We build AI-powered reporting tools for digital
+              Bareilly, Uttar Pradesh, India (GSTIN: 09CYVPS3328G1ZQ). We build AI-powered reporting tools for digital
               marketing agencies and freelancers.
             </p>
             <p className="mt-2">
@@ -234,7 +234,7 @@ export default function PrivacyPage() {
             <h2 className="text-xl font-semibold text-slate-900 mb-3">12. Contact</h2>
             <address className="not-italic">
               <strong>SapienBotics</strong><br />
-              New Delhi, India<br />
+              Bareilly, Uttar Pradesh, India<br />
               GSTIN: 09CYVPS3328G1ZQ<br />
               Email: <a href="mailto:support@goreportpilot.com" className="text-indigo-600 hover:underline">support@goreportpilot.com</a>
             </address>

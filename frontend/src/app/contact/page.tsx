@@ -111,7 +111,7 @@ export default function ContactPage() {
               <h2 className="text-lg font-semibold text-slate-900 mb-1">Registered Business Address</h2>
               <address className="not-italic text-slate-600 text-sm leading-6">
                 <strong>SapienBotics</strong><br />
-                New Delhi, India<br />
+                Bareilly, Uttar Pradesh, India<br />
                 GSTIN: 09CYVPS3328G1ZQ
               </address>
               <p className="text-slate-400 text-xs mt-2">

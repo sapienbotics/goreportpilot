@@ -46,7 +46,7 @@ export default function TermsPage() {
             </p>
             <p className="mt-2">
               ReportPilot is operated by <strong>SapienBotics</strong>, a sole proprietorship registered in
-              New Delhi, India.
+              Bareilly, Uttar Pradesh, India.
             </p>
           </section>
 
@@ -206,7 +206,7 @@ export default function TermsPage() {
             <h2 className="text-xl font-semibold text-slate-900 mb-3">10. Governing Law</h2>
             <p>
               These terms are governed by and construed in accordance with the laws of India. Any disputes
-              shall be subject to the exclusive jurisdiction of the courts in New Delhi, India.
+              shall be subject to the exclusive jurisdiction of the courts in Bareilly, Uttar Pradesh, India.
             </p>
           </section>
 
@@ -214,7 +214,7 @@ export default function TermsPage() {
             <h2 className="text-xl font-semibold text-slate-900 mb-3">11. Contact</h2>
             <address className="not-italic">
               <strong>SapienBotics</strong><br />
-              New Delhi, India<br />
+              Bareilly, Uttar Pradesh, India<br />
               GSTIN: 09CYVPS3328G1ZQ<br />
               Email: <a href="mailto:support@goreportpilot.com" className="text-indigo-600 hover:underline">support@goreportpilot.com</a>
             </address>

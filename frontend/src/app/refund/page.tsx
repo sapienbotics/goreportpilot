@@ -25,7 +25,7 @@ export default function RefundPage() {
       <main className="mx-auto max-w-3xl px-6 py-14">
         <h1 className="text-3xl font-bold text-slate-900 mb-2">Cancellation &amp; Refund Policy</h1>
         <p className="text-slate-500 text-sm mb-2">
-          <strong>Effective date:</strong> 1 May 2025 &nbsp;|&nbsp; <strong>Entity:</strong> SapienBotics, New Delhi, India
+          <strong>Effective date:</strong> 1 May 2025 &nbsp;|&nbsp; <strong>Entity:</strong> SapienBotics, Bareilly, Uttar Pradesh, India
         </p>
         <p className="text-slate-500 mb-10">
           We want you to feel confident subscribing to GoReportPilot. This policy explains how cancellations
