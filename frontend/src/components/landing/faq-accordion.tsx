@@ -22,7 +22,7 @@ const FAQS = [
   },
   {
     q: 'What if I need more than 25 clients?',
-    a: 'Contact us at hello@reportpilot.co and we\'ll set up a custom plan for your agency.',
+    a: 'Contact us at hello@goreportpilot.com and we\'ll set up a custom plan for your agency.',
   },
   {
     q: 'Can I cancel anytime?',

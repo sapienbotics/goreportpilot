@@ -57,7 +57,7 @@ export default function TermsPage() {
               <li>You must provide accurate, complete, and current information when creating your account.</li>
               <li>You are responsible for maintaining the security of your account password.</li>
               <li>You are responsible for all activity that occurs under your account.</li>
-              <li>You must notify us immediately at <a href="mailto:support@reportpilot.co" className="text-indigo-600 hover:underline">support@reportpilot.co</a> if you suspect unauthorized access.</li>
+              <li>You must notify us immediately at <a href="mailto:support@goreportpilot.com" className="text-indigo-600 hover:underline">support@goreportpilot.com</a> if you suspect unauthorized access.</li>
               <li>One account per person or business entity. You may not share accounts.</li>
             </ul>
           </section>
@@ -216,7 +216,7 @@ export default function TermsPage() {
               <strong>SapienBotics</strong><br />
               New Delhi, India<br />
               GSTIN: 09CYVPS3328G1ZQ<br />
-              Email: <a href="mailto:support@reportpilot.co" className="text-indigo-600 hover:underline">support@reportpilot.co</a>
+              Email: <a href="mailto:support@goreportpilot.com" className="text-indigo-600 hover:underline">support@goreportpilot.com</a>
             </address>
           </section>
 
@@ -230,6 +230,8 @@ export default function TermsPage() {
           <div className="flex gap-6">
             <Link href="/privacy" className="hover:text-slate-600">Privacy</Link>
             <Link href="/terms" className="hover:text-slate-600">Terms</Link>
+            <Link href="/refund" className="hover:text-slate-600">Refund</Link>
+            <Link href="/contact" className="hover:text-slate-600">Contact</Link>
             <Link href="/" className="hover:text-slate-600">Home</Link>
           </div>
         </div>

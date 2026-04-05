@@ -45,7 +45,7 @@ export default function PrivacyPage() {
               marketing agencies and freelancers.
             </p>
             <p className="mt-2">
-              Contact: <a href="mailto:support@reportpilot.co" className="text-indigo-600 hover:underline">support@reportpilot.co</a>
+              Contact: <a href="mailto:support@goreportpilot.com" className="text-indigo-600 hover:underline">support@goreportpilot.com</a>
             </p>
           </section>
 
@@ -208,7 +208,7 @@ export default function PrivacyPage() {
             </ul>
             <p className="mt-3">
               For any data requests, email us at{' '}
-              <a href="mailto:support@reportpilot.co" className="text-indigo-600 hover:underline">support@reportpilot.co</a>.
+              <a href="mailto:support@goreportpilot.com" className="text-indigo-600 hover:underline">support@goreportpilot.com</a>.
             </p>
           </section>
 
@@ -236,7 +236,7 @@ export default function PrivacyPage() {
               <strong>SapienBotics</strong><br />
               New Delhi, India<br />
               GSTIN: 09CYVPS3328G1ZQ<br />
-              Email: <a href="mailto:support@reportpilot.co" className="text-indigo-600 hover:underline">support@reportpilot.co</a>
+              Email: <a href="mailto:support@goreportpilot.com" className="text-indigo-600 hover:underline">support@goreportpilot.com</a>
             </address>
           </section>
 
@@ -250,6 +250,8 @@ export default function PrivacyPage() {
           <div className="flex gap-6">
             <Link href="/privacy" className="hover:text-slate-600">Privacy</Link>
             <Link href="/terms" className="hover:text-slate-600">Terms</Link>
+            <Link href="/refund" className="hover:text-slate-600">Refund</Link>
+            <Link href="/contact" className="hover:text-slate-600">Contact</Link>
             <Link href="/" className="hover:text-slate-600">Home</Link>
           </div>
         </div>
