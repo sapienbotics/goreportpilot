@@ -356,7 +356,12 @@ export default function ClientDetailPage({ params }: Props) {
       <div className="flex items-center gap-3 mb-4 flex-wrap">
         {clientLogo ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={clientLogo} alt="" className="h-9 w-9 object-contain rounded-md border border-slate-200 bg-slate-50 p-0.5 shrink-0" />
+          <img
+            src={clientLogo}
+            alt=""
+            className="h-9 w-9 object-contain rounded-md border border-slate-200 bg-slate-50 p-0.5 shrink-0"
+            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+          />
         ) : (
           <div className="h-9 w-9 flex items-center justify-center rounded-md border border-slate-200 bg-slate-50 shrink-0">
             <Building2 className="h-4 w-4 text-slate-300" />

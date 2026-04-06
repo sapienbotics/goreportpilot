@@ -183,15 +183,26 @@ async def upload_client_logo(
     from services.logo_processor import process_logo_upload
     processed_bytes, final_ext, bg_removed = process_logo_upload(contents, ext)
 
-    filename  = f"{uuid.uuid4().hex[:12]}.{final_ext}"
-    save_dir  = os.path.join(_CLIENT_LOGOS, client_id)
-    os.makedirs(save_dir, exist_ok=True)
-    save_path = os.path.join(save_dir, filename)
+    filename = f"{uuid.uuid4().hex[:12]}.{final_ext}"
 
-    with open(save_path, "wb") as f:
-        f.write(processed_bytes)
-
-    public_url = f"{app_settings.BACKEND_URL}/static/logos/clients/{client_id}/{filename}"
+    # Upload to Supabase Storage (persistent across redeployments)
+    storage_path = f"{user_id}/clients/{client_id}/{filename}"
+    try:
+        supabase.storage.from_("logos").upload(
+            storage_path,
+            processed_bytes,
+            {"content-type": f"image/{final_ext}", "upsert": "true"},
+        )
+        public_url = supabase.storage.from_("logos").get_public_url(storage_path)
+    except Exception as exc:
+        logger.error("Supabase Storage upload failed for client logo: %s", exc)
+        # Fallback: save locally (works for dev, but ephemeral in production)
+        save_dir  = os.path.join(_CLIENT_LOGOS, client_id)
+        os.makedirs(save_dir, exist_ok=True)
+        save_path = os.path.join(save_dir, filename)
+        with open(save_path, "wb") as f:
+            f.write(processed_bytes)
+        public_url = f"{app_settings.BACKEND_URL}/static/logos/clients/{client_id}/{filename}"
 
     supabase.table("clients").update({
         "logo_url":   public_url,
@@ -250,13 +261,25 @@ async def upload_custom_section_image(
         ext = "png"
 
     filename = f"{uuid.uuid4().hex[:12]}.{ext}"
-    save_dir = os.path.join(_CUSTOM_SECTIONS_DIR, client_id)
-    os.makedirs(save_dir, exist_ok=True)
-    save_path = os.path.join(save_dir, filename)
 
-    with open(save_path, "wb") as f:
-        f.write(contents)
+    # Upload to Supabase Storage (persistent across redeployments)
+    storage_path = f"{user_id}/custom_sections/{client_id}/{filename}"
+    try:
+        supabase.storage.from_("logos").upload(
+            storage_path,
+            contents,
+            {"content-type": f"image/{ext}", "upsert": "true"},
+        )
+        public_url = supabase.storage.from_("logos").get_public_url(storage_path)
+    except Exception as exc:
+        logger.error("Supabase Storage upload failed for custom section image: %s", exc)
+        # Fallback: save locally
+        save_dir = os.path.join(_CUSTOM_SECTIONS_DIR, client_id)
+        os.makedirs(save_dir, exist_ok=True)
+        save_path = os.path.join(save_dir, filename)
+        with open(save_path, "wb") as f:
+            f.write(contents)
+        public_url = f"{app_settings.BACKEND_URL}/static/custom_sections/{client_id}/{filename}"
 
-    public_url = f"{app_settings.BACKEND_URL}/static/custom_sections/{client_id}/{filename}"
     logger.info("Custom section image uploaded for client %s: %s", client_id, public_url)
     return {"url": public_url}

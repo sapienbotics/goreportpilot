@@ -291,8 +291,14 @@ function SendReportDialog({
       })
       setSent(true)
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to send email.'
-      setSendError(msg)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const resp = (err as any)?.response
+      if (resp?.status === 410) {
+        setSendError('Report files have expired. Close this dialog and click "Regenerate Report" first.')
+      } else {
+        const msg = err instanceof Error ? err.message : 'Failed to send email.'
+        setSendError(msg)
+      }
     } finally {
       setSending(false)
     }
@@ -416,6 +422,8 @@ export default function ReportDetailPage() {
   const [regenSection,    setRegenSection]   = useState<string | null>(null)
   const [showSendDialog,  setShowSendDialog] = useState(false)
   const [showShare,       setShowShare]      = useState(false)
+  const [filesExpired,    setFilesExpired]   = useState(false)
+  const [regenerating,    setRegenerating]   = useState(false)
 
   useEffect(() => {
     const fetch = async () => {
@@ -457,6 +465,17 @@ export default function ReportDetailPage() {
     }
   }
 
+  const isFilesExpiredError = (err: unknown): boolean => {
+    if (err && typeof err === 'object' && 'response' in err) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const resp = (err as any).response
+      if (resp?.status === 410) return true
+      const detail = resp?.data?.detail
+      if (typeof detail === 'object' && detail?.code === 'FILES_EXPIRED') return true
+    }
+    return false
+  }
+
   const handleDownloadPptx = async () => {
     if (!report) return
     setDlPptx(true)
@@ -465,8 +484,12 @@ export default function ReportDetailPage() {
         `/api/reports/${reportId}/download/pptx`,
         `${report.title}.pptx`,
       )
-    } catch {
-      alert('Download failed. Please try again.')
+    } catch (err) {
+      if (isFilesExpiredError(err)) {
+        setFilesExpired(true)
+      } else {
+        alert('Download failed. Please try again.')
+      }
     } finally {
       setDlPptx(false)
     }
@@ -480,10 +503,29 @@ export default function ReportDetailPage() {
         `/api/reports/${reportId}/download/pdf`,
         `${report.title}.pdf`,
       )
-    } catch {
-      alert('Download failed. Please try again.')
+    } catch (err) {
+      if (isFilesExpiredError(err)) {
+        setFilesExpired(true)
+      } else {
+        alert('Download failed. Please try again.')
+      }
     } finally {
       setDlPdf(false)
+    }
+  }
+
+  const handleRegenerateReport = async () => {
+    if (!report) return
+    setRegenerating(true)
+    setFilesExpired(false)
+    setError(null)
+    try {
+      const updated = await reportsApi.regenerate(report.id)
+      setReport(updated)
+    } catch {
+      setError('Failed to regenerate report. Please try again.')
+    } finally {
+      setRegenerating(false)
     }
   }
 
@@ -612,6 +654,25 @@ export default function ReportDetailPage() {
           )}
         </div>
       </div>
+
+      {filesExpired && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-5 py-4 flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <p className="text-sm font-semibold text-amber-800">Report files have expired</p>
+            <p className="text-xs text-amber-600 mt-0.5">
+              Report files are removed when the server redeploys. Click &ldquo;Regenerate Report&rdquo; to create fresh files.
+            </p>
+          </div>
+          <button
+            onClick={handleRegenerateReport}
+            disabled={regenerating}
+            className="inline-flex items-center gap-2 rounded-lg bg-indigo-700 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-800 transition-colors disabled:opacity-60 shrink-0"
+          >
+            {regenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            {regenerating ? 'Regenerating…' : 'Regenerate Report'}
+          </button>
+        </div>
+      )}
 
       {error && (
         <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">

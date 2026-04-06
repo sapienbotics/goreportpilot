@@ -554,6 +554,12 @@ export const reportsApi = {
     return data
   },
 
+  /** Re-run full pipeline to regenerate expired report files (same report ID). */
+  regenerate: async (id: string): Promise<Report> => {
+    const { data } = await api.post(`/api/reports/${id}/regenerate`)
+    return data
+  },
+
   /** Send the report to one or more email addresses. */
   send: async (id: string, payload: ReportSendPayload): Promise<ReportSendResult> => {
     const { data } = await api.post(`/api/reports/${id}/send`, payload)

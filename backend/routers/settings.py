@@ -144,18 +144,29 @@ async def upload_agency_logo(
     from services.logo_processor import process_logo_upload
     processed_bytes, final_ext, bg_removed = process_logo_upload(contents, ext)
 
-    filename  = f"{uuid.uuid4().hex[:12]}.{final_ext}"
-    save_dir  = os.path.join(_LOGOS_DIR, "agencies", user_id)
-    os.makedirs(save_dir, exist_ok=True)
-    save_path = os.path.join(save_dir, filename)
+    filename = f"{uuid.uuid4().hex[:12]}.{final_ext}"
 
-    with open(save_path, "wb") as f:
-        f.write(processed_bytes)
-
-    public_url = f"{app_settings.BACKEND_URL}/static/logos/agencies/{user_id}/{filename}"
+    # Upload to Supabase Storage (persistent across redeployments)
+    supabase = get_supabase_admin()
+    storage_path = f"{user_id}/agency/{filename}"
+    try:
+        supabase.storage.from_("logos").upload(
+            storage_path,
+            processed_bytes,
+            {"content-type": f"image/{final_ext}", "upsert": "true"},
+        )
+        public_url = supabase.storage.from_("logos").get_public_url(storage_path)
+    except Exception as exc:
+        logger.error("Supabase Storage upload failed for agency logo: %s", exc)
+        # Fallback: save locally (works for dev, but ephemeral in production)
+        save_dir  = os.path.join(_LOGOS_DIR, "agencies", user_id)
+        os.makedirs(save_dir, exist_ok=True)
+        save_path = os.path.join(save_dir, filename)
+        with open(save_path, "wb") as f:
+            f.write(processed_bytes)
+        public_url = f"{app_settings.BACKEND_URL}/static/logos/agencies/{user_id}/{filename}"
 
     # Persist URL to profile — update only, never upsert (would null required columns)
-    supabase = get_supabase_admin()
     supabase.table("profiles").update({
         "agency_logo_url": public_url,
         "updated_at":      datetime.utcnow().isoformat(),

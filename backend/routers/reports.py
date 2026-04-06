@@ -552,7 +552,13 @@ async def download_pptx(
 
     pptx_path = os.path.join(REPORTS_BASE_DIR, report_id, "report.pptx")
     if not os.path.exists(pptx_path):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="PPTX file not found on server")
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail={
+                "error": "Report files are no longer available. Please regenerate the report.",
+                "code": "FILES_EXPIRED",
+            },
+        )
 
     safe_title = result.data.get("title", "report").replace(" — ", " - ").replace(" ", "_")[:80]
     return FileResponse(
@@ -585,6 +591,20 @@ async def download_pdf(
 
     pdf_path = os.path.join(REPORTS_BASE_DIR, report_id, "report.pdf")
     if not os.path.exists(pdf_path):
+        # Distinguish between "never had a PDF" (non-Latin) vs "files expired"
+        pptx_also_missing = not os.path.exists(
+            os.path.join(REPORTS_BASE_DIR, report_id, "report.pptx")
+        )
+        if pptx_also_missing:
+            # Both files missing → ephemeral filesystem wiped after redeployment
+            raise HTTPException(
+                status_code=status.HTTP_410_GONE,
+                detail={
+                    "error": "Report files are no longer available. Please regenerate the report.",
+                    "code": "FILES_EXPIRED",
+                },
+            )
+        # PPTX exists but PDF doesn't → non-Latin language, LibreOffice wasn't available
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="PDF not available for this report. The report language may require LibreOffice for PDF rendering — please download the PPTX instead.",
@@ -806,17 +826,30 @@ async def send_report(
     reply_to     = payload.reply_to   or profile.get("reply_to_email") or None
     email_footer = profile.get("email_footer") or ""
 
-    # Resolve files
+    # Resolve files — check if ephemeral filesystem still has them
     attach = payload.attachment.lower()
     pptx_path_resolved = os.path.join(REPORTS_BASE_DIR, report_id, "report.pptx")
     pdf_path_resolved  = os.path.join(REPORTS_BASE_DIR, report_id, "report.pdf")
-    send_pptx = attach in ("pptx", "both") and os.path.exists(pptx_path_resolved)
-    send_pdf  = attach in ("pdf",  "both") and os.path.exists(pdf_path_resolved)
+
+    pptx_exists = os.path.exists(pptx_path_resolved)
+    pdf_exists  = os.path.exists(pdf_path_resolved)
+
+    if not pptx_exists and not pdf_exists:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail={
+                "error": "Report files are no longer available. Please regenerate the report.",
+                "code": "FILES_EXPIRED",
+            },
+        )
+
+    send_pptx = attach in ("pptx", "both") and pptx_exists
+    send_pdf  = attach in ("pdf",  "both") and pdf_exists
 
     if not send_pptx and not send_pdf:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="No report files found. Generate the report files first.",
+            detail="Requested file format not available for this report.",
         )
 
     # Build email
@@ -896,3 +929,281 @@ async def send_report(
         "to":        payload.to_emails,
         "subject":   subject,
     }
+
+
+# ---------------------------------------------------------------------------
+# POST /{report_id}/regenerate  — re-run full pipeline, reuse same report ID
+# ---------------------------------------------------------------------------
+
+@router.post("/{report_id}/regenerate", response_model=ReportResponse)
+async def regenerate_report(
+    report_id: str,
+    user_id: str = Depends(get_current_user_id),
+) -> ReportResponse:
+    """
+    Re-run the full report generation pipeline for an existing report.
+    Reuses the same report ID — fetches client_id, period_start, period_end,
+    template, and visual_template from the existing record, then overwrites
+    the DB row with fresh files and narrative.
+
+    Use case: report files were lost after a container redeployment and the
+    user clicks "Regenerate Report" in the frontend.
+    """
+    supabase = get_supabase_admin()
+
+    # Fetch existing report
+    existing = (
+        supabase.table("reports")
+        .select("*")
+        .eq("id", report_id)
+        .eq("user_id", user_id)
+        .single()
+        .execute()
+    )
+    if not existing.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
+
+    row = existing.data
+    client_id    = row["client_id"]
+    period_start = str(row["period_start"])
+    period_end   = str(row["period_end"])
+
+    # Recover template settings from the sections JSONB if available
+    sections_json = row.get("sections") or {}
+    # The visual_template and template are not stored separately in the DB,
+    # so we use sensible defaults; the user can always generate a new report
+    # with different settings if needed.
+
+    # ── Run the same pipeline as generate, but with a FIXED report_id ──
+    # 1 — Verify client ownership
+    client_result = (
+        supabase.table("clients")
+        .select("*")
+        .eq("id", client_id)
+        .eq("user_id", user_id)
+        .eq("is_active", True)
+        .single()
+        .execute()
+    )
+    if not client_result.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found or deleted")
+    client = client_result.data
+
+    report_config: dict = client.get("report_config") or {}
+    cfg_sections  = report_config.get("sections", {})
+    cfg_template  = report_config.get("template", "full")
+    cfg_custom    = {
+        "title": report_config.get("custom_section_title", ""),
+        "text":  report_config.get("custom_section_text",  ""),
+    }
+
+    # 2 — Data pull (real or mock) — same logic as _generate_report_internal
+    from services.mock_data import generate_all_mock_data  # noqa: PLC0415
+
+    ga4_conn_result = (
+        supabase.table("connections")
+        .select("id,account_id,access_token_encrypted,refresh_token_encrypted,token_expires_at")
+        .eq("client_id", client_id)
+        .eq("platform", "ga4")
+        .eq("status", "active")
+        .limit(1)
+        .execute()
+    )
+
+    ga4_data = None
+    if ga4_conn_result.data:
+        ga4_conn = ga4_conn_result.data[0]
+        try:
+            from services.google_analytics import pull_ga4_data  # noqa: PLC0415
+            raw_exp = ga4_conn.get("token_expires_at")
+            token_expires_ts: float | None = None
+            if raw_exp:
+                try:
+                    from datetime import timezone as _tz  # noqa: PLC0415
+                    dt = datetime.fromisoformat(str(raw_exp).replace("Z", "+00:00"))
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=_tz.utc)
+                    token_expires_ts = dt.timestamp()
+                except Exception:
+                    pass
+            ga4_data = await pull_ga4_data(
+                access_token_encrypted=ga4_conn["access_token_encrypted"],
+                refresh_token_encrypted=ga4_conn["refresh_token_encrypted"],
+                token_expires_at=token_expires_ts,
+                property_id=ga4_conn["account_id"],
+                period_start=period_start,
+                period_end=period_end,
+                connection_id=ga4_conn["id"],
+                supabase=supabase,
+            )
+        except Exception:
+            logger.exception("GA4 pull failed during regenerate for client %s", client_id)
+
+    meta_conn_result = (
+        supabase.table("connections")
+        .select("id,account_id,currency,access_token_encrypted,refresh_token_encrypted,token_expires_at")
+        .eq("client_id", client_id)
+        .eq("platform", "meta_ads")
+        .eq("status", "active")
+        .limit(1)
+        .execute()
+    )
+
+    meta_data = None
+    meta_currency = "USD"
+    if meta_conn_result.data:
+        meta_conn = meta_conn_result.data[0]
+        meta_currency = meta_conn.get("currency", "USD") or "USD"
+        try:
+            from services.meta_ads import pull_meta_ads_data  # noqa: PLC0415
+            meta_data = await pull_meta_ads_data(
+                account_id=meta_conn["account_id"],
+                access_token_encrypted=meta_conn["access_token_encrypted"],
+                period_start=period_start,
+                period_end=period_end,
+                connection_id=meta_conn["id"],
+                currency=meta_currency,
+            )
+        except Exception:
+            logger.exception("Meta Ads pull failed during regenerate for client %s", client_id)
+
+    mock_all = generate_all_mock_data(client["name"], period_start, period_end)
+    if ga4_data is not None:
+        mock_all["ga4"] = ga4_data
+    if meta_data is not None:
+        mock_all["meta_ads"] = meta_data
+    raw_data = mock_all
+    raw_data.setdefault("meta_ads", {})["currency"] = meta_currency
+
+    # 3 — AI narrative
+    from services.ai_narrative import generate_narrative  # noqa: PLC0415
+    narrative = await generate_narrative(
+        data=_sanitize_data_for_ai(raw_data),
+        client_name=client["name"],
+        client_goals=client.get("goals_context"),
+        tone=client.get("ai_tone", "professional"),
+        template=cfg_template,
+        language=client.get("report_language", "en") or "en",
+    )
+
+    # 4 — Branding
+    profile_result = (
+        supabase.table("profiles")
+        .select("agency_name,agency_logo_url,brand_color,sender_name,agency_email")
+        .eq("id", user_id)
+        .maybe_single()
+        .execute()
+    )
+    _profile = profile_result.data or {}
+    branding = {
+        "agency_name":     (_profile.get("agency_name") or "").strip() or "Your Agency",
+        "agency_logo_url": _profile.get("agency_logo_url") or "",
+        "brand_color":     _profile.get("brand_color") or "#4338CA",
+        "client_logo_url": client.get("logo_url") or "",
+    }
+
+    # 5 — Charts
+    charts_dir = os.path.join(REPORTS_BASE_DIR, report_id, "charts")
+    from services.chart_generator import generate_all_charts  # noqa: PLC0415
+    charts = await asyncio.to_thread(
+        generate_all_charts, raw_data, charts_dir, branding["brand_color"], "modern_clean",
+    )
+
+    client_info = {"name": client["name"], "agency_name": branding["agency_name"]}
+
+    # 6 — PPTX + PDF
+    from services.report_generator import generate_pdf_report, generate_pptx_report  # noqa: PLC0415
+    pptx_bytes, pdf_bytes = await asyncio.gather(
+        asyncio.to_thread(
+            generate_pptx_report, raw_data, narrative, charts, client_info,
+            cfg_sections if cfg_sections else None,
+            cfg_template,
+            cfg_custom if cfg_custom.get("title") else None,
+            branding, "modern_clean",
+        ),
+        asyncio.to_thread(
+            generate_pdf_report, raw_data, narrative, charts, client_info,
+            cfg_sections if cfg_sections else None,
+            cfg_template,
+            cfg_custom if cfg_custom.get("title") else None,
+            branding, "modern_clean",
+            client.get("report_language", "en") or "en",
+        ),
+    )
+
+    # Save to disk
+    report_dir = os.path.join(REPORTS_BASE_DIR, report_id)
+    os.makedirs(report_dir, exist_ok=True)
+
+    pptx_path = os.path.join(report_dir, "report.pptx")
+    pdf_path  = os.path.join(report_dir, "report.pdf")
+
+    with open(pptx_path, "wb") as f:
+        f.write(pptx_bytes)
+
+    if pdf_bytes is not None:
+        with open(pdf_path, "wb") as f:
+            f.write(pdf_bytes)
+        db_pdf_path: str | None = pdf_path
+    else:
+        db_pdf_path = None
+
+    # Build data_summary
+    ga4_s  = raw_data.get("ga4", {}).get("summary", {})
+    meta_s = raw_data.get("meta_ads", {}).get("summary", {})
+    data_summary = {
+        "sessions":            ga4_s.get("sessions"),
+        "sessions_change":     ga4_s.get("sessions_change"),
+        "users":               ga4_s.get("users"),
+        "users_change":        ga4_s.get("users_change"),
+        "conversions":         ga4_s.get("conversions"),
+        "conversions_change":  ga4_s.get("conversions_change"),
+        "pageviews":           ga4_s.get("pageviews"),
+        "bounce_rate":         ga4_s.get("bounce_rate"),
+        "avg_session_duration": ga4_s.get("avg_session_duration"),
+        "spend":               meta_s.get("spend"),
+        "spend_change":        meta_s.get("spend_change"),
+        "impressions":         meta_s.get("impressions"),
+        "clicks":              meta_s.get("clicks"),
+        "ctr":                 meta_s.get("ctr"),
+        "cpc":                 meta_s.get("cpc"),
+        "roas":                meta_s.get("roas"),
+        "cost_per_conversion": meta_s.get("cost_per_conversion"),
+    }
+
+    # Update existing report record (not insert)
+    update_payload = {
+        "pptx_file_url": pptx_path,
+        "pdf_file_url":  db_pdf_path,
+        "ai_narrative":  narrative,
+        "user_edits":    None,   # clear stale edits
+        "status":        "draft",
+        "sections": {
+            "data_summary":   data_summary,
+            "meta_currency":  meta_currency,
+            "ai_model":       "gpt-4.1",
+            "narrative_data": {
+                "ga4": {k: v for k, v in raw_data.get("ga4", {}).items() if k != "daily"},
+                "meta_ads": {k: v for k, v in raw_data.get("meta_ads", {}).items() if k != "daily"},
+                "period_start": raw_data.get("period_start"),
+                "period_end":   raw_data.get("period_end"),
+            },
+        },
+        "updated_at": datetime.utcnow().isoformat(),
+    }
+    result = (
+        supabase.table("reports")
+        .update(update_payload)
+        .eq("id", report_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Report regenerated but failed to update database",
+        )
+
+    client_name = client["name"]
+    logger.info("Report %s regenerated for client %s", report_id, client_id)
+    return ReportResponse(**_map_db_row(result.data[0], client_name=client_name))

@@ -336,7 +336,12 @@ function BrandingTab({
         <div className="flex items-center gap-4">
           {logoPreview ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={logoPreview} alt="Agency logo" className="h-16 w-16 object-contain rounded-lg border border-slate-200 bg-slate-50 p-1" />
+            <img
+              src={logoPreview}
+              alt="Agency logo"
+              className="h-16 w-16 object-contain rounded-lg border border-slate-200 bg-slate-50 p-1"
+              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+            />
           ) : (
             <div className="flex h-16 w-16 items-center justify-center rounded-lg border-2 border-dashed border-slate-300 bg-slate-50 text-slate-400">
               <Upload className="h-6 w-6" />
