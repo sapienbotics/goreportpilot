@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Loader2, CheckCircle2, XCircle, AlertTriangle } from 'lucide-react'
+import { Loader2, CheckCircle2, XCircle, AlertTriangle, Info } from 'lucide-react'
 import { adminApi } from '@/lib/api'
 
 function ServiceCard({ label, status }: { label: string; status: string }) {
@@ -64,10 +64,20 @@ export default function AdminSystemPage() {
           ].map(([label, value]) => (
             <div key={label}>
               <span className="text-xs font-bold text-slate-400 uppercase">{label}</span>
-              <p className="text-slate-700 mt-0.5 font-mono text-xs">{value || '—'}</p>
+              <p className="text-slate-700 mt-0.5 font-mono text-xs">{value || '\u2014'}</p>
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Recent Errors */}
+      <h2 className="text-lg font-semibold text-slate-900">Recent Errors</h2>
+      <div className="rounded-xl border border-slate-200 bg-white p-6 flex items-center gap-3">
+        <Info className="h-5 w-5 text-slate-400 shrink-0" />
+        <p className="text-sm text-slate-500">
+          Structured error logging will be available in a future update. For now, check Railway deployment logs
+          for application errors.
+        </p>
       </div>
     </div>
   )

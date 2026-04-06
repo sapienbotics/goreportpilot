@@ -625,4 +625,5 @@ export const adminApi = {
     const { data } = await api.patch(`/api/admin/gdpr/requests/${id}`, payload); return data
   },
   getInactiveUsers: async () => { const { data } = await api.get('/api/admin/gdpr/inactive-users'); return data },
+  getConsentRecords: async () => { const { data } = await api.get('/api/admin/gdpr/consent-records'); return data },
 }

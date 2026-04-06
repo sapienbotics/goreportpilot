@@ -13,6 +13,8 @@ export default function AdminGDPRPage() {
   const [requests, setRequests] = useState<any[]>([])
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [inactive, setInactive] = useState<any[]>([])
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [consent, setConsent] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [editReq, setEditReq] = useState<any>(null)
@@ -20,9 +22,14 @@ export default function AdminGDPRPage() {
 
   const fetchData = async () => {
     try {
-      const [r, i] = await Promise.all([adminApi.getGDPRRequests(), adminApi.getInactiveUsers()])
+      const [r, i, c] = await Promise.all([
+        adminApi.getGDPRRequests(),
+        adminApi.getInactiveUsers(),
+        adminApi.getConsentRecords(),
+      ])
       setRequests(r.requests || [])
       setInactive(i.users || [])
+      setConsent(c.records || [])
     } catch { /* silent */ }
     finally { setLoading(false) }
   }
@@ -51,7 +58,7 @@ export default function AdminGDPRPage() {
     { key: 'user_email', label: 'User Email', render: (r) => <span className="font-medium">{String(r.user_email ?? '')}</span> },
     { key: 'request_type', label: 'Type', render: (r) => <StatusBadge status={String(r.request_type ?? '')} /> },
     { key: 'status', label: 'Status', render: (r) => <StatusBadge status={String(r.status ?? '')} /> },
-    { key: 'admin_notes', label: 'Notes', render: (r) => <span className="text-xs truncate max-w-[200px] block">{String(r.admin_notes ?? '—')}</span> },
+    { key: 'admin_notes', label: 'Notes', render: (r) => <span className="text-xs truncate max-w-[200px] block" title={String(r.admin_notes ?? '')}>{String(r.admin_notes ?? '\u2014')}</span> },
     { key: 'created_at', label: 'Created', render: (r) => <span className="text-xs">{r.created_at ? new Date(String(r.created_at)).toLocaleDateString() : ''}</span> },
     { key: 'actions', label: '', render: (r) => (
       <button onClick={(e) => { e.stopPropagation(); setEditReq(r) }} className="text-xs text-indigo-600 hover:underline">Edit</button>
@@ -62,6 +69,16 @@ export default function AdminGDPRPage() {
     { key: 'email', label: 'Email', render: (r) => <span className="font-medium">{String(r.email ?? '')}</span> },
     { key: 'full_name', label: 'Name' },
     { key: 'updated_at', label: 'Last Active', render: (r) => <span className="text-xs">{r.updated_at ? new Date(String(r.updated_at)).toLocaleDateString() : ''}</span> },
+    { key: 'plan', label: 'Plan', render: (r) => <StatusBadge status={String(r.plan ?? 'free')} /> },
+    { key: 'client_count', label: 'Clients' },
+    { key: 'report_count', label: 'Reports' },
+  ]
+
+  const consentCols: Column<Record<string, unknown>>[] = [
+    { key: 'email', label: 'Email', render: (r) => <span className="font-medium">{String(r.email ?? '')}</span> },
+    { key: 'full_name', label: 'Name' },
+    { key: 'created_at', label: 'Signed Up (Consent)', render: (r) => <span className="text-xs">{r.created_at ? new Date(String(r.created_at)).toLocaleString() : ''}</span> },
+    { key: 'plan', label: 'Plan', render: (r) => <StatusBadge status={String(r.plan ?? 'free')} /> },
   ]
 
   return (
@@ -80,14 +97,12 @@ export default function AdminGDPRPage() {
 
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-slate-900">GDPR Requests</h2>
-        <button
-          onClick={() => setShowNew(true)}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-700 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-800"
-        >
+        <button onClick={() => setShowNew(true)}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-700 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-800">
           <Plus className="h-4 w-4" /> Add Request
         </button>
       </div>
-      <DataTable columns={reqCols} data={requests} emptyMessage="No GDPR requests" />
+      <DataTable columns={reqCols} data={requests} emptyMessage="No GDPR requests." />
 
       {/* Data Processing Summary */}
       <div className="rounded-xl border border-slate-200 bg-white p-6">
@@ -96,17 +111,18 @@ export default function AdminGDPRPage() {
           <p><strong>Processor:</strong> SapienBotics (GoReportPilot)</p>
           <p><strong>Data subjects:</strong> Marketing agency users and their clients</p>
           <p><strong>Data types:</strong> Email, name, agency details, OAuth tokens (encrypted), report data</p>
-          <p><strong>Retention:</strong> Active accounts — indefinite. Cancelled — 30 days. Deleted — immediate erasure.</p>
+          <p><strong>Retention:</strong> Active accounts {'\u2014'} indefinite. Cancelled {'\u2014'} 30 days. Deleted {'\u2014'} immediate erasure.</p>
           <p><strong>Third parties:</strong> Supabase (DB), OpenAI (AI narratives), Resend (email), Razorpay (billing), Google/Meta (OAuth)</p>
         </div>
       </div>
 
-      {inactive.length > 0 && (
-        <>
-          <h2 className="text-lg font-semibold text-amber-700">Inactive Users (12+ months)</h2>
-          <DataTable columns={inactiveCols} data={inactive} emptyMessage="No inactive users" />
-        </>
-      )}
+      {/* Inactive users */}
+      <h2 className="text-lg font-semibold text-amber-700">Inactive Users (12+ months)</h2>
+      <DataTable columns={inactiveCols} data={inactive} emptyMessage="No inactive users found." />
+
+      {/* Consent records */}
+      <h2 className="text-lg font-semibold text-slate-900">Consent Records</h2>
+      <DataTable columns={consentCols} data={consent} emptyMessage="No consent records." />
     </div>
   )
 }
