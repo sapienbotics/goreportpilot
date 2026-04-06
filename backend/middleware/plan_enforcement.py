@@ -76,8 +76,8 @@ def can_create_client(user_id: str) -> tuple[bool, str]:
     supabase = get_supabase_admin()
     sub = get_user_subscription(user_id)
 
-    if sub.get("status") in ("expired", "cancelled", "created"):
-        return False, "Your subscription is not active. Please complete payment or upgrade."
+    if sub.get("status") in ("expired", "cancelled"):
+        return False, "Your subscription has expired. Please upgrade to continue."
 
     plan = sub.get("plan", "trial")
     limit = get_client_limit(plan)
@@ -108,8 +108,8 @@ def can_use_feature(user_id: str, feature: str) -> tuple[bool, str]:
     """
     sub = get_user_subscription(user_id)
 
-    if sub.get("status") in ("expired", "cancelled", "created"):
-        return False, "Your subscription is not active. Please complete payment or upgrade."
+    if sub.get("status") in ("expired", "cancelled"):
+        return False, "Your subscription has expired."
 
     plan = sub.get("plan", "trial")
     if check_feature(plan, feature):

@@ -18,7 +18,7 @@ SET
     trial_ends_at = COALESCE(s.trial_ends_at, s.created_at + INTERVAL '14 days'),
     updated_at = NOW()
 WHERE s.plan IN ('starter', 'pro', 'agency')
-  AND s.status IN ('trialing', 'created')
+  AND s.status = 'trialing'
   AND NOT EXISTS (
     SELECT 1 FROM payment_history ph
     WHERE ph.user_id = s.user_id

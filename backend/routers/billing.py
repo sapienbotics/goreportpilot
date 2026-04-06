@@ -87,7 +87,7 @@ async def get_subscription(user_id: str = Depends(get_current_user_id)) -> dict:
         "cancelled_at": sub.get("cancelled_at"),
         "cancel_at_period_end": sub.get("cancel_at_period_end", False),
         "features": plan_cfg.get("features", {}),
-        "can_create_client": client_count < client_limit and sub.get("status") not in ("expired", "cancelled", "created"),
+        "can_create_client": client_count < client_limit and sub.get("status") not in ("expired", "cancelled"),
         "razorpay_subscription_id": sub.get("razorpay_subscription_id"),
     }
 
@@ -149,17 +149,16 @@ async def create_subscription(
 
     razorpay_subscription_id = subscription.get("id")
 
-    # Save subscription with status='created' — payment NOT yet confirmed.
-    # The plan and billing_cycle are stored so verify-payment and webhooks
-    # know what plan to activate, but status='created' means NO plan access.
-    # Plan enforcement treats 'created' same as 'expired' (no features).
+    # Store Razorpay IDs and intended plan/cycle, but do NOT change the
+    # status. User keeps their current status (trialing/expired/etc.) until
+    # payment is confirmed via verify-payment or webhook. This prevents
+    # users from getting plan access just by initiating checkout.
     supabase.table("subscriptions").update(
         {
             "razorpay_subscription_id": razorpay_subscription_id,
             "razorpay_plan_id": razorpay_plan_id,
             "plan": payload.plan,
             "billing_cycle": payload.billing_cycle,
-            "status": "created",
             "updated_at": datetime.utcnow().isoformat(),
         }
     ).eq("user_id", user_id).execute()
