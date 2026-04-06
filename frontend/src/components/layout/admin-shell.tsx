@@ -10,13 +10,13 @@ import {
 import { SignOutButton } from './sign-out-button'
 
 const NAV_ITEMS = [
-  { label: 'Overview',       href: '/dashboard/admin',               icon: BarChart3 },
-  { label: 'Users',          href: '/dashboard/admin/users',         icon: Users },
-  { label: 'Subscriptions',  href: '/dashboard/admin/subscriptions', icon: CreditCard },
-  { label: 'Connections',    href: '/dashboard/admin/connections',    icon: Link2 },
-  { label: 'Reports',        href: '/dashboard/admin/reports',       icon: FileText },
-  { label: 'System',         href: '/dashboard/admin/system',        icon: Server },
-  { label: 'GDPR',           href: '/dashboard/admin/gdpr',          icon: Shield },
+  { label: 'Overview',       href: '/admin',               icon: BarChart3 },
+  { label: 'Users',          href: '/admin/users',         icon: Users },
+  { label: 'Subscriptions',  href: '/admin/subscriptions', icon: CreditCard },
+  { label: 'Connections',    href: '/admin/connections',    icon: Link2 },
+  { label: 'Reports',        href: '/admin/reports',       icon: FileText },
+  { label: 'System',         href: '/admin/system',        icon: Server },
+  { label: 'GDPR',           href: '/admin/gdpr',          icon: Shield },
 ]
 
 interface AdminShellProps {
@@ -29,7 +29,7 @@ export function AdminShell({ email, children }: AdminShellProps) {
   const [mobileOpen, setMobileOpen] = useState(false)
 
   const isActive = (href: string) => {
-    if (href === '/dashboard/admin') return pathname === '/dashboard/admin'
+    if (href === '/admin') return pathname === '/admin'
     return pathname.startsWith(href)
   }
 

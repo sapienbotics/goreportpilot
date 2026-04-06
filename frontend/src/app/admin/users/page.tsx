@@ -105,7 +105,7 @@ export default function AdminUsersPage() {
         columns={columns}
         data={users as unknown as Row[]}
         loading={loading}
-        onRowClick={(row) => router.push(`/dashboard/admin/users/${String(row.id)}`)}
+        onRowClick={(row) => router.push(`/admin/users/${String(row.id)}`)}
         emptyMessage="No users found."
       />
 

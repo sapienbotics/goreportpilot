@@ -36,7 +36,7 @@ export default function AdminSubscriptionsPage() {
 
   const failedCols: Column<Record<string, unknown>>[] = [
     { key: 'user_email', label: 'User' },
-    { key: 'amount', label: 'Amount', render: (r) => <span>${String(r.amount ?? 0)}</span> },
+    { key: 'amount', label: 'Amount', render: (r) => <span>{'\u20b9'}{String(r.amount ?? 0)}</span> },
     { key: 'status', label: 'Status', render: (r) => <StatusBadge status={String(r.status ?? '')} /> },
     { key: 'created_at', label: 'Date', render: (r) => <span className="text-xs">{r.created_at ? new Date(String(r.created_at)).toLocaleDateString() : ''}</span> },
   ]
@@ -48,10 +48,10 @@ export default function AdminSubscriptionsPage() {
       <h1 className="text-2xl font-bold text-slate-900" style={{ fontFamily: 'var(--font-plus-jakarta-sans)' }}>Subscriptions</h1>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatsCard label="MRR" value={`$${revenue?.mrr ?? 0}`} icon={DollarSign} color="emerald" />
+        <StatsCard label="MRR" value={`\u20b9${(revenue?.mrr ?? 0).toLocaleString()}`} icon={DollarSign} color="emerald" />
         <StatsCard label="Active" value={revenue?.active_count ?? 0} icon={CreditCard} color="emerald" />
         <StatsCard label="Trialing" value={revenue?.trialing_count ?? 0} icon={TrendingUp} color="indigo" />
-        <StatsCard label="Total Revenue" value={`$${revenue?.total_revenue ?? 0}`} icon={DollarSign} color="indigo" />
+        <StatsCard label="Total Revenue" value={`\u20b9${(revenue?.total_revenue ?? 0).toLocaleString()}`} icon={DollarSign} color="indigo" />
       </div>
 
       {/* Plan distribution */}

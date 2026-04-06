@@ -68,7 +68,7 @@ export default function AdminUserDetailPage() {
 
   const handleDelete = async () => {
     await adminApi.deleteUser(userId)
-    router.push('/dashboard/admin/users')
+    router.push('/admin/users')
   }
 
   // Column definitions for sub-tabs
@@ -108,7 +108,7 @@ export default function AdminUserDetailPage() {
 
       {/* Header */}
       <div>
-        <Link href="/dashboard/admin/users" className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-slate-600 mb-3">
+        <Link href="/admin/users" className="inline-flex items-center gap-1 text-sm text-slate-400 hover:text-slate-600 mb-3">
           <ArrowLeft className="h-3.5 w-3.5" /> Back to Users
         </Link>
         <div className="flex items-center gap-3 flex-wrap">
@@ -188,7 +188,7 @@ export default function AdminUserDetailPage() {
           {payments.length > 0 ? (
             <DataTable
               columns={[
-                { key: 'amount', label: 'Amount', render: (r) => <span>${String(r.amount ?? 0)}</span> },
+                { key: 'amount', label: 'Amount', render: (r) => <span>{'\u20b9'}{String(r.amount ?? 0)}</span> },
                 { key: 'status', label: 'Status', render: (r) => <StatusBadge status={String(r.status ?? '')} /> },
                 { key: 'created_at', label: 'Date', render: (r) => <span className="text-xs">{r.created_at ? new Date(String(r.created_at)).toLocaleDateString() : ''}</span> },
               ]}

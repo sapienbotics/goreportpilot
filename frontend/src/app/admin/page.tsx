@@ -50,7 +50,7 @@ export default function AdminOverviewPage() {
         <StatsCard label="Reports (All)" value={stats?.reports_all_time ?? 0} icon={FileText} color="slate" />
         <StatsCard label="Active Subs" value={totalActiveSubs} icon={CreditCard} color="emerald" />
         <StatsCard label="Failed Payments (30d)" value={stats?.failed_payments_30d ?? 0} icon={AlertCircle} color="rose" />
-        <StatsCard label="Revenue" value={`$${stats?.total_revenue ?? 0}`} icon={DollarSign} color="emerald" />
+        <StatsCard label="Revenue" value={`\u20b9${(stats?.total_revenue ?? 0).toLocaleString()}`} icon={DollarSign} color="emerald" />
       </div>
 
       {/* Recent activity */}
