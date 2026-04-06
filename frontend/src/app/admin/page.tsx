@@ -73,7 +73,9 @@ export default function AdminOverviewPage() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm text-slate-700 truncate">{evt.details}</p>
-                <p className="text-xs text-slate-400">{evt.user_email}</p>
+                <p className="text-xs text-slate-400">
+                  {evt.agency_name ? `${evt.agency_name} (${evt.user_email})` : evt.user_email}
+                </p>
               </div>
               <time className="text-xs text-slate-400 shrink-0">
                 {evt.timestamp ? new Date(evt.timestamp).toLocaleDateString() : ''}

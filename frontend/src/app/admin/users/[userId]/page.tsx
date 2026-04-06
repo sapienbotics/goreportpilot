@@ -118,7 +118,10 @@ export default function AdminUserDetailPage() {
           {profile.is_disabled && <StatusBadge status="disabled" />}
           {profile.is_admin && <span className="text-xs font-bold text-rose-500 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">ADMIN</span>}
         </div>
-        {profile.name && <p className="text-sm text-slate-500 mt-1">{profile.name} — {profile.agency_name || 'No agency'}</p>}
+        {profile.agency_name && (
+          <p className="text-lg font-semibold text-slate-700 mt-0.5">{profile.agency_name}</p>
+        )}
+        {profile.name && <p className="text-sm text-slate-500">{profile.name}</p>}
       </div>
 
       {/* Tabs */}

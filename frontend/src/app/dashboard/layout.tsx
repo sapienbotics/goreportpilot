@@ -19,5 +19,16 @@ export default async function DashboardLayout({
     redirect('/login')
   }
 
-  return <DashboardShell email={user.email ?? ''}>{children}</DashboardShell>
+  // Fetch agency_name from profile
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('agency_name')
+    .eq('id', user.id)
+    .single()
+
+  return (
+    <DashboardShell email={user.email ?? ''} agencyName={profile?.agency_name || ''}>
+      {children}
+    </DashboardShell>
+  )
 }

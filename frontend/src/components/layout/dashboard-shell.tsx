@@ -10,10 +10,11 @@ import { SignOutButton } from './sign-out-button'
 
 interface DashboardShellProps {
   email: string
+  agencyName?: string
   children: React.ReactNode
 }
 
-export function DashboardShell({ email, children }: DashboardShellProps) {
+export function DashboardShell({ email, agencyName, children }: DashboardShellProps) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
 
   return (
@@ -51,9 +52,12 @@ export function DashboardShell({ email, children }: DashboardShellProps) {
             >
               <Menu className="h-5 w-5" />
             </button>
-            <span className="text-sm text-slate-500 font-medium truncate max-w-[200px] sm:max-w-none">
-              {email}
-            </span>
+            <div className="truncate max-w-[200px] sm:max-w-none">
+              {agencyName && (
+                <span className="text-sm font-semibold text-slate-800 block">{agencyName}</span>
+              )}
+              <span className="text-xs text-slate-400">{email}</span>
+            </div>
           </div>
           <SignOutButton />
         </header>

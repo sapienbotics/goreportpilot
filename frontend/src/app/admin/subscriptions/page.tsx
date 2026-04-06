@@ -68,7 +68,7 @@ export default function AdminSubscriptionsPage() {
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         <StatsCard label="Past Due" value={revenue?.past_due_count ?? 0} icon={AlertCircle} color="amber" />
         <StatsCard label="Cancelled (30d)" value={revenue?.cancelled_30d ?? 0} icon={XCircle} color="rose" />
-        <StatsCard label="Trial\u2192Paid Rate" value={`${revenue?.trial_to_paid_rate ?? 0}%`} icon={BarChart3} color="emerald" />
+        <StatsCard label="Trial to Paid Rate" value={`${revenue?.trial_to_paid_rate ?? 0}%`} icon={BarChart3} color="emerald" />
       </div>
 
       {/* Plan distribution */}

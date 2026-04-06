@@ -57,9 +57,15 @@ export default function AdminUsersPage() {
   }
 
   const columns: Column<Row>[] = [
-    { key: 'email', label: 'Email', render: (r) => <span className="font-medium text-slate-900">{String(r.email ?? '')}</span> },
-    { key: 'name', label: 'Name' },
-    { key: 'agency_name', label: 'Agency' },
+    { key: 'email', label: 'Email', render: (r) => (
+      <div>
+        <span className="font-medium text-slate-900">{String(r.email ?? '')}</span>
+        {Boolean(r.name) && <p className="text-xs text-slate-400">{String(r.name)}</p>}
+      </div>
+    )},
+    { key: 'agency_name', label: 'Agency', render: (r) => (
+      <span className="font-medium">{String(r.agency_name ?? '') || '\u2014'}</span>
+    )},
     { key: 'plan', label: 'Plan', render: (r) => <StatusBadge status={String(r.plan ?? 'free')} /> },
     { key: 'subscription_status', label: 'Status', render: (r) => (
       <div className="flex items-center gap-1 flex-wrap">

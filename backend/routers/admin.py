@@ -127,10 +127,10 @@ async def _admin_activity_inner() -> dict:
     sb = get_supabase_admin()
     events: list[dict] = []
 
-    # Build a master email map from profiles
-    all_profiles = (sb.table("profiles").select("id,email,name,created_at").execute()).data or []
+    # Build master maps from profiles
+    all_profiles = (sb.table("profiles").select("id,email,name,agency_name,created_at").execute()).data or []
     email_map: dict[str, str] = {p["id"]: p.get("email", "") for p in all_profiles}
-    name_map: dict[str, str] = {p["id"]: p.get("name", "") for p in all_profiles}
+    agency_map: dict[str, str] = {p["id"]: p.get("agency_name", "") for p in all_profiles}
 
     # Signups
     for p in sorted(all_profiles, key=lambda x: x.get("created_at", ""), reverse=True)[:10]:
@@ -139,6 +139,7 @@ async def _admin_activity_inner() -> dict:
             "event_type": "user_signup",
             "user_id": p["id"],
             "user_email": p.get("email", ""),
+            "agency_name": p.get("agency_name", ""),
             "details": f"New signup: {p.get('name') or p.get('email', '')}",
         })
 
@@ -156,6 +157,7 @@ async def _admin_activity_inner() -> dict:
             "event_type": "report_created",
             "user_id": r["user_id"],
             "user_email": email_map.get(r["user_id"], ""),
+            "agency_name": agency_map.get(r["user_id"], ""),
             "details": f"Report: {r.get('title', '')} for {cname}",
         })
 
@@ -167,6 +169,7 @@ async def _admin_activity_inner() -> dict:
             "event_type": "subscription_created",
             "user_id": s["user_id"],
             "user_email": email_map.get(s["user_id"], ""),
+            "agency_name": agency_map.get(s["user_id"], ""),
             "details": f"Subscription: {s.get('plan', '')} ({s.get('status', '')})",
         })
 
@@ -185,6 +188,7 @@ async def _admin_activity_inner() -> dict:
             "event_type": "connection_created",
             "user_id": info.get("user_id", ""),
             "user_email": email_map.get(info.get("user_id", ""), ""),
+            "agency_name": agency_map.get(info.get("user_id", ""), ""),
             "details": f"Connected {c.get('platform', '')} for {info.get('name', '')}",
         })
 
@@ -197,6 +201,7 @@ async def _admin_activity_inner() -> dict:
             "event_type": evt_type,
             "user_id": p.get("user_id", ""),
             "user_email": email_map.get(p.get("user_id", ""), ""),
+            "agency_name": agency_map.get(p.get("user_id", ""), ""),
             "details": f"Payment {'captured' if p.get('status') == 'captured' else 'failed'}: \u20b9{p.get('amount', 0)}",
         })
 
