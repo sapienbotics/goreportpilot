@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { FileText, Calendar, Building2, ChevronRight, Download, Search, X as XIcon } from 'lucide-react'
+import { toast } from 'sonner'
 import { reportsApi, downloadFileWithAuth } from '@/lib/api'
 import type { Report } from '@/types'
 
@@ -77,7 +78,7 @@ export default function ReportsPage() {
     try {
       await downloadFileWithAuth(`/api/reports/${report.id}/download/pdf`, `${report.title}.pdf`)
     } catch {
-      alert('Download failed. Please try again.')
+      toast.error('Download failed. Please try again.')
     } finally {
       setDlId(null)
     }

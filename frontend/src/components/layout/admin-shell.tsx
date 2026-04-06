@@ -108,7 +108,9 @@ export function AdminShell({ email, children }: AdminShellProps) {
           </div>
           <SignOutButton />
         </header>
-        <main className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
+        <main className="flex-1 overflow-y-auto p-4 md:p-6">
+          <div className="animate-in fade-in duration-200">{children}</div>
+        </main>
       </div>
     </div>
   )

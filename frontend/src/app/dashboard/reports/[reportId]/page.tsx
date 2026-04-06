@@ -10,6 +10,7 @@ import {
   Minus, Loader2,
   Pencil, RefreshCw, Check, X as XIcon, Send, Mail, Share2,
 } from 'lucide-react'
+import { toast } from 'sonner'
 import { reportsApi, downloadFileWithAuth } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
@@ -445,8 +446,9 @@ export default function ReportDetailPage() {
     try {
       const updated = await reportsApi.update(report.id, { [sectionKey]: text })
       setReport(updated)
+      toast.success('Section saved')
     } catch {
-      setError('Failed to save edit. Please try again.')
+      toast.error('Failed to save edit. Please try again.')
     } finally {
       setSavingSection(null)
     }
@@ -458,8 +460,9 @@ export default function ReportDetailPage() {
     try {
       const updated = await reportsApi.regenerateSection(report.id, sectionKey)
       setReport(updated)
+      toast.success('Section regenerated')
     } catch {
-      setError('Failed to regenerate section. Please try again.')
+      toast.error('Failed to regenerate section. Please try again.')
     } finally {
       setRegenSection(null)
     }
@@ -488,7 +491,7 @@ export default function ReportDetailPage() {
       if (isFilesExpiredError(err)) {
         setFilesExpired(true)
       } else {
-        alert('Download failed. Please try again.')
+        toast.error('Download failed. Please try again.')
       }
     } finally {
       setDlPptx(false)
@@ -507,7 +510,7 @@ export default function ReportDetailPage() {
       if (isFilesExpiredError(err)) {
         setFilesExpired(true)
       } else {
-        alert('Download failed. Please try again.')
+        toast.error('Download failed. Please try again.')
       }
     } finally {
       setDlPdf(false)
@@ -522,8 +525,9 @@ export default function ReportDetailPage() {
     try {
       const updated = await reportsApi.regenerate(report.id)
       setReport(updated)
+      toast.success('Report regenerated successfully')
     } catch {
-      setError('Failed to regenerate report. Please try again.')
+      toast.error('Failed to regenerate report. Please try again.')
     } finally {
       setRegenerating(false)
     }

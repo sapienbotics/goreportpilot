@@ -3,6 +3,7 @@ import { Inter, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 import { Toaster } from "@/components/ui/sonner";
+import { Providers } from "@/components/providers";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -46,7 +47,9 @@ export default function RootLayout({
   return (
     <html lang="en" className={cn(inter.variable, plusJakartaSans.variable)}>
       <body className="font-sans antialiased bg-background text-foreground">
-        {children}
+        <Providers>
+          {children}
+        </Providers>
         <Toaster />
       </body>
     </html>

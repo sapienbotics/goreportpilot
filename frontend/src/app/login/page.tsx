@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { Loader2 } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -30,6 +31,7 @@ function LoginForm() {
   const [resending, setResending] = useState(false)
   const [resendSuccess, setResendSuccess] = useState(false)
   const [lastEmail, setLastEmail] = useState('')
+  const [redirecting, setRedirecting] = useState(false)
 
   const {
     register,
@@ -66,6 +68,7 @@ function LoginForm() {
       return
     }
 
+    setRedirecting(true)
     router.push('/dashboard')
     router.refresh()
   }
@@ -84,6 +87,18 @@ function LoginForm() {
       setResendSuccess(true)
     }
     setResending(false)
+  }
+
+  if (redirecting) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 px-4 gap-4">
+        <Logo size="lg" />
+        <div className="flex items-center gap-2 text-slate-500 text-sm">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Setting up your workspace...
+        </div>
+      </div>
+    )
   }
 
   return (

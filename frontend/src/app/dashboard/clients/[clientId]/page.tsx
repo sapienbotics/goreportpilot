@@ -6,6 +6,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter, useSearchParams, usePathname } from 'next/navigation'
+import { toast } from 'sonner'
 import {
   LayoutDashboard, Link2, FileText, Clock, Settings,
   Building2,
@@ -202,8 +203,10 @@ export default function ClientDetailPage({ params }: Props) {
           ? csvFiles.map(c => ({ source_name: c.sourceName, metrics: c.metrics }))
           : undefined,
       })
+      toast.success('Report generated successfully')
       router.push(`/dashboard/reports/${report.id}`)
     } catch (err: unknown) {
+      toast.error('Failed to generate report')
       setGenError(err instanceof Error ? err.message : 'Failed to generate report.')
       setGenerating(false)
     }
@@ -300,7 +303,8 @@ export default function ClientDetailPage({ params }: Props) {
       const updated = await clientsApi.update(client.id, { name: editValues.name, website_url: editValues.website_url ?? undefined, industry: editValues.industry ?? undefined, primary_contact_email: editValues.primary_contact_email ?? undefined, goals_context: editValues.goals_context ?? undefined, notes: editValues.notes ?? undefined, report_language: editValues.report_language ?? 'en' })
       setClient(updated)
       setEditing(false)
-    } catch { setError('Failed to save changes.') }
+      toast.success('Client saved')
+    } catch { toast.error('Failed to save changes.') }
     finally { setSaving(false) }
   }
 
