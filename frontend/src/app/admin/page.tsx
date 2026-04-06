@@ -18,11 +18,15 @@ export default function AdminOverviewPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [activity, setActivity] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     Promise.all([adminApi.getStats(), adminApi.getActivity()])
       .then(([s, a]) => { setStats(s); setActivity(a.events || []) })
-      .catch(() => {})
+      .catch((err) => {
+        const msg = err?.response?.data?.detail || err?.message || 'Failed to load admin data'
+        setError(typeof msg === 'string' ? msg : JSON.stringify(msg))
+      })
       .finally(() => setLoading(false))
   }, [])
 
@@ -42,6 +46,12 @@ export default function AdminOverviewPage() {
       <h1 className="text-2xl font-bold text-slate-900" style={{ fontFamily: 'var(--font-plus-jakarta-sans)' }}>
         Admin Overview
       </h1>
+
+      {error && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          <strong>Error:</strong> {error}
+        </div>
+      )}
 
       {/* Stats cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

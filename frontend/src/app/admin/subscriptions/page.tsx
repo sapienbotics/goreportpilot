@@ -15,6 +15,7 @@ export default function AdminSubscriptionsPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [failedPayments, setFailedPayments] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     Promise.all([
@@ -27,7 +28,11 @@ export default function AdminSubscriptionsPage() {
         setSubs(s.subscriptions || [])
         setFailedPayments(p.payments || [])
       })
-      .catch(() => {})
+      .catch((err) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const msg = (err as any)?.response?.data?.detail || (err as Error)?.message || 'Failed to load data'
+        setError(typeof msg === 'string' ? msg : JSON.stringify(msg))
+      })
       .finally(() => setLoading(false))
   }, [])
 
@@ -55,6 +60,12 @@ export default function AdminSubscriptionsPage() {
   return (
     <div className="space-y-6 max-w-7xl">
       <h1 className="text-2xl font-bold text-slate-900" style={{ fontFamily: 'var(--font-plus-jakarta-sans)' }}>Subscriptions</h1>
+
+      {error && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          <strong>Error:</strong> {error}
+        </div>
+      )}
 
       {/* Row 1: 4 cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

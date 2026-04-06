@@ -16,6 +16,7 @@ export default function AdminGDPRPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [consent, setConsent] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [editReq, setEditReq] = useState<any>(null)
   const [showNew, setShowNew] = useState(false)
@@ -30,7 +31,11 @@ export default function AdminGDPRPage() {
       setRequests(r.requests || [])
       setInactive(i.users || [])
       setConsent(c.records || [])
-    } catch { /* silent */ }
+    } catch (err) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const msg = (err as any)?.response?.data?.detail || (err as Error)?.message || 'Failed'
+      setError(typeof msg === 'string' ? msg : JSON.stringify(msg))
+    }
     finally { setLoading(false) }
   }
 
@@ -87,6 +92,12 @@ export default function AdminGDPRPage() {
       {editReq && <GDPRRequestModal initial={editReq} onSave={handleUpdate} onClose={() => setEditReq(null)} />}
 
       <h1 className="text-2xl font-bold text-slate-900" style={{ fontFamily: 'var(--font-plus-jakarta-sans)' }}>GDPR</h1>
+
+      {error && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          <strong>Error:</strong> {error}
+        </div>
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatsCard label="Pending" value={pending} icon={Shield} color="amber" />

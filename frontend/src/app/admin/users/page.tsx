@@ -15,6 +15,7 @@ export default function AdminUsersPage() {
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [planFilter, setPlanFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
@@ -35,7 +36,11 @@ export default function AdminUsersPage() {
       const data = await adminApi.getUsers(params.toString())
       setUsers(data.users || [])
       setTotal(data.total || 0)
-    } catch { /* silent */ }
+    } catch (err) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const msg = (err as any)?.response?.data?.detail || (err as Error)?.message || 'Failed to load users'
+      setError(typeof msg === 'string' ? msg : JSON.stringify(msg))
+    }
     finally { setLoading(false) }
   }, [page, search, planFilter, statusFilter, sortBy, sortOrder])
 
@@ -84,6 +89,12 @@ export default function AdminUsersPage() {
   return (
     <div className="space-y-6 max-w-7xl">
       <h1 className="text-2xl font-bold text-slate-900" style={{ fontFamily: 'var(--font-plus-jakarta-sans)' }}>Users</h1>
+
+      {error && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          <strong>Error:</strong> {error}
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-3 items-center">
         <div className="relative flex-1 min-w-[200px] max-w-sm">

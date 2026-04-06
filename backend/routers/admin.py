@@ -26,11 +26,18 @@ router = APIRouter()
 
 async def _require_admin(user_id: str = Depends(get_current_user_id)) -> str:
     """Dependency — raises 403 if the user is not an admin."""
-    sb = get_supabase_admin()
-    result = sb.table("profiles").select("is_admin").eq("id", user_id).single().execute()
-    if not result.data or not result.data.get("is_admin"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
-    return user_id
+    try:
+        sb = get_supabase_admin()
+        result = sb.table("profiles").select("is_admin").eq("id", user_id).single().execute()
+        if not result.data or not result.data.get("is_admin"):
+            logger.warning("Admin access denied for user %s (is_admin=%s)", user_id, result.data)
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+        return user_id
+    except HTTPException:
+        raise
+    except Exception:
+        logger.error("Admin check failed for user %s:\n%s", user_id, traceback.format_exc())
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Admin check failed")
 
 
 def _log_action(admin_id: str, action: str, target_user_id: str | None = None,

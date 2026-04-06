@@ -13,6 +13,7 @@ export default function AdminConnectionsPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [conns, setConns] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [platformFilter, setPlatformFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
 
@@ -24,7 +25,11 @@ export default function AdminConnectionsPage() {
     const qs = params.toString()
     adminApi.getConnections(qs || undefined)
       .then((d) => setConns(d.connections || []))
-      .catch(() => {})
+      .catch((err) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const msg = (err as any)?.response?.data?.detail || (err as Error)?.message || 'Failed'
+        setError(typeof msg === 'string' ? msg : JSON.stringify(msg))
+      })
       .finally(() => setLoading(false))
   }, [platformFilter, statusFilter])
 
@@ -52,6 +57,12 @@ export default function AdminConnectionsPage() {
   return (
     <div className="space-y-6 max-w-7xl">
       <h1 className="text-2xl font-bold text-slate-900" style={{ fontFamily: 'var(--font-plus-jakarta-sans)' }}>Connections</h1>
+
+      {error && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          <strong>Error:</strong> {error}
+        </div>
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <StatsCard label="Active" value={`${active} of ${conns.length}`} icon={Link2} color="emerald" />
