@@ -8,6 +8,7 @@ goals_context, notes, or contact_emails.
 import json
 import logging
 import shutil
+import traceback
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -60,6 +61,16 @@ def _safe_parse_dt(val: str | None) -> datetime | None:
 
 @router.get("/stats")
 async def admin_stats(admin_id: str = Depends(_require_admin)) -> dict:
+    try:
+        return await _admin_stats_inner()
+    except HTTPException:
+        raise
+    except Exception:
+        logger.error("Admin stats endpoint failed:\n%s", traceback.format_exc())
+        raise HTTPException(status_code=500, detail="Failed to load admin stats")
+
+
+async def _admin_stats_inner() -> dict:
     sb = get_supabase_admin()
     now = datetime.now(timezone.utc)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
@@ -103,21 +114,32 @@ async def admin_stats(admin_id: str = Depends(_require_admin)) -> dict:
 
 @router.get("/activity")
 async def admin_activity(admin_id: str = Depends(_require_admin)) -> dict:
+    try:
+        return await _admin_activity_inner()
+    except HTTPException:
+        raise
+    except Exception:
+        logger.error("Admin activity endpoint failed:\n%s", traceback.format_exc())
+        raise HTTPException(status_code=500, detail="Failed to load activity feed")
+
+
+async def _admin_activity_inner() -> dict:
     sb = get_supabase_admin()
     events: list[dict] = []
 
     # Build a master email map from profiles
-    all_profiles = (sb.table("profiles").select("id,email,full_name,created_at").execute()).data or []
+    all_profiles = (sb.table("profiles").select("id,email,name,created_at").execute()).data or []
     email_map: dict[str, str] = {p["id"]: p.get("email", "") for p in all_profiles}
-    name_map: dict[str, str] = {p["id"]: p.get("full_name", "") for p in all_profiles}
+    name_map: dict[str, str] = {p["id"]: p.get("name", "") for p in all_profiles}
 
     # Signups
     for p in sorted(all_profiles, key=lambda x: x.get("created_at", ""), reverse=True)[:10]:
         events.append({
             "timestamp": p["created_at"],
             "event_type": "user_signup",
+            "user_id": p["id"],
             "user_email": p.get("email", ""),
-            "details": f"New signup: {p.get('full_name') or p.get('email', '')}",
+            "details": f"New signup: {p.get('name') or p.get('email', '')}",
         })
 
     # Reports
@@ -132,6 +154,7 @@ async def admin_activity(admin_id: str = Depends(_require_admin)) -> dict:
         events.append({
             "timestamp": r["created_at"],
             "event_type": "report_created",
+            "user_id": r["user_id"],
             "user_email": email_map.get(r["user_id"], ""),
             "details": f"Report: {r.get('title', '')} for {cname}",
         })
@@ -142,6 +165,7 @@ async def admin_activity(admin_id: str = Depends(_require_admin)) -> dict:
         events.append({
             "timestamp": s["created_at"],
             "event_type": "subscription_created",
+            "user_id": s["user_id"],
             "user_email": email_map.get(s["user_id"], ""),
             "details": f"Subscription: {s.get('plan', '')} ({s.get('status', '')})",
         })
@@ -159,6 +183,7 @@ async def admin_activity(admin_id: str = Depends(_require_admin)) -> dict:
         events.append({
             "timestamp": c["created_at"],
             "event_type": "connection_created",
+            "user_id": info.get("user_id", ""),
             "user_email": email_map.get(info.get("user_id", ""), ""),
             "details": f"Connected {c.get('platform', '')} for {info.get('name', '')}",
         })
@@ -170,6 +195,7 @@ async def admin_activity(admin_id: str = Depends(_require_admin)) -> dict:
         events.append({
             "timestamp": p["created_at"],
             "event_type": evt_type,
+            "user_id": p.get("user_id", ""),
             "user_email": email_map.get(p.get("user_id", ""), ""),
             "details": f"Payment {'captured' if p.get('status') == 'captured' else 'failed'}: \u20b9{p.get('amount', 0)}",
         })
@@ -203,70 +229,69 @@ async def list_users(
     sort_by: str = "created_at",
     sort_order: str = "desc",
 ) -> dict:
-    sb = get_supabase_admin()
+    try:
+        sb = get_supabase_admin()
+        q = sb.table("profiles").select("id,email,name,agency_name,created_at,updated_at,is_admin,is_disabled")
+        if search:
+            q = q.or_(f"email.ilike.%{search}%,name.ilike.%{search}%,agency_name.ilike.%{search}%")
+        profiles = (q.execute()).data or []
 
-    # Fetch ALL profiles — no filters that would exclude users
-    q = sb.table("profiles").select("id,email,full_name,agency_name,created_at,updated_at,is_admin,is_disabled")
-    if search:
-        q = q.or_(f"email.ilike.%{search}%,full_name.ilike.%{search}%,agency_name.ilike.%{search}%")
-    profiles = (q.execute()).data or []
+        if not profiles:
+            return {"users": [], "total": 0, "page": page, "limit": limit}
 
-    if not profiles:
-        return {"users": [], "total": 0, "page": page, "limit": limit}
+        subs = (sb.table("subscriptions").select("user_id,plan,status,billing_cycle").execute()).data or []
+        sub_map: dict[str, dict] = {}
+        for s in subs:
+            sub_map[s["user_id"]] = s
 
-    # LEFT JOIN: fetch ALL subscriptions and map by user_id
-    subs = (sb.table("subscriptions").select("user_id,plan,status,billing_cycle").execute()).data or []
-    sub_map: dict[str, dict] = {}
-    for s in subs:
-        sub_map[s["user_id"]] = s
+        clients_all = (sb.table("clients").select("user_id").eq("is_active", True).execute()).data or []
+        client_counts: dict[str, int] = {}
+        for c in clients_all:
+            client_counts[c["user_id"]] = client_counts.get(c["user_id"], 0) + 1
 
-    # Counts
-    clients_all = (sb.table("clients").select("user_id").eq("is_active", True).execute()).data or []
-    client_counts: dict[str, int] = {}
-    for c in clients_all:
-        client_counts[c["user_id"]] = client_counts.get(c["user_id"], 0) + 1
+        reports_all = (sb.table("reports").select("user_id").execute()).data or []
+        report_counts: dict[str, int] = {}
+        for r in reports_all:
+            report_counts[r["user_id"]] = report_counts.get(r["user_id"], 0) + 1
 
-    reports_all = (sb.table("reports").select("user_id").execute()).data or []
-    report_counts: dict[str, int] = {}
-    for r in reports_all:
-        report_counts[r["user_id"]] = report_counts.get(r["user_id"], 0) + 1
+        users = []
+        for p in profiles:
+            uid = p["id"]
+            sub = sub_map.get(uid)
+            user_plan = sub.get("plan", "free") if sub else "free"
+            user_status = sub.get("status", "none") if sub else "none"
 
-    # Build user list — every profile appears regardless of subscription
-    users = []
-    for p in profiles:
-        uid = p["id"]
-        sub = sub_map.get(uid)
-        user_plan = sub.get("plan", "free") if sub else "free"
-        user_status = sub.get("status", "none") if sub else "none"
+            if plan and user_plan != plan:
+                continue
+            if sub_status and user_status != sub_status:
+                continue
 
-        # Apply filters
-        if plan and user_plan != plan:
-            continue
-        if sub_status and user_status != sub_status:
-            continue
+            users.append({
+                "id": uid,
+                "email": p.get("email", ""),
+                "name": p.get("name", ""),
+                "agency_name": p.get("agency_name", ""),
+                "plan": user_plan,
+                "subscription_status": user_status,
+                "client_count": client_counts.get(uid, 0),
+                "report_count": report_counts.get(uid, 0),
+                "created_at": p.get("created_at", ""),
+                "is_admin": p.get("is_admin", False),
+                "is_disabled": p.get("is_disabled", False),
+            })
 
-        users.append({
-            "id": uid,
-            "email": p.get("email", ""),
-            "full_name": p.get("full_name", ""),
-            "agency_name": p.get("agency_name", ""),
-            "plan": user_plan,
-            "subscription_status": user_status,
-            "client_count": client_counts.get(uid, 0),
-            "report_count": report_counts.get(uid, 0),
-            "created_at": p.get("created_at", ""),
-            "is_admin": p.get("is_admin", False),
-            "is_disabled": p.get("is_disabled", False),
-        })
+        reverse = sort_order == "desc"
+        users.sort(key=lambda u: u.get(sort_by, "") or "", reverse=reverse)
 
-    # Sort
-    reverse = sort_order == "desc"
-    users.sort(key=lambda u: u.get(sort_by, "") or "", reverse=reverse)
-
-    total = len(users)
-    start = (page - 1) * limit
-    end = start + limit
-    return {"users": users[start:end], "total": total, "page": page, "limit": limit}
+        total = len(users)
+        start = (page - 1) * limit
+        end = start + limit
+        return {"users": users[start:end], "total": total, "page": page, "limit": limit}
+    except HTTPException:
+        raise
+    except Exception:
+        logger.error("Admin users list failed:\n%s", traceback.format_exc())
+        raise HTTPException(status_code=500, detail="Failed to load users list")
 
 
 @router.get("/users/{user_id}")
@@ -274,7 +299,7 @@ async def get_user_detail(user_id: str, admin_id: str = Depends(_require_admin))
     sb = get_supabase_admin()
 
     profile = (sb.table("profiles").select(
-        "id,email,full_name,agency_name,agency_logo_url,agency_website,"
+        "id,email,name,agency_name,agency_logo_url,agency_website,"
         "brand_color,sender_name,agency_email,reply_to_email,email_footer,"
         "is_admin,is_disabled,created_at,updated_at"
     ).eq("id", user_id).single().execute()).data
@@ -334,7 +359,7 @@ async def get_user_detail(user_id: str, admin_id: str = Depends(_require_admin))
     shared: list[dict] = []
     if report_ids:
         shared = (sb.table("shared_reports").select(
-            "id,report_id,share_hash,is_active,expires_at,created_at,view_count"
+            "id,report_id,share_hash,is_active,expires_at,created_at"
         ).in_("report_id", report_ids).order("created_at", desc=True).execute()).data or []
 
     scheduled = (sb.table("scheduled_reports").select(
@@ -376,7 +401,7 @@ async def enable_user(user_id: str, admin_id: str = Depends(_require_admin)) -> 
 async def export_user_data(user_id: str, admin_id: str = Depends(_require_admin)) -> Response:
     sb = get_supabase_admin()
     profile = (sb.table("profiles").select(
-        "id,email,full_name,agency_name,agency_logo_url,agency_website,"
+        "id,email,name,agency_name,agency_logo_url,agency_website,"
         "brand_color,is_admin,is_disabled,created_at,updated_at"
     ).eq("id", user_id).single().execute()).data
     if not profile:
@@ -393,7 +418,7 @@ async def export_user_data(user_id: str, admin_id: str = Depends(_require_admin)
     report_ids = [r["id"] for r in reports]
     shared: list[dict] = []
     if report_ids:
-        shared = (sb.table("shared_reports").select("share_hash,is_active,expires_at,created_at,view_count").in_("report_id", report_ids).execute()).data or []
+        shared = (sb.table("shared_reports").select("share_hash,is_active,expires_at,created_at").in_("report_id", report_ids).execute()).data or []
     scheduled = (sb.table("scheduled_reports").select("frequency,template,auto_send,next_run_at,is_active,created_at").eq("user_id", user_id).execute()).data or []
 
     export = {
@@ -466,13 +491,13 @@ async def list_subscriptions(
     user_ids = list({s["user_id"] for s in subs})
     profile_map: dict[str, dict] = {}
     if user_ids:
-        profiles = (sb.table("profiles").select("id,email,full_name").in_("id", user_ids).execute()).data or []
-        profile_map = {p["id"]: {"email": p.get("email", ""), "full_name": p.get("full_name", "")} for p in profiles}
+        profiles = (sb.table("profiles").select("id,email,name").in_("id", user_ids).execute()).data or []
+        profile_map = {p["id"]: {"email": p.get("email", ""), "name": p.get("name", "")} for p in profiles}
 
     for s in subs:
         info = profile_map.get(s["user_id"], {})
         s["user_email"] = info.get("email", "")
-        s["user_name"] = info.get("full_name", "")
+        s["user_name"] = info.get("name", "")
 
     return {"subscriptions": subs, "total": len(subs)}
 
@@ -594,11 +619,12 @@ async def list_connections(
             profiles = (sb.table("profiles").select("id,email").in_("id", user_ids).execute()).data or []
             email_map = {p["id"]: p.get("email", "") for p in profiles}
         for c in clients:
-            client_map[c["id"]] = {"name": c["name"], "user_email": email_map.get(c["user_id"], "")}
+            client_map[c["id"]] = {"name": c["name"], "user_id": c["user_id"], "user_email": email_map.get(c["user_id"], "")}
 
     for c in conns:
         info = client_map.get(c["client_id"], {})
         c["client_name"] = info.get("name", "")
+        c["user_id"] = info.get("user_id", "")
         c["user_email"] = info.get("user_email", "")
 
         # Compute effective_status based on token expiry
@@ -771,7 +797,7 @@ async def update_gdpr_request(request_id: str, body: dict, admin_id: str = Depen
 async def inactive_users(admin_id: str = Depends(_require_admin)) -> dict:
     sb = get_supabase_admin()
     cutoff = (datetime.now(timezone.utc) - timedelta(days=365)).isoformat()
-    profiles = (sb.table("profiles").select("id,email,full_name,updated_at,created_at").lt("updated_at", cutoff).execute()).data or []
+    profiles = (sb.table("profiles").select("id,email,name,updated_at,created_at").lt("updated_at", cutoff).execute()).data or []
 
     # Enrich with plan + counts
     user_ids = [p["id"] for p in profiles]
@@ -800,7 +826,7 @@ async def inactive_users(admin_id: str = Depends(_require_admin)) -> dict:
 async def consent_records(admin_id: str = Depends(_require_admin)) -> dict:
     """All users with signup date (= consent timestamp) and email confirmation status."""
     sb = get_supabase_admin()
-    profiles = (sb.table("profiles").select("id,email,full_name,created_at").order("created_at", desc=True).execute()).data or []
+    profiles = (sb.table("profiles").select("id,email,name,created_at").order("created_at", desc=True).execute()).data or []
 
     # Get subscription plan for each
     user_ids = [p["id"] for p in profiles]
@@ -813,7 +839,7 @@ async def consent_records(admin_id: str = Depends(_require_admin)) -> dict:
     for p in profiles:
         records.append({
             "email": p.get("email", ""),
-            "full_name": p.get("full_name", ""),
+            "name": p.get("name", ""),
             "created_at": p.get("created_at", ""),
             "plan": sub_map.get(p["id"], "free"),
         })

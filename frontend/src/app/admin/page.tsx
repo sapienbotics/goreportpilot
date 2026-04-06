@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   Users, FileText, CreditCard, BarChart3,
   TrendingUp, AlertCircle, DollarSign,
@@ -11,6 +12,7 @@ import { StatusBadge } from '@/components/admin/StatusBadge'
 import { Loader2 } from 'lucide-react'
 
 export default function AdminOverviewPage() {
+  const router = useRouter()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [stats, setStats] = useState<any>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -61,9 +63,13 @@ export default function AdminOverviewPage() {
             <p className="text-sm text-slate-400 text-center py-8">No recent activity</p>
           )}
           {activity.slice(0, 20).map((evt, i) => (
-            <div key={i} className="flex items-center gap-4 px-5 py-3">
+            <div
+              key={i}
+              className={`flex items-center gap-4 px-5 py-3 ${evt.user_id ? 'cursor-pointer hover:bg-slate-50' : ''}`}
+              onClick={() => evt.user_id && router.push(`/admin/users/${evt.user_id}`)}
+            >
               <div className="shrink-0">
-                <StatusBadge status={evt.event_type?.replace('_', ' ') ?? 'event'} />
+                <StatusBadge status={evt.event_type?.replace(/_/g, ' ') ?? 'event'} />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm text-slate-700 truncate">{evt.details}</p>

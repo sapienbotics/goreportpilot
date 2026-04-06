@@ -118,7 +118,7 @@ export default function AdminUserDetailPage() {
           {profile.is_disabled && <StatusBadge status="disabled" />}
           {profile.is_admin && <span className="text-xs font-bold text-rose-500 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">ADMIN</span>}
         </div>
-        {profile.full_name && <p className="text-sm text-slate-500 mt-1">{profile.full_name} — {profile.agency_name || 'No agency'}</p>}
+        {profile.name && <p className="text-sm text-slate-500 mt-1">{profile.name} — {profile.agency_name || 'No agency'}</p>}
       </div>
 
       {/* Tabs */}
@@ -143,7 +143,7 @@ export default function AdminUserDetailPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
             {[
               ['Email', profile.email],
-              ['Full Name', profile.full_name],
+              ['Name', profile.name],
               ['Agency Name', profile.agency_name],
               ['Agency Website', profile.agency_website],
               ['Brand Color', profile.brand_color],
@@ -211,7 +211,7 @@ export default function AdminUserDetailPage() {
                 columns={[
                   { key: 'share_hash', label: 'Hash', render: (r) => <span className="font-mono text-xs">{String(r.share_hash ?? '').slice(0, 12)}...</span> },
                   { key: 'is_active', label: 'Active', render: (r) => <StatusBadge status={r.is_active ? 'active' : 'inactive'} /> },
-                  { key: 'view_count', label: 'Views' },
+                  { key: 'is_active', label: 'Active', render: (r: Record<string, unknown>) => <span>{r.is_active ? 'Yes' : 'No'}</span> },
                   { key: 'expires_at', label: 'Expires', render: (r) => <span className="text-xs">{r.expires_at ? new Date(String(r.expires_at)).toLocaleDateString() : 'Never'}</span> },
                 ]}
                 data={shared}

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Loader2, FileText, AlertCircle } from 'lucide-react'
 import { adminApi } from '@/lib/api'
 import { StatsCard } from '@/components/admin/StatsCard'
@@ -8,6 +9,7 @@ import { DataTable, type Column } from '@/components/admin/DataTable'
 import { StatusBadge } from '@/components/admin/StatusBadge'
 
 export default function AdminReportsPage() {
+  const router = useRouter()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [stats, setStats] = useState<any>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -82,7 +84,12 @@ export default function AdminReportsPage() {
       )}
 
       <h2 className="text-lg font-semibold text-slate-900">Recent Reports</h2>
-      <DataTable columns={columns} data={reports} emptyMessage="No reports found." />
+      <DataTable
+        columns={columns}
+        data={reports}
+        emptyMessage="No reports found."
+        onRowClick={(row) => row.user_id && router.push(`/admin/users/${String(row.user_id)}`)}
+      />
 
       {/* Failed reports */}
       {failed.length > 0 && (

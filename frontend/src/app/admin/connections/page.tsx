@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Loader2, Link2 } from 'lucide-react'
 import { adminApi } from '@/lib/api'
 import { StatsCard } from '@/components/admin/StatsCard'
@@ -8,6 +9,7 @@ import { DataTable, type Column } from '@/components/admin/DataTable'
 import { StatusBadge } from '@/components/admin/StatusBadge'
 
 export default function AdminConnectionsPage() {
+  const router = useRouter()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [conns, setConns] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -52,9 +54,9 @@ export default function AdminConnectionsPage() {
       <h1 className="text-2xl font-bold text-slate-900" style={{ fontFamily: 'var(--font-plus-jakarta-sans)' }}>Connections</h1>
 
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <StatsCard label="Active" value={active} icon={Link2} color="emerald" />
+        <StatsCard label="Active" value={`${active} of ${conns.length}`} icon={Link2} color="emerald" />
         <StatsCard label="Expiring Soon" value={expiringSoon} icon={Link2} color="amber" />
-        <StatsCard label="Expired" value={expired} icon={Link2} color="rose" />
+        <StatsCard label="Expired" value={`${expired} of ${conns.length}`} icon={Link2} color="rose" />
         <StatsCard label="Errored" value={errored} icon={Link2} color="rose" />
         <StatsCard label="Revoked" value={revoked} icon={Link2} color="slate" />
       </div>
@@ -80,7 +82,13 @@ export default function AdminConnectionsPage() {
         {loading && <Loader2 className="h-4 w-4 animate-spin text-slate-400 self-center" />}
       </div>
 
-      <DataTable columns={columns} data={conns} loading={loading} emptyMessage="No connections found." />
+      <DataTable
+        columns={columns}
+        data={conns}
+        loading={loading}
+        emptyMessage="No connections found."
+        onRowClick={(row) => row.user_id && router.push(`/admin/users/${String(row.user_id)}`)}
+      />
     </div>
   )
 }

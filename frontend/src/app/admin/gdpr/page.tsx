@@ -67,7 +67,7 @@ export default function AdminGDPRPage() {
 
   const inactiveCols: Column<Record<string, unknown>>[] = [
     { key: 'email', label: 'Email', render: (r) => <span className="font-medium">{String(r.email ?? '')}</span> },
-    { key: 'full_name', label: 'Name' },
+    { key: 'name', label: 'Name' },
     { key: 'updated_at', label: 'Last Active', render: (r) => <span className="text-xs">{r.updated_at ? new Date(String(r.updated_at)).toLocaleDateString() : ''}</span> },
     { key: 'plan', label: 'Plan', render: (r) => <StatusBadge status={String(r.plan ?? 'free')} /> },
     { key: 'client_count', label: 'Clients' },
@@ -76,7 +76,7 @@ export default function AdminGDPRPage() {
 
   const consentCols: Column<Record<string, unknown>>[] = [
     { key: 'email', label: 'Email', render: (r) => <span className="font-medium">{String(r.email ?? '')}</span> },
-    { key: 'full_name', label: 'Name' },
+    { key: 'name', label: 'Name' },
     { key: 'created_at', label: 'Signed Up (Consent)', render: (r) => <span className="text-xs">{r.created_at ? new Date(String(r.created_at)).toLocaleString() : ''}</span> },
     { key: 'plan', label: 'Plan', render: (r) => <StatusBadge status={String(r.plan ?? 'free')} /> },
   ]

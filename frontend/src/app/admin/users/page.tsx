@@ -58,7 +58,7 @@ export default function AdminUsersPage() {
 
   const columns: Column<Row>[] = [
     { key: 'email', label: 'Email', render: (r) => <span className="font-medium text-slate-900">{String(r.email ?? '')}</span> },
-    { key: 'full_name', label: 'Name' },
+    { key: 'name', label: 'Name' },
     { key: 'agency_name', label: 'Agency' },
     { key: 'plan', label: 'Plan', render: (r) => <StatusBadge status={String(r.plan ?? 'free')} /> },
     { key: 'subscription_status', label: 'Status', render: (r) => (
