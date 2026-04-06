@@ -572,3 +572,57 @@ export const reportsApi = {
     return data
   },
 }
+
+// ---------------------------------------------------------------------------
+// Admin API
+// ---------------------------------------------------------------------------
+
+export const adminApi = {
+  // Overview
+  getStats: async () => { const { data } = await api.get('/api/admin/stats'); return data },
+  getActivity: async () => { const { data } = await api.get('/api/admin/activity'); return data },
+
+  // Users
+  getUsers: async (params?: string) => { const { data } = await api.get(`/api/admin/users${params ? '?' + params : ''}`); return data },
+  getUser: async (id: string) => { const { data } = await api.get(`/api/admin/users/${id}`); return data },
+  disableUser: async (id: string) => { const { data } = await api.post(`/api/admin/users/${id}/disable`); return data },
+  enableUser: async (id: string) => { const { data } = await api.post(`/api/admin/users/${id}/enable`); return data },
+  exportUser: async (id: string) => {
+    const response = await api.get(`/api/admin/users/${id}/export`, { responseType: 'blob' })
+    const blob = new Blob([response.data], { type: 'application/json' })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `user_export_${id}.json`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    window.URL.revokeObjectURL(url)
+  },
+  deleteUser: async (id: string) => { const { data } = await api.delete(`/api/admin/users/${id}`); return data },
+
+  // Subscriptions
+  getSubscriptions: async (params?: string) => { const { data } = await api.get(`/api/admin/subscriptions${params ? '?' + params : ''}`); return data },
+  getPayments: async (params?: string) => { const { data } = await api.get(`/api/admin/payments${params ? '?' + params : ''}`); return data },
+  getRevenue: async () => { const { data } = await api.get('/api/admin/revenue'); return data },
+
+  // Connections
+  getConnections: async (params?: string) => { const { data } = await api.get(`/api/admin/connections${params ? '?' + params : ''}`); return data },
+
+  // Reports
+  getReports: async (params?: string) => { const { data } = await api.get(`/api/admin/reports${params ? '?' + params : ''}`); return data },
+  getReportStats: async () => { const { data } = await api.get('/api/admin/reports/stats'); return data },
+
+  // System
+  getSystemHealth: async () => { const { data } = await api.get('/api/admin/system/health'); return data },
+
+  // GDPR
+  getGDPRRequests: async () => { const { data } = await api.get('/api/admin/gdpr/requests'); return data },
+  createGDPRRequest: async (payload: { user_email: string; request_type: string; admin_notes?: string }) => {
+    const { data } = await api.post('/api/admin/gdpr/requests', payload); return data
+  },
+  updateGDPRRequest: async (id: string, payload: { status?: string; admin_notes?: string }) => {
+    const { data } = await api.patch(`/api/admin/gdpr/requests/${id}`, payload); return data
+  },
+  getInactiveUsers: async () => { const { data } = await api.get('/api/admin/gdpr/inactive-users'); return data },
+}

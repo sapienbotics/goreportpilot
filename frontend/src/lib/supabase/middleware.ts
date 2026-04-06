@@ -63,6 +63,42 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
+  // Admin / disabled routing — only for /dashboard paths
+  if (user && user.email_confirmed_at && request.nextUrl.pathname.startsWith('/dashboard')) {
+    // Fetch profile to check is_admin / is_disabled
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('is_admin,is_disabled')
+      .eq('id', user.id)
+      .single()
+
+    // Disabled users get kicked to login
+    if (profile?.is_disabled) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/login'
+      url.searchParams.set('error', 'account_disabled')
+      // Sign out the disabled user
+      await supabase.auth.signOut()
+      return NextResponse.redirect(url)
+    }
+
+    const isAdminPath = request.nextUrl.pathname.startsWith('/dashboard/admin')
+
+    // Admin users on regular dashboard → redirect to admin
+    if (profile?.is_admin && !isAdminPath && request.nextUrl.pathname === '/dashboard') {
+      const url = request.nextUrl.clone()
+      url.pathname = '/dashboard/admin'
+      return NextResponse.redirect(url)
+    }
+
+    // Non-admin users trying to access admin pages → redirect to dashboard
+    if (!profile?.is_admin && isAdminPath) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/dashboard'
+      return NextResponse.redirect(url)
+    }
+  }
+
   // Authenticated users on /login or /signup: redirect to /dashboard
   if (
     user &&

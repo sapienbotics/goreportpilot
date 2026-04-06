@@ -36,7 +36,15 @@ async def get_current_user_id(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or expired token",
             )
-        return response.user.id
+        # Check if user account is disabled
+        user_id = response.user.id
+        profile_result = supabase.table("profiles").select("is_disabled").eq("id", user_id).maybe_single().execute()
+        if profile_result.data and profile_result.data.get("is_disabled"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Account suspended. Contact support@goreportpilot.com",
+            )
+        return user_id
     except HTTPException:
         raise
     except Exception as exc:

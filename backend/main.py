@@ -110,7 +110,7 @@ async def health_check():
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 
-from routers import auth, clients, connections, reports, settings as settings_router, scheduled_reports, billing, dashboard  # noqa: E402
+from routers import auth, clients, connections, reports, settings as settings_router, scheduled_reports, billing, dashboard, admin  # noqa: E402
 from routers import csv_upload  # noqa: E402
 from routers.shared import reports_router as shared_reports_router, public_router as shared_public_router  # noqa: E402
 
@@ -127,5 +127,6 @@ app.include_router(scheduled_reports.router,  prefix="/api/scheduled-reports",  
 app.include_router(billing.router,            prefix="/api/billing",            tags=["billing"])
 app.include_router(dashboard.router,          prefix="/api/dashboard",          tags=["dashboard"])
 # Sharing: authenticated endpoints under /api/reports, public under /api/shared
+app.include_router(admin.router,              prefix="/api/admin",              tags=["admin"])
 app.include_router(shared_reports_router,     prefix="/api/reports",            tags=["sharing"])
 app.include_router(shared_public_router,      prefix="/api/shared",             tags=["shared-public"])

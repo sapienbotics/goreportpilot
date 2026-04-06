@@ -108,6 +108,14 @@ function LoginForm() {
                 </div>
               )}
 
+              {callbackError === 'account_disabled' && (
+                <div className="rounded-lg bg-rose-50 border border-rose-200 p-3 text-sm text-rose-700">
+                  Your account has been suspended. Contact{' '}
+                  <a href="mailto:support@goreportpilot.com" className="underline font-medium">support@goreportpilot.com</a>{' '}
+                  for assistance.
+                </div>
+              )}
+
               {/* Form-level error (wrong credentials, unconfirmed email) */}
               {errors.root && (
                 <div className="rounded-lg bg-rose-50 border border-rose-200 p-3 text-sm text-rose-700">
