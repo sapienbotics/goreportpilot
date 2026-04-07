@@ -19,16 +19,16 @@ const colorMap = {
 
 export function StatsCard({ label, value, icon: Icon, color = 'indigo' }: StatsCardProps) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-bold uppercase tracking-wide text-slate-400">{label}</span>
+    <div className="rounded-xl border border-slate-200 bg-white p-3 sm:p-5 shadow-sm">
+      <div className="flex items-center justify-between mb-1 sm:mb-2">
+        <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wide text-slate-400 truncate mr-1">{label}</span>
         {Icon && (
-          <div className={`rounded-lg p-2 ${colorMap[color]}`}>
-            <Icon className="h-4 w-4" />
+          <div className={`rounded-lg p-1.5 sm:p-2 ${colorMap[color]} shrink-0`}>
+            <Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
           </div>
         )}
       </div>
-      <p className="text-2xl font-bold text-slate-900">{value}</p>
+      <p className="text-lg sm:text-2xl font-bold text-slate-900 truncate">{value}</p>
     </div>
   )
 }

@@ -507,9 +507,9 @@ function NotificationsTab({
 
 function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-3 gap-4 items-start">
-      <span className="text-sm font-medium text-slate-500 pt-2">{label}</span>
-      <div className="col-span-2">{children}</div>
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-1 sm:gap-4 items-start">
+      <span className="text-sm font-medium text-slate-500 sm:pt-2">{label}</span>
+      <div className="sm:col-span-2">{children}</div>
     </div>
   )
 }

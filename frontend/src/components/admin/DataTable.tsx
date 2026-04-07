@@ -41,8 +41,8 @@ export function DataTable<T extends Record<string, unknown>>({
   }
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-slate-200">
-      <table className="min-w-full text-sm">
+    <div className="overflow-x-auto -mx-4 sm:mx-0 rounded-lg border border-slate-200">
+      <table className="min-w-[640px] w-full text-sm">
         <thead className="bg-slate-50 border-b border-slate-200">
           <tr>
             {columns.map((col) => (
@@ -89,25 +89,25 @@ export function Pagination({
 }) {
   const totalPages = Math.max(1, Math.ceil(total / limit))
   return (
-    <div className="flex items-center justify-between pt-4 text-sm">
-      <span className="text-slate-400">
-        Showing {Math.min((page - 1) * limit + 1, total)}–{Math.min(page * limit, total)} of {total}
+    <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-4 text-sm">
+      <span className="text-slate-400 text-xs sm:text-sm">
+        {Math.min((page - 1) * limit + 1, total)}–{Math.min(page * limit, total)} of {total}
       </span>
       <div className="flex gap-2">
         <button
           onClick={() => onPageChange(page - 1)}
           disabled={page <= 1}
-          className="rounded-md border border-slate-200 px-3 py-1.5 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+          className="rounded-md border border-slate-200 px-3 py-2 min-h-[44px] sm:min-h-0 sm:py-1.5 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          Previous
+          Prev
         </button>
         <span className="flex items-center px-2 text-slate-500">
-          {page} / {totalPages}
+          {page}/{totalPages}
         </span>
         <button
           onClick={() => onPageChange(page + 1)}
           disabled={page >= totalPages}
-          className="rounded-md border border-slate-200 px-3 py-1.5 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+          className="rounded-md border border-slate-200 px-3 py-2 min-h-[44px] sm:min-h-0 sm:py-1.5 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
         >
           Next
         </button>
