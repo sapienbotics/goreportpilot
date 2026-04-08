@@ -137,8 +137,8 @@ async def _generate_report_internal(
         "text":  report_config.get("custom_section_text",  ""),
     }
 
-    # 2 — Prefer real GA4 data; fall back to mock data
-    from services.mock_data import generate_all_mock_data  # noqa: PLC0415
+    # 2 — Pull real data from connected platforms only.
+    # If a platform is NOT connected, its data is None — no mock/fake data.
 
     # Check for an active GA4 connection for this client
     ga4_conn_result = (
@@ -221,21 +221,29 @@ async def _generate_report_internal(
             )
             meta_data = None
 
-    # Build the combined raw_data dict
-    mock_all = generate_all_mock_data(client["name"], period_start, period_end)
+    # Build raw_data from ONLY real/connected data — no mock data.
+    raw_data: dict = {
+        "client_name": client["name"],
+        "period_start": period_start,
+        "period_end": period_end,
+    }
     if ga4_data is not None:
-        mock_all["ga4"] = ga4_data       # replace GA4 section with real data
+        raw_data["ga4"] = ga4_data
     if meta_data is not None:
-        mock_all["meta_ads"] = meta_data  # replace Meta Ads section with real data
-    raw_data = mock_all
+        raw_data["meta_ads"] = meta_data
+        raw_data["meta_ads"]["currency"] = meta_currency
 
     # Inject ad-hoc CSV sources supplied at generation time
     if csv_sources:
         raw_data["csv_sources"] = csv_sources
 
-    # Always stamp the correct currency on the meta_ads section, even when using mock data,
-    # so charts, AI narrative, and report generators all see the right currency.
-    raw_data.setdefault("meta_ads", {})["currency"] = meta_currency
+    # Require at least one data source
+    has_data = ga4_data is not None or meta_data is not None or bool(csv_sources)
+    if not has_data:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="No data sources connected for this client. Connect GA4, Meta Ads, or upload a CSV before generating a report.",
+        )
 
     # 3 — AI narrative (async I/O)
     # Round all floats before passing to GPT-4o so the AI doesn't copy raw
@@ -997,8 +1005,7 @@ async def regenerate_report(
         "text":  report_config.get("custom_section_text",  ""),
     }
 
-    # 2 — Data pull (real or mock) — same logic as _generate_report_internal
-    from services.mock_data import generate_all_mock_data  # noqa: PLC0415
+    # 2 — Data pull — real connections only, no mock data
 
     ga4_conn_result = (
         supabase.table("connections")
@@ -1067,13 +1074,23 @@ async def regenerate_report(
         except Exception:
             logger.exception("Meta Ads pull failed during regenerate for client %s", client_id)
 
-    mock_all = generate_all_mock_data(client["name"], period_start, period_end)
+    raw_data: dict = {
+        "client_name": client["name"],
+        "period_start": period_start,
+        "period_end": period_end,
+    }
     if ga4_data is not None:
-        mock_all["ga4"] = ga4_data
+        raw_data["ga4"] = ga4_data
     if meta_data is not None:
-        mock_all["meta_ads"] = meta_data
-    raw_data = mock_all
-    raw_data.setdefault("meta_ads", {})["currency"] = meta_currency
+        raw_data["meta_ads"] = meta_data
+        raw_data["meta_ads"]["currency"] = meta_currency
+
+    has_data = ga4_data is not None or meta_data is not None
+    if not has_data:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="No data sources connected. Connect at least one platform to regenerate.",
+        )
 
     # 3 — AI narrative
     from services.ai_narrative import generate_narrative  # noqa: PLC0415

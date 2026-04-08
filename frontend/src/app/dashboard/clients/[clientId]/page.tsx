@@ -160,7 +160,7 @@ export default function ClientDetailPage({ params }: Props) {
   }
 
   const handleDisconnect = async (connectionId: string) => {
-    if (!window.confirm('Remove this connection? Reports will use mock data until reconnected.')) return
+    if (!window.confirm('Remove this connection? Reports will not include this platform\'s data until reconnected.')) return
     setDisconnecting(connectionId)
     try {
       await connectionsApi.delete(connectionId)
@@ -190,7 +190,13 @@ export default function ClientDetailPage({ params }: Props) {
   const [genError,         setGenError]         = useState<string | null>(null)
   const [csvFiles,         setCsvFiles]         = useState<ParsedCSV[]>([])
 
+  const hasDataSources = connections.some(c => c.status === 'active') || csvFiles.length > 0
+
   const handleGenerate = async () => {
+    if (!hasDataSources) {
+      setGenError('Connect at least one data source (GA4, Meta Ads) or upload a CSV to generate a report.')
+      return
+    }
     setGenerating(true); setGenError(null)
     try {
       const report = await reportsApi.generate({
@@ -206,8 +212,11 @@ export default function ClientDetailPage({ params }: Props) {
       toast.success('Report generated successfully')
       router.push(`/dashboard/reports/${report.id}`)
     } catch (err: unknown) {
-      toast.error('Failed to generate report')
-      setGenError(err instanceof Error ? err.message : 'Failed to generate report.')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const detail = (err as any)?.response?.data?.detail
+      const msg = typeof detail === 'string' ? detail : (err instanceof Error ? err.message : 'Failed to generate report.')
+      toast.error(msg)
+      setGenError(msg)
       setGenerating(false)
     }
   }
