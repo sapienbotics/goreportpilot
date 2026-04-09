@@ -131,7 +131,7 @@ async def upload_agency_logo(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="White-label branding (logo upload, custom colors) is available on Pro and Agency plans.",
         )
-    """
+
     # content_type can be None when the browser omits the part Content-Type header
     content_type = (file.content_type or "").split(";")[0].strip().lower()
     if content_type not in _ALLOWED_CONTENT_TYPES:

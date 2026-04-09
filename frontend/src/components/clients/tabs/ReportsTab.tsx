@@ -7,7 +7,6 @@ import {
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { UpgradeBadge } from '@/components/ui/upgrade-badge'
 import { usePlanFeatures } from '@/hooks/usePlanFeatures'
 import RichTextEditor from '@/components/clients/RichTextEditor'
 import CSVUploadForReport, { type ParsedCSV } from '@/components/reports/CSVUploadForReport'
