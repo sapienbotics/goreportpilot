@@ -33,9 +33,9 @@ Legend: ✅ = Yes | ❌ = No | 🔶 = Partial / Add-on | ❓ = Unverified
 | Feature | GoReportPilot | AgencyAnalytics | DashThis | Whatagraph | Swydo | Databox | Reporting Ninja | NinjaCat | Supermetrics | Oviond | Klipfolio | Metrics Watch | Octoboard |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | Automated Report Gen | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | ✅ |
-| AI Narrative / Commentary | ✅ Full multi-paragraph | 🔶 AI Summary widget | 🔶 $19/mo add-on | 🔶 AI chatbot + summaries | ❌ | 🔶 Growth+ plans only | ❌ | ✅ AI Insights Generator | ❌ | 🔶 AI Assistant (BYOK) | 🔶 PowerMetrics AI (Q&A) | ❌ | 🔶 ChatGPT trend analysis |
+| AI Narrative / Commentary | ✅ Full multi-paragraph | 🔶 AI Summary widget | 🔶 $19/mo add-on | 🔶 Whatagraph IQ (summaries + chat) | ✅ Swydo AI (included) | 🔶 Growth+ plans only | ❌ | ✅ AI Insights Generator | ❌ | 🔶 AI Assistant (BYOK) | 🔶 PowerMetrics AI (Q&A) | ❌ | 🔶 ChatGPT trend analysis |
 | AI Tone Control | ✅ 4 presets | ❌ | ✅ (Pro add-on) | ❌ | ❌ | 🔶 Adjustable style | ❌ | ❓ | ❌ | ❓ | ❌ | ❌ | ❌ |
-| Multi-Language AI | ✅ | ❌ | ❓ | ❓ | ❌ | ✅ | ❌ | ❓ | ❌ | ❓ | ❌ | ❌ | ❌ |
+| Multi-Language AI | ✅ | ❌ | ❓ | ❓ | ✅ (Dutch, French, German, Spanish+) | ✅ | ❌ | ❓ | ❌ | ❓ | ❌ | ❌ | ❌ |
 | Report Scheduling | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | ✅ |
 | Templates (count) | 3 | 50+ | 40+ | 100+ | 50+ | 100+ | 10+ | ❓ | N/A | 30+ | N/A | ❓ | 100+ |
 | Drag-and-Drop Builder | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | 🔶 Modular | ✅ | N/A | ✅ | ❌ | ❌ | ✅ |
@@ -80,16 +80,16 @@ Legend: ✅ = Yes | ❌ = No | 🔶 = Partial / Add-on | ❓ = Unverified
 
 ### F. AI Capabilities Deep Dive
 
-| Dimension | GoReportPilot | AgencyAnalytics | DashThis | Databox | NinjaCat | Oviond | Whatagraph |
+| Dimension | GoReportPilot | AgencyAnalytics | DashThis | Databox | Swydo | NinjaCat | Oviond | Whatagraph |
 |---|---|---|---|---|---|---|---|
-| **AI Feature Name** | AI Narrative Engine | Ask AI + AI Summary | AI Insights (Free + Pro) | Generative AI Summaries | AI Insights Generator + AI Agents | AI Assistant | Whatagraph IQ |
-| **What It Generates** | Full multi-paragraph narrative: executive summary, traffic analysis, ad performance, key wins, concerns, next steps | Chart summaries, Q&A answers about data | Summaries, opportunities, wins, issues (4 types, 5-6 paragraphs) | Plain-language performance summaries + recommendations | Narrative summaries within reports | Insights, automated report text | AI chatbot, summaries in text widgets |
-| **Output Length** | 6 sections, multi-paragraph each | 1-2 sentence summaries per widget | 5-6 paragraphs per insight | Adjustable length | ❓ | ❓ | Short summaries |
-| **Tone Control** | ✅ 4 presets (professional, conversational, executive, data-heavy) | ❌ | ✅ (Pro add-on: custom tone, KPIs, goals) | 🔶 Adjustable narrative style | ❓ | ❓ | ❌ |
-| **Edit / Regenerate AI** | ✅ Inline edit + per-section regeneration | ❌ Regenerate only | ❓ | ✅ Regenerated every 6 hours auto | ❓ | ❓ | ❓ |
-| **Included or Add-on** | ✅ Included all plans | 🔶 Agency+ tiers | 🔶 $19/mo add-on for Pro | 🔶 Growth+ plans ($399+) | ✅ Included | 🔶 BYOK on Professional+ | ✅ Included all plans |
-| **AI Model Disclosed** | GPT-4.1 (OpenAI) | Not disclosed | Not disclosed | OpenAI | Not disclosed | OpenAI (BYOK) | Not disclosed |
-| **Client Goals Context** | ✅ Fed to AI prompt | ❌ | ✅ (Dashboard Context in Pro) | ✅ Goals integration | ❓ | ❓ | ❌ |
+| **AI Feature Name** | AI Narrative Engine | Ask AI + AI Summary | AI Insights (Free + Pro) | Generative AI Summaries | Swydo AI | AI Insights Generator + AI Agents | AI Assistant | Whatagraph IQ |
+| **What It Generates** | Full multi-paragraph narrative: executive summary, traffic analysis, ad performance, key wins, concerns, next steps | Chart summaries, Q&A answers about data | Summaries, opportunities, wins, issues (4 types, 5-6 paragraphs) | Plain-language performance summaries + recommendations | Report summaries, goal-based insights, KPI shift detection, Q&A | Narrative summaries within reports | Insights, automated report text | AI chatbot, summaries in text widgets |
+| **Output Length** | 6 sections, multi-paragraph each | 1-2 sentence summaries per widget | 5-6 paragraphs per insight | Adjustable length | Short summaries per section | ❓ | ❓ | Short summaries |
+| **Tone Control** | ✅ 4 presets (professional, conversational, executive, data-heavy) | ❌ | ✅ (Pro add-on: custom tone, KPIs, goals) | 🔶 Adjustable narrative style | ❌ | ❓ | ❓ | ❌ |
+| **Edit / Regenerate AI** | ✅ Inline edit + per-section regeneration | ❌ Regenerate only | ❓ | ✅ Regenerated every 6 hours auto | 🔶 Follow-up Q&A | ❓ | ❓ | ❓ |
+| **Included or Add-on** | ✅ Included all plans | 🔶 Agency+ tiers | 🔶 $19/mo add-on for Pro | 🔶 Growth+ plans ($399+) | ✅ Included all plans | ✅ Included | 🔶 BYOK on Professional+ | ✅ Included all plans |
+| **AI Model Disclosed** | GPT-4.1 (OpenAI) | Not disclosed | Not disclosed | OpenAI | Not disclosed | Not disclosed | OpenAI (BYOK) | Not disclosed |
+| **Client Goals Context** | ✅ Fed to AI prompt | ❌ | ✅ (Dashboard Context in Pro) | ✅ Goals integration | ✅ Compares vs targets | ❓ | ❓ | 🔶 Goals & Alerts feature |
 
 **Sources:** [AgencyAnalytics Ask AI](https://help.agencyanalytics.com/en/articles/9797349-ask-ai) · [DashThis AI Insights Pro](https://help.dashthis.com/understanding-dashthis-ai-insights-free-and-pro) · [Databox Generative AI](https://help.databox.com/overview-databoxs-generative-ai) · [NinjaCat AI Widgets](https://docs.ninjacat.io/docs/using-the-text-heading-ai-insights-generator-widgets)
 
@@ -149,17 +149,17 @@ Legend: ✅ = Yes | ❌ = No | 🔶 = Partial / Add-on | ❓ = Unverified
 
 ---
 
-### Swydo — Threat Level: **LOW-MEDIUM**
+### Swydo — Threat Level: **MEDIUM**
 
-**What they do best:** Clean, professional reports with full white-labeling at all price levels. 32+ integrations with strong PPC platform coverage (including TikTok Ads). All features included at base price — no feature gating. Data blending from up to 5 platforms per widget.
+**What they do best:** Clean, professional reports with full white-labeling at all price levels (custom domain, logo, colors, fonts). 34-50+ integrations with strong PPC coverage (including TikTok Ads). All features included at base price. Data blending from up to 5 platforms per widget. Recently added "Swydo AI" with confirmed multi-language support (Dutch, French, German, Spanish+), goal-based insights, and follow-up Q&A. Reports available in 14 languages via auto-translation.
 
-**What they lack:** No AI features whatsoever. No PPTX export (PDF only). No CSV/Excel export. Per-source pricing escalates quickly — 100 sources = $474/month. No client portal.
+**What they lack:** No PPTX export (PDF only). No CSV/Excel export. Per-source pricing escalates quickly — 100 sources = $474/month. No dedicated client portal (dashboard links only). AI lacks tone control and is less narrative-focused than GoReportPilot (summaries + KPI shifts vs full 6-section narrative).
 
-**Their ideal customer:** PPC agencies that need simple, branded PDF reports and value transparent pricing. We win on AI narrative and PPTX.
+**Their ideal customer:** PPC agencies that need branded, multi-language PDF reports. We win on AI depth (6-section narrative vs summaries), PPTX export, and flat pricing.
 
-**Price-to-feature ratio:** Good for small accounts (10 sources = $69), poor at scale.
+**Price-to-feature ratio:** Good for small accounts (10 sources = $69), poor at scale. Swydo AI closing the feature gap but still no PPTX.
 
-**Sources:** [Swydo Pricing](https://www.swydo.com/pricing/) · [Swydo Review](https://whatagraph.com/reviews/swydo)
+**Sources:** [Swydo Pricing](https://www.swydo.com/pricing/) · [Swydo AI Reporting](https://www.swydo.com/features/ai-reporting/) · [Swydo G2](https://www.g2.com/products/swydo/reviews)
 
 ---
 
