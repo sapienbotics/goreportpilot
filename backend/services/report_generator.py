@@ -311,7 +311,11 @@ def _build_replacements(
         "{{next_steps}}":            _list_to_text(narrative.get("next_steps", "")),
         "{{custom_section_title}}":  (custom_section or {}).get("title", "Additional Notes"),
         "{{custom_section_text}}":   (custom_section or {}).get("text", ""),
-        "{{footer_text}}":           f"{agency_name} \u2022 Confidential \u2022 {report_date}",
+        "{{footer_text}}":           (
+            f"{agency_name} \u2022 Powered by GoReportPilot \u2022 {report_date}"
+            if br.get("powered_by_badge", True)
+            else f"{agency_name} \u2022 Confidential \u2022 {report_date}"
+        ),
         "{{agency_logo}}":           "",  # Cleared — actual image embedded by _embed_logos()
         "{{client_logo}}":           "",  # Cleared — actual image embedded by _embed_logos()
     }
@@ -1804,7 +1808,11 @@ def _generate_pdf_reportlab(
                        textColor=_RL_SLATE_500, fontName=_pdf_body, leading=17, spaceAfter=6),
     ))
     story.append(Paragraph(
-        f"Prepared by {agency_name}  \u2022  Powered by ReportPilot  \u2022  {report_date}",
+        (
+            f"Prepared by {agency_name}  \u2022  Powered by GoReportPilot  \u2022  {report_date}"
+            if _br.get("powered_by_badge", True)
+            else f"Prepared by {agency_name}  \u2022  {report_date}"
+        ),
         ParagraphStyle("RPPrep", parent=ss["Normal"], fontSize=10,
                        textColor=_RL_SLATE_400, fontName=_pdf_body, leading=14, spaceAfter=16),
     ))

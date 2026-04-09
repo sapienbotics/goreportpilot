@@ -8,6 +8,8 @@ import { useRouter } from 'next/navigation'
 import { createBrowserClient } from '@supabase/ssr'
 import { AlertTriangle, Check, Loader2, Upload, User, Palette, Mail, Sparkles, Bell, X } from 'lucide-react'
 import { settingsApi } from '@/lib/api'
+import { usePlanFeatures } from '@/hooks/usePlanFeatures'
+import { UpgradeBadge } from '@/components/ui/upgrade-badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -49,6 +51,9 @@ export default function SettingsPage() {
   const [saving,  setSaving]  = useState(false)
   const [saved,   setSaved]   = useState(false)
   const [saveErr, setSaveErr] = useState<string | null>(null)
+
+  // Plan features
+  const { features: planFeatures } = usePlanFeatures()
 
   // Logo upload
   const logoInputRef    = useRef<HTMLInputElement>(null)
@@ -183,9 +188,17 @@ export default function SettingsPage() {
       {activeTab === 'branding' && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base text-slate-700">Agency Branding</CardTitle>
+            <CardTitle className="text-base text-slate-700 flex items-center gap-2">
+              Agency Branding
+              {!planFeatures.white_label && <UpgradeBadge label="Pro plan required" variant="pill" />}
+            </CardTitle>
           </CardHeader>
           <CardContent>
+            {!planFeatures.white_label && (
+              <div className="mb-4 rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
+                White-label branding (logo, colors) is available on Pro and Agency plans. Your reports will show &quot;Powered by GoReportPilot&quot; on the Starter plan.
+              </div>
+            )}
             <BrandingTab
               agencyName={str('agency_name')}
               agencyWebsite={str('agency_website')}
@@ -226,10 +239,16 @@ export default function SettingsPage() {
             <CardTitle className="text-base text-slate-700">AI Preferences</CardTitle>
           </CardHeader>
           <CardContent>
+            {planFeatures.ai_tones.length <= 1 && (
+              <div className="mb-4 rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800 flex items-center gap-2">
+                Starter plan includes Professional tone only. <UpgradeBadge label="Unlock all 4 tones" variant="pill" />
+              </div>
+            )}
             <AITab
               defaultTone={str('default_ai_tone') || 'professional'}
               onSave={(fields) => save(fields)}
               saving={saving}
+              allowedTones={planFeatures.ai_tones}
             />
           </CardContent>
         </Card>
@@ -532,10 +551,11 @@ function EmailTab({
 
 function AITab({
   defaultTone,
-  onSave, saving,
+  onSave, saving, allowedTones,
 }: {
   defaultTone: string
   onSave: (f: Record<string, unknown>) => void; saving: boolean
+  allowedTones?: string[]
 }) {
   const [tone, setTone] = useState(defaultTone)
 
@@ -550,9 +570,14 @@ function AITab({
           onChange={(e) => setTone(e.target.value)}
           className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
         >
-          {AI_TONES.map((t) => (
-            <option key={t.value} value={t.value}>{t.label}</option>
-          ))}
+          {AI_TONES.map((t) => {
+            const locked = allowedTones && !allowedTones.includes(t.value)
+            return (
+              <option key={t.value} value={t.value} disabled={locked}>
+                {t.label}{locked ? ' (Pro)' : ''}
+              </option>
+            )
+          })}
         </select>
       </FieldRow>
       <SaveButton

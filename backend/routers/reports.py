@@ -12,6 +12,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse
 
 from middleware.auth import get_current_user_id
+from middleware.plan_enforcement import get_user_subscription, can_use_feature
+from services.plans import get_plan
 from models.schemas import (
     ReportGenerateRequest,
     ReportListItem,
@@ -130,6 +132,23 @@ async def _generate_report_internal(
     if not client_result.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
     client = client_result.data
+
+    # 1a — Plan enforcement: clamp AI tone and visual template to allowed values
+    sub = get_user_subscription(user_id)
+    user_plan = sub.get("plan", "trial")
+    plan_cfg = get_plan(user_plan)
+    plan_features = plan_cfg.get("features", {})
+
+    allowed_tones = plan_features.get("ai_tones", ["professional"])
+    client_tone = client.get("ai_tone", "professional")
+    if client_tone not in allowed_tones:
+        client["ai_tone"] = allowed_tones[0]  # override to first allowed tone
+
+    allowed_templates = plan_features.get("visual_templates", ["modern_clean"])
+    if visual_template not in allowed_templates:
+        visual_template = allowed_templates[0]  # override to first allowed template
+
+    show_powered_by = plan_features.get("powered_by_badge", True)
 
     # 1b — Read report_config (section toggles, KPI selection, template, custom section)
     report_config: dict = client.get("report_config") or {}
@@ -270,11 +289,15 @@ async def _generate_report_internal(
         .execute()
     )
     _profile = profile_result.data or {}
+
+    # White-label enforcement: Starter plan gets no custom branding
+    has_white_label = plan_features.get("white_label", False)
     branding = {
-        "agency_name":     (_profile.get("agency_name") or "").strip() or "Your Agency",
-        "agency_logo_url": _profile.get("agency_logo_url") or "",
-        "brand_color":     _profile.get("brand_color") or "#4338CA",
-        "client_logo_url": client.get("logo_url") or "",
+        "agency_name":     ((_profile.get("agency_name") or "").strip() or "Your Agency") if has_white_label else "Your Agency",
+        "agency_logo_url": (_profile.get("agency_logo_url") or "") if has_white_label else "",
+        "brand_color":     (_profile.get("brand_color") or "#4338CA") if has_white_label else "#4338CA",
+        "client_logo_url": (client.get("logo_url") or "") if has_white_label else "",
+        "powered_by_badge": show_powered_by,
     }
 
     # 5 — Generate charts (sync, run in thread pool)
@@ -552,6 +575,14 @@ async def download_pptx(
     user_id: str = Depends(get_current_user_id),
 ) -> FileResponse:
     """Download the PowerPoint (.pptx) file for a report."""
+    # Plan check: PPTX export is Pro+ only
+    allowed, reason = can_use_feature(user_id, "pptx_export")
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="PPTX export is available on Pro and Agency plans. Upgrade to download PowerPoint files.",
+        )
+
     supabase = get_supabase_admin()
     result = (
         supabase.table("reports")

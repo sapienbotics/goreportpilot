@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from config import settings as app_settings
 from middleware.auth import get_current_user_id
+from middleware.plan_enforcement import can_use_feature
 from models.schemas import ProfileUpdate
 from services.supabase_client import get_supabase_admin
 
@@ -120,6 +121,16 @@ async def upload_agency_logo(
     Upload an agency logo image.
     Saves to backend/static/logos/agencies/{user_id}/ and serves via /static.
     Updates profiles.agency_logo_url with the public URL.
+
+    Requires Pro or Agency plan (white_label feature).
+    """
+    # Plan check: white-labeling requires Pro+
+    allowed, reason = can_use_feature(user_id, "white_label")
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="White-label branding (logo upload, custom colors) is available on Pro and Agency plans.",
+        )
     """
     # content_type can be None when the browser omits the part Content-Type header
     content_type = (file.content_type or "").split(";")[0].strip().lower()

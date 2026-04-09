@@ -16,6 +16,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import type { Report } from '@/types'
+import { usePlanFeatures } from '@/hooks/usePlanFeatures'
+import { UpgradeBadge } from '@/components/ui/upgrade-badge'
 import ShareReportDialog from '@/components/reports/ShareReportDialog'
 import ViewAnalytics from '@/components/reports/ViewAnalytics'
 
@@ -414,6 +416,7 @@ export default function ReportDetailPage() {
   const params  = useParams<{ reportId: string }>()
   const reportId = params.reportId
 
+  const { features: planFeatures } = usePlanFeatures()
   const [report,          setReport]        = useState<Report | null>(null)
   const [loading,         setLoading]       = useState(true)
   const [error,           setError]         = useState<string | null>(null)
@@ -630,14 +633,22 @@ export default function ReportDetailPage() {
             <Share2 className="h-4 w-4" />
             Share
           </button>
-          <button
-            onClick={handleDownloadPptx}
-            disabled={dlPptx}
-            className="inline-flex items-center gap-2 rounded-lg bg-indigo-700 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-800 transition-colors disabled:opacity-60"
-          >
-            {dlPptx ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-            PPTX
-          </button>
+          {planFeatures.pptx_export ? (
+            <button
+              onClick={handleDownloadPptx}
+              disabled={dlPptx}
+              className="inline-flex items-center gap-2 rounded-lg bg-indigo-700 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-800 transition-colors disabled:opacity-60"
+            >
+              {dlPptx ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              PPTX
+            </button>
+          ) : (
+            <span className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-400">
+              <Download className="h-4 w-4" />
+              PPTX
+              <UpgradeBadge label="Pro" variant="pill" />
+            </span>
+          )}
           {report.pdf_url !== null && report.pdf_url !== undefined ? (
             <button
               onClick={handleDownloadPdf}

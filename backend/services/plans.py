@@ -30,8 +30,7 @@ PLANS = {
             "pptx_export": False,  # PDF only
             "pdf_export": True,
             "white_label": False,
-            "scheduling": True,  # Monthly only
-            "scheduling_frequencies": ["monthly"],
+            "scheduling": False,  # Pro+ only
             "ai_tones": ["professional"],
             "templates": ["full"],
             "visual_templates": ["modern_clean"],

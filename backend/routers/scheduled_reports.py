@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from middleware.auth import get_current_user_id
+from middleware.plan_enforcement import can_use_feature
 from models.schemas import (
     ScheduledReportCreate,
     ScheduledReportResponse,
@@ -94,6 +95,14 @@ async def create_schedule(
     user_id: str = Depends(get_current_user_id),
 ) -> ScheduledReportResponse:
     """Create an automated report schedule for a client."""
+    # Plan check: scheduling requires Pro or Agency
+    allowed, reason = can_use_feature(user_id, "scheduling")
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Scheduled reports are available on Pro and Agency plans. Upgrade to automate report delivery.",
+        )
+
     supabase = get_supabase_admin()
 
     # Verify client ownership

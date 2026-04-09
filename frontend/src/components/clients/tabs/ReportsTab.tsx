@@ -3,10 +3,12 @@ import { useState, useMemo } from 'react'
 import Link from 'next/link'
 import {
   FileText, Sparkles, Calendar, ChevronRight, Settings2,
-  Check, Loader2, Image as ImageIcon, Search, X as XIcon, Upload,
+  Check, Loader2, Image as ImageIcon, Search, X as XIcon, Upload, Lock,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { UpgradeBadge } from '@/components/ui/upgrade-badge'
+import { usePlanFeatures } from '@/hooks/usePlanFeatures'
 import RichTextEditor from '@/components/clients/RichTextEditor'
 import CSVUploadForReport, { type ParsedCSV } from '@/components/reports/CSVUploadForReport'
 import type { Report, ReportConfig } from '@/types'
@@ -54,6 +56,7 @@ export default function ReportsTab({
   csvFiles, setCsvFiles,
   handleGenerate, handleSaveConfig, handleCustomSectionImageUpload,
 }: Props) {
+  const { features: planFeatures } = usePlanFeatures()
   const [showCsvUpload, setShowCsvUpload] = useState(false)
 
   function removeCsv(index: number) {
@@ -131,18 +134,32 @@ export default function ReportsTab({
                     { value: 'bold_geometric' as const, label: 'Bold Geometric', desc: 'Strong shapes & impact', colors: ['#4338CA', '#3730A3', '#FFFFFF'] },
                     { value: 'minimal_elegant' as const, label: 'Minimal Elegant', desc: 'Ultra-clean whitespace', colors: ['#0F172A', '#FFFFFF', '#E2E8F0'] },
                     { value: 'gradient_modern' as const, label: 'Gradient Modern', desc: 'Warm startup aesthetic', colors: ['#F97316', '#F43F5E', '#8B5CF6'] },
-                  ]).map(opt => (
-                    <button key={opt.value} onClick={() => setVisualTemplate(opt.value)}
-                      className={`flex flex-col items-start px-3 py-2.5 rounded-lg border text-left transition-colors ${visualTemplate === opt.value ? 'bg-indigo-700 border-indigo-700 text-white' : 'bg-white border-slate-200 text-slate-700 hover:border-indigo-300 hover:bg-indigo-50'}`}>
-                      <div className="flex items-center gap-2 mb-1">
-                        <div className="flex -space-x-0.5">
-                          {opt.colors.map((c, i) => <div key={i} className="w-3 h-3 rounded-full border border-white/50" style={{ backgroundColor: c }} />)}
+                  ]).map(opt => {
+                    const isLocked = !planFeatures.visual_templates.includes(opt.value)
+                    return (
+                      <button key={opt.value}
+                        onClick={() => !isLocked && setVisualTemplate(opt.value)}
+                        disabled={isLocked}
+                        className={`flex flex-col items-start px-3 py-2.5 rounded-lg border text-left transition-colors ${
+                          isLocked
+                            ? 'bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed opacity-60'
+                            : visualTemplate === opt.value
+                            ? 'bg-indigo-700 border-indigo-700 text-white'
+                            : 'bg-white border-slate-200 text-slate-700 hover:border-indigo-300 hover:bg-indigo-50'
+                        }`}>
+                        <div className="flex items-center gap-2 mb-1">
+                          <div className="flex -space-x-0.5">
+                            {opt.colors.map((c, i) => <div key={i} className="w-3 h-3 rounded-full border border-white/50" style={{ backgroundColor: c }} />)}
+                          </div>
+                          <span className="text-sm font-semibold">{opt.label}</span>
+                          {isLocked && <Lock className="h-3 w-3 text-amber-500" />}
                         </div>
-                        <span className="text-sm font-semibold">{opt.label}</span>
-                      </div>
-                      <span className={`text-xs ${visualTemplate === opt.value ? 'text-indigo-200' : 'text-slate-400'}`}>{opt.desc}</span>
-                    </button>
-                  ))}
+                        <span className={`text-xs ${isLocked ? 'text-slate-400' : visualTemplate === opt.value ? 'text-indigo-200' : 'text-slate-400'}`}>
+                          {isLocked ? 'Upgrade to Pro' : opt.desc}
+                        </span>
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
 
