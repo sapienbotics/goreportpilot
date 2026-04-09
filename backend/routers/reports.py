@@ -1268,6 +1268,11 @@ async def regenerate_report(
 
     # Trial watermark for regenerated reports
     regen_sub = get_user_subscription(user_id)
+    if regen_sub.get("status") in ("expired", "cancelled"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your subscription has expired. Please upgrade to continue generating reports.",
+        )
     if regen_sub.get("status") == "trialing":
         from pptx import Presentation as _Prs  # noqa: PLC0415
         from services.report_generator import add_trial_watermark  # noqa: PLC0415
