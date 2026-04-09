@@ -98,7 +98,19 @@ export default function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-3">4. Acceptable Use</h2>
+            <h2 className="text-xl font-semibold text-slate-900 mb-3">4. Delivery Policy</h2>
+            <p>
+              GoReportPilot is a digital SaaS (Software as a Service) product. All services are delivered
+              digitally via the web platform at goreportpilot.com. Upon successful subscription payment,
+              access to the subscribed plan features is granted instantly — no physical shipping or delivery
+              is involved. Generated reports (PowerPoint and PDF) are available for immediate download and
+              email delivery through the platform. There are no shipping charges, delivery timelines, or
+              courier services associated with this product.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-xl font-semibold text-slate-900 mb-3">5. Acceptable Use</h2>
             <p>You agree not to:</p>
             <ul className="list-disc pl-5 space-y-2 mt-2">
               <li>Use the service for any illegal purpose or in violation of any applicable laws.</li>
@@ -113,7 +125,7 @@ export default function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-3">5. Data Ownership</h2>
+            <h2 className="text-xl font-semibold text-slate-900 mb-3">6. Data Ownership</h2>
             <ul className="list-disc pl-5 space-y-2">
               <li>
                 <strong>Your data:</strong> You retain full ownership of all data you bring into ReportPilot —
@@ -132,7 +144,7 @@ export default function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-3">6. Third-Party Integrations</h2>
+            <h2 className="text-xl font-semibold text-slate-900 mb-3">7. Third-Party Integrations</h2>
             <p>
               ReportPilot connects to Google Analytics and Meta Ads via OAuth. By connecting these integrations,
               you authorize ReportPilot to read data from those platforms on your behalf.
@@ -152,7 +164,7 @@ export default function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-3">7. Limitation of Liability</h2>
+            <h2 className="text-xl font-semibold text-slate-900 mb-3">8. Limitation of Liability</h2>
             <p>
               The service is provided <strong>&quot;as is&quot;</strong> without warranties of any kind, express or
               implied.
@@ -176,7 +188,7 @@ export default function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-3">8. Termination</h2>
+            <h2 className="text-xl font-semibold text-slate-900 mb-3">9. Termination</h2>
             <ul className="list-disc pl-5 space-y-2">
               <li>
                 <strong>By you:</strong> You may cancel your subscription and delete your account at any time
@@ -194,7 +206,7 @@ export default function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-3">9. Changes to These Terms</h2>
+            <h2 className="text-xl font-semibold text-slate-900 mb-3">10. Changes to These Terms</h2>
             <p>
               We may update these Terms of Service from time to time. We will notify you by email at least
               30 days before material changes take effect. Continued use of the service after the effective
@@ -203,7 +215,7 @@ export default function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-3">10. Governing Law</h2>
+            <h2 className="text-xl font-semibold text-slate-900 mb-3">11. Governing Law</h2>
             <p>
               These terms are governed by and construed in accordance with the laws of India. Any disputes
               shall be subject to the exclusive jurisdiction of the courts in Bareilly, Uttar Pradesh, India.
@@ -211,7 +223,7 @@ export default function TermsPage() {
           </section>
 
           <section>
-            <h2 className="text-xl font-semibold text-slate-900 mb-3">11. Contact</h2>
+            <h2 className="text-xl font-semibold text-slate-900 mb-3">12. Contact</h2>
             <address className="not-italic">
               <strong>SapienBotics</strong><br />
               Bareilly, Uttar Pradesh, India<br />
