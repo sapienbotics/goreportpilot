@@ -127,6 +127,21 @@ async def _generate_report_internal(
             detail="Your subscription has expired. Please upgrade to continue generating reports.",
         )
 
+    # 0a — Trial report limit (5 reports during free trial)
+    if sub.get("status") == "trialing":
+        report_count_resp = (
+            supabase.table("reports")
+            .select("id", count="exact")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        trial_report_count = report_count_resp.count if report_count_resp.count is not None else 0
+        if trial_report_count >= 5:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You've used all 5 trial reports. Upgrade to a paid plan for unlimited reports.",
+            )
+
     # 1 — Verify client ownership
     client_result = (
         supabase.table("clients")

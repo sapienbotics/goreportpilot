@@ -479,6 +479,8 @@ export interface SubscriptionStatus {
   current_period_end: string | null
   trial_ends_at: string | null
   trial_days_remaining: number | null
+  trial_reports_used: number
+  trial_reports_limit: number
   cancelled_at: string | null
   cancel_at_period_end: boolean
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

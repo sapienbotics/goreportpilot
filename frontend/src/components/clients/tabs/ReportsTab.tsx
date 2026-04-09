@@ -55,8 +55,10 @@ export default function ReportsTab({
   csvFiles, setCsvFiles,
   handleGenerate, handleSaveConfig, handleCustomSectionImageUpload,
 }: Props) {
-  const { features: planFeatures, status: subStatus } = usePlanFeatures()
+  const { features: planFeatures, status: subStatus, trialReportsUsed, trialReportsLimit } = usePlanFeatures()
   const isExpired = subStatus === 'expired' || subStatus === 'cancelled'
+  const isTrialing = subStatus === 'trialing'
+  const trialLimitReached = isTrialing && trialReportsUsed >= trialReportsLimit
   const [showCsvUpload, setShowCsvUpload] = useState(false)
 
   function removeCsv(index: number) {
@@ -220,12 +222,24 @@ export default function ReportsTab({
                   <Lock className="h-4 w-4 shrink-0" />
                   Trial expired — <a href="/dashboard/billing" className="font-semibold underline hover:text-rose-800">upgrade to generate reports</a>
                 </div>
+              ) : trialLimitReached ? (
+                <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-700 flex items-center gap-2">
+                  <Lock className="h-4 w-4 shrink-0" />
+                  You&apos;ve used all {trialReportsLimit} trial reports — <a href="/dashboard/billing" className="font-semibold underline hover:text-amber-800">upgrade for unlimited reports</a>
+                </div>
               ) : (
-                <button onClick={handleGenerate} disabled={!periodStart || !periodEnd}
-                  className="inline-flex items-center gap-2 rounded-lg bg-indigo-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-800 transition-colors disabled:opacity-50">
-                  <Sparkles className="h-4 w-4" />
-                  Generate Report with AI
-                </button>
+                <div className="flex items-center gap-3">
+                  <button onClick={handleGenerate} disabled={!periodStart || !periodEnd}
+                    className="inline-flex items-center gap-2 rounded-lg bg-indigo-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-800 transition-colors disabled:opacity-50">
+                    <Sparkles className="h-4 w-4" />
+                    Generate Report with AI
+                  </button>
+                  {isTrialing && (
+                    <span className="text-xs text-slate-400">
+                      {trialReportsUsed}/{trialReportsLimit} trial reports used
+                    </span>
+                  )}
+                </div>
               )}
             </div>
           )}

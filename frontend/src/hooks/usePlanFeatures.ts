@@ -27,9 +27,17 @@ const DEFAULT_FEATURES: PlanFeatures = {
  * Fetch the current user's plan features.
  * Returns generous defaults (trial-level) while loading to avoid flash of locked state.
  */
-export function usePlanFeatures(): { features: PlanFeatures; status: string; loading: boolean } {
+export function usePlanFeatures(): {
+  features: PlanFeatures
+  status: string
+  trialReportsUsed: number
+  trialReportsLimit: number
+  loading: boolean
+} {
   const [features, setFeatures] = useState<PlanFeatures>(DEFAULT_FEATURES)
   const [status, setStatus] = useState<string>('trialing')
+  const [trialReportsUsed, setTrialReportsUsed] = useState(0)
+  const [trialReportsLimit, setTrialReportsLimit] = useState(5)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -37,6 +45,8 @@ export function usePlanFeatures(): { features: PlanFeatures; status: string; loa
       .getSubscription()
       .then((sub) => {
         setStatus(sub.status)
+        setTrialReportsUsed(sub.trial_reports_used ?? 0)
+        setTrialReportsLimit(sub.trial_reports_limit ?? 5)
         const f = (sub.features ?? {}) as Record<string, unknown>
         setFeatures({
           plan: sub.plan,
@@ -55,5 +65,5 @@ export function usePlanFeatures(): { features: PlanFeatures; status: string; loa
       .finally(() => setLoading(false))
   }, [])
 
-  return { features, status, loading }
+  return { features, status, trialReportsUsed, trialReportsLimit, loading }
 }

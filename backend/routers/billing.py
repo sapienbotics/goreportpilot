@@ -96,6 +96,8 @@ async def get_subscription(user_id: str = Depends(get_current_user_id)) -> dict:
 
     trial_ends_at = sub.get("trial_ends_at")
     trial_days_remaining = None
+    trial_reports_used = 0
+    trial_reports_limit = 5
     if trial_ends_at and sub.get("status") == "trialing":
         try:
             trial_end_dt = datetime.fromisoformat(trial_ends_at.replace("Z", "+00:00"))
@@ -104,6 +106,14 @@ async def get_subscription(user_id: str = Depends(get_current_user_id)) -> dict:
             trial_days_remaining = max(0, delta.days)
         except Exception:
             pass
+        # Count reports generated during trial
+        report_count_result = (
+            supabase.table("reports")
+            .select("id", count="exact")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        trial_reports_used = report_count_result.count or 0
 
     return {
         "plan": plan_name,
@@ -116,6 +126,8 @@ async def get_subscription(user_id: str = Depends(get_current_user_id)) -> dict:
         "current_period_end": sub.get("current_period_end"),
         "trial_ends_at": trial_ends_at,
         "trial_days_remaining": trial_days_remaining,
+        "trial_reports_used": trial_reports_used,
+        "trial_reports_limit": trial_reports_limit,
         "cancelled_at": sub.get("cancelled_at"),
         "cancel_at_period_end": sub.get("cancel_at_period_end", False),
         "features": plan_cfg.get("features", {}),
