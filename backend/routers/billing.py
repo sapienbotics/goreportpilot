@@ -23,15 +23,29 @@ router = APIRouter()
 
 
 def get_plan_from_razorpay_plan_id(razorpay_plan_id: str) -> tuple[str, str]:
-    """Returns (plan_name, billing_cycle) from Razorpay plan ID."""
-    plan_map = {
-        settings.RAZORPAY_PLAN_STARTER_MONTHLY: ("starter", "monthly"),
-        settings.RAZORPAY_PLAN_STARTER_ANNUAL: ("starter", "annual"),
-        settings.RAZORPAY_PLAN_PRO_MONTHLY: ("pro", "monthly"),
-        settings.RAZORPAY_PLAN_PRO_ANNUAL: ("pro", "annual"),
-        settings.RAZORPAY_PLAN_AGENCY_MONTHLY: ("agency", "monthly"),
-        settings.RAZORPAY_PLAN_AGENCY_ANNUAL: ("agency", "annual"),
-    }
+    """Returns (plan_name, billing_cycle) from Razorpay plan ID.
+
+    Covers all 12 plan IDs: 6 INR + 6 USD.
+    """
+    plan_map: dict[str, tuple[str, str]] = {}
+    # INR plans
+    for pid, val in [
+        (settings.RAZORPAY_PLAN_STARTER_MONTHLY, ("starter", "monthly")),
+        (settings.RAZORPAY_PLAN_STARTER_ANNUAL, ("starter", "annual")),
+        (settings.RAZORPAY_PLAN_PRO_MONTHLY, ("pro", "monthly")),
+        (settings.RAZORPAY_PLAN_PRO_ANNUAL, ("pro", "annual")),
+        (settings.RAZORPAY_PLAN_AGENCY_MONTHLY, ("agency", "monthly")),
+        (settings.RAZORPAY_PLAN_AGENCY_ANNUAL, ("agency", "annual")),
+        # USD plans
+        (settings.RAZORPAY_PLAN_STARTER_MONTHLY_USD, ("starter", "monthly")),
+        (settings.RAZORPAY_PLAN_STARTER_ANNUAL_USD, ("starter", "annual")),
+        (settings.RAZORPAY_PLAN_PRO_MONTHLY_USD, ("pro", "monthly")),
+        (settings.RAZORPAY_PLAN_PRO_ANNUAL_USD, ("pro", "annual")),
+        (settings.RAZORPAY_PLAN_AGENCY_MONTHLY_USD, ("agency", "monthly")),
+        (settings.RAZORPAY_PLAN_AGENCY_ANNUAL_USD, ("agency", "annual")),
+    ]:
+        if pid:  # skip empty env vars
+            plan_map[pid] = val
     return plan_map.get(razorpay_plan_id, ("trial", "monthly"))
 
 
@@ -42,6 +56,7 @@ def get_plan_from_razorpay_plan_id(razorpay_plan_id: str) -> tuple[str, str]:
 class CreateSubscriptionPayload(BaseModel):
     plan: str
     billing_cycle: str = "monthly"
+    currency: str = "INR"  # "INR" or "USD"
 
 
 class VerifyPaymentPayload(BaseModel):
@@ -53,6 +68,7 @@ class VerifyPaymentPayload(BaseModel):
 class ChangePlanPayload(BaseModel):
     plan: str
     billing_cycle: str = "monthly"
+    currency: str = "INR"
 
 
 # ---------------------------------------------------------------------------
@@ -105,6 +121,12 @@ async def get_subscription(user_id: str = Depends(get_current_user_id)) -> dict:
         "features": plan_cfg.get("features", {}),
         "can_create_client": client_count < client_limit and sub.get("status") not in ("expired", "cancelled"),
         "razorpay_subscription_id": sub.get("razorpay_subscription_id"),
+        "pricing": {
+            "monthly_inr": plan_cfg.get("monthly_price_inr"),
+            "annual_inr": plan_cfg.get("annual_price_inr"),
+            "monthly_usd": plan_cfg.get("monthly_price_usd"),
+            "annual_usd": plan_cfg.get("annual_price_usd"),
+        },
     }
 
 
@@ -127,9 +149,12 @@ async def create_subscription(
         raise HTTPException(status_code=400, detail="Invalid plan")
     if payload.billing_cycle not in ("monthly", "annual"):
         raise HTTPException(status_code=400, detail="Invalid billing cycle")
+    if payload.currency not in ("INR", "USD"):
+        raise HTTPException(status_code=400, detail="Invalid currency. Use INR or USD.")
 
-    # Determine Razorpay plan ID from env
-    plan_key = f"RAZORPAY_PLAN_{payload.plan.upper()}_{payload.billing_cycle.upper()}"
+    # Determine Razorpay plan ID from env — use USD suffixed keys when currency is USD
+    usd_suffix = "_USD" if payload.currency == "USD" else ""
+    plan_key = f"RAZORPAY_PLAN_{payload.plan.upper()}_{payload.billing_cycle.upper()}{usd_suffix}"
     razorpay_plan_id = getattr(settings, plan_key, "") or ""
     if not razorpay_plan_id:
         raise HTTPException(

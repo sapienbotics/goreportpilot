@@ -21,11 +21,11 @@ PLANS = {
     },
     "starter": {
         "display_name": "Starter",
-        "monthly_price_inr": 1599,   # ~$19
-        "annual_price_inr": 15350,   # ~$185/yr ($15.4/mo)
+        "monthly_price_inr": 999,
+        "annual_price_inr": 9599,
         "monthly_price_usd": 19,
-        "annual_price_usd": 185,
-        "client_limit": 3,
+        "annual_price_usd": 182,
+        "client_limit": 5,
         "features": {
             "pptx_export": False,  # PDF only
             "pdf_export": True,
@@ -40,11 +40,11 @@ PLANS = {
     },
     "pro": {
         "display_name": "Pro",
-        "monthly_price_inr": 3299,   # ~$39
-        "annual_price_inr": 31670,   # ~$380/yr ($31.7/mo)
+        "monthly_price_inr": 1999,
+        "annual_price_inr": 19199,
         "monthly_price_usd": 39,
-        "annual_price_usd": 380,
-        "client_limit": 10,
+        "annual_price_usd": 374,
+        "client_limit": 15,
         "features": {
             "pptx_export": True,
             "pdf_export": True,
@@ -59,11 +59,11 @@ PLANS = {
     },
     "agency": {
         "display_name": "Agency",
-        "monthly_price_inr": 5799,   # ~$69
-        "annual_price_inr": 55670,   # ~$668/yr ($55.7/mo)
+        "monthly_price_inr": 3499,
+        "annual_price_inr": 33599,
         "monthly_price_usd": 69,
-        "annual_price_usd": 668,
-        "client_limit": 25,
+        "annual_price_usd": 662,
+        "client_limit": 999,  # effectively unlimited
         "features": {
             "pptx_export": True,
             "pdf_export": True,

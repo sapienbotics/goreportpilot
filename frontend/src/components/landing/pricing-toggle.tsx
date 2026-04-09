@@ -1,64 +1,136 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Check } from 'lucide-react'
 
-const PLANS = [
+// ---------------------------------------------------------------------------
+// Plan data — mirrors backend services/plans.py pricing
+// ---------------------------------------------------------------------------
+
+interface PlanDef {
+  name: string
+  monthlyINR: number
+  annualINR: number
+  monthlyUSD: number
+  annualUSD: number
+  description: string
+  features: string[]
+  cta: string
+  popular: boolean
+}
+
+const PLANS: PlanDef[] = [
   {
     name: 'Starter',
-    monthly: 19,
-    annual: 15,
+    monthlyINR: 999,
+    annualINR: 9599,
+    monthlyUSD: 19,
+    annualUSD: 182,
     description: 'For freelancers getting started with automation.',
     features: [
-      'Up to 3 clients',
+      'Up to 5 clients',
       'Google Analytics + Meta Ads',
       'AI narrative insights',
       'PDF export',
-      'Monthly scheduling',
+      'Email delivery',
     ],
     cta: 'Start Free Trial',
     popular: false,
   },
   {
     name: 'Pro',
-    monthly: 39,
-    annual: 31,
+    monthlyINR: 1999,
+    annualINR: 19199,
+    monthlyUSD: 39,
+    annualUSD: 374,
     description: 'For growing agencies managing multiple clients.',
     features: [
-      'Up to 10 clients',
+      'Up to 15 clients',
       'Google Ads integration',
-      'PowerPoint export',
+      'PowerPoint + PDF export',
       'White-label branding',
-      'Weekly + Monthly scheduling',
+      'Scheduled reports',
+      'All 4 AI tones',
     ],
     cta: 'Start Free Trial',
     popular: true,
   },
   {
     name: 'Agency',
-    monthly: 69,
-    annual: 55,
+    monthlyINR: 3499,
+    annualINR: 33599,
+    monthlyUSD: 69,
+    annualUSD: 662,
     description: 'For established agencies at scale.',
     features: [
-      'Up to 25 clients',
+      'Unlimited clients',
       'All integrations',
       'Custom report templates',
       'Priority support',
-      'Any frequency scheduling',
+      'API access',
+      'Team members',
     ],
     cta: 'Start Free Trial',
     popular: false,
   },
 ]
 
+// ---------------------------------------------------------------------------
+// Currency detection helper
+// ---------------------------------------------------------------------------
+
+function detectCurrency(): 'INR' | 'USD' {
+  if (typeof navigator === 'undefined') return 'USD'
+  const lang = navigator.language || ''
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''
+    if (
+      lang.startsWith('hi') ||
+      tz.includes('Calcutta') ||
+      tz.includes('Kolkata')
+    ) {
+      return 'INR'
+    }
+  } catch {
+    // Intl not available — fall through
+  }
+  return 'USD'
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
 export default function PricingToggle() {
   const [annual, setAnnual] = useState(false)
+  const [currency, setCurrency] = useState<'INR' | 'USD'>('USD')
+
+  // Detect currency on mount (client-side only)
+  useEffect(() => {
+    setCurrency(detectCurrency())
+  }, [])
+
+  const isINR = currency === 'INR'
+
+  const fmtPrice = (plan: PlanDef) => {
+    if (isINR) {
+      const price = annual ? Math.round(plan.annualINR / 12) : plan.monthlyINR
+      return `\u20B9${price.toLocaleString('en-IN')}`
+    }
+    const price = annual ? Math.round(plan.annualUSD / 12) : plan.monthlyUSD
+    return `$${price}`
+  }
+
+  const fmtAnnualTotal = (plan: PlanDef) => {
+    if (isINR) return `\u20B9${plan.annualINR.toLocaleString('en-IN')}/yr`
+    return `$${plan.annualUSD}/yr`
+  }
 
   return (
     <div>
-      {/* Toggle */}
-      <div className="flex items-center justify-center gap-3 mt-8 mb-10">
+      {/* Billing toggle */}
+      <div className="flex items-center justify-center gap-3 mt-8 mb-4">
         <span className={`text-sm font-medium ${!annual ? 'text-slate-900' : 'text-slate-400'}`}>Monthly</span>
         <button
           onClick={() => setAnnual((v) => !v)}
@@ -81,6 +153,27 @@ export default function PricingToggle() {
             Save 20%
           </span>
         </span>
+      </div>
+
+      {/* Currency toggle */}
+      <div className="flex items-center justify-center gap-2 mb-10">
+        <button
+          onClick={() => setCurrency('INR')}
+          className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+            isINR ? 'bg-indigo-100 text-indigo-700' : 'text-slate-400 hover:text-slate-600'
+          }`}
+        >
+          INR
+        </button>
+        <span className="text-slate-300">|</span>
+        <button
+          onClick={() => setCurrency('USD')}
+          className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+            !isINR ? 'bg-indigo-100 text-indigo-700' : 'text-slate-400 hover:text-slate-600'
+          }`}
+        >
+          USD
+        </button>
       </div>
 
       {/* Cards */}
@@ -111,13 +204,13 @@ export default function PricingToggle() {
                   className={`text-4xl font-extrabold ${plan.popular ? 'text-white' : 'text-slate-900'}`}
                   style={{ fontFamily: 'var(--font-plus-jakarta-sans)' }}
                 >
-                  ${annual ? plan.annual : plan.monthly}
+                  {fmtPrice(plan)}
                 </span>
                 <span className={`mb-1 text-sm ${plan.popular ? 'text-indigo-300' : 'text-slate-400'}`}>/mo</span>
               </div>
               {annual && (
                 <p className={`mt-0.5 text-xs ${plan.popular ? 'text-indigo-300' : 'text-slate-400'}`}>
-                  billed annually (${plan.annual * 12}/yr)
+                  billed annually ({fmtAnnualTotal(plan)})
                 </p>
               )}
               <p className={`mt-2 text-sm ${plan.popular ? 'text-indigo-200' : 'text-slate-500'}`}>

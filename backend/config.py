@@ -61,6 +61,13 @@ class Settings(BaseSettings):
     RAZORPAY_PLAN_PRO_ANNUAL: str = ""
     RAZORPAY_PLAN_AGENCY_MONTHLY: str = ""
     RAZORPAY_PLAN_AGENCY_ANNUAL: str = ""
+    # USD plan IDs — separate Razorpay plans billed in USD
+    RAZORPAY_PLAN_STARTER_MONTHLY_USD: str = ""
+    RAZORPAY_PLAN_STARTER_ANNUAL_USD: str = ""
+    RAZORPAY_PLAN_PRO_MONTHLY_USD: str = ""
+    RAZORPAY_PLAN_PRO_ANNUAL_USD: str = ""
+    RAZORPAY_PLAN_AGENCY_MONTHLY_USD: str = ""
+    RAZORPAY_PLAN_AGENCY_ANNUAL_USD: str = ""
 
     # Resend
     RESEND_API_KEY: str = ""

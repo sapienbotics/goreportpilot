@@ -40,15 +40,15 @@ const PLAN_CARDS: PlanCard[] = [
   {
     key: 'starter',
     name: 'Starter',
-    monthly_inr: 1599,
-    annual_inr: 15350,
+    monthly_inr: 999,
+    annual_inr: 9599,
     monthly_usd: 19,
-    annual_usd: 185,
-    client_limit: 3,
+    annual_usd: 182,
+    client_limit: 5,
     features: [
-      '3 clients',
+      '5 clients',
       'PDF export',
-      'Monthly scheduling',
+      'Email delivery',
       'Professional AI tone',
       '1 visual template',
     ],
@@ -56,15 +56,15 @@ const PLAN_CARDS: PlanCard[] = [
   {
     key: 'pro',
     name: 'Pro',
-    monthly_inr: 3299,
-    annual_inr: 31670,
+    monthly_inr: 1999,
+    annual_inr: 19199,
     monthly_usd: 39,
-    annual_usd: 380,
-    client_limit: 10,
+    annual_usd: 374,
+    client_limit: 15,
     features: [
-      '10 clients',
+      '15 clients',
       'PDF + PPTX export',
-      'Weekly / monthly scheduling',
+      'Scheduled reports',
       'All 4 AI tones',
       'All 3 visual templates',
       'White-label branding',
@@ -75,19 +75,19 @@ const PLAN_CARDS: PlanCard[] = [
   {
     key: 'agency',
     name: 'Agency',
-    monthly_inr: 5799,
-    annual_inr: 55670,
+    monthly_inr: 3499,
+    annual_inr: 33599,
     monthly_usd: 69,
-    annual_usd: 668,
-    client_limit: 25,
+    annual_usd: 662,
+    client_limit: 999,
     features: [
-      '25 clients',
+      'Unlimited clients',
       'PDF + PPTX export',
-      'Weekly / monthly scheduling',
+      'Scheduled reports',
       'All 4 AI tones',
       'All 3 visual templates',
       'White-label branding',
-      'No "Powered by" badge',
+      'Priority support + API',
     ],
   },
 ]
@@ -149,9 +149,25 @@ export default function BillingPage() {
   const [payments, setPayments] = useState<PaymentRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('monthly')
+  const [currency, setCurrency] = useState<'INR' | 'USD'>('INR')
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null)
   const [cancelLoading, setCancelLoading] = useState(false)
   const [showCancelConfirm, setShowCancelConfirm] = useState(false)
+
+  // Detect currency on mount
+  useEffect(() => {
+    try {
+      const lang = navigator.language || ''
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''
+      if (lang.startsWith('hi') || tz.includes('Calcutta') || tz.includes('Kolkata')) {
+        setCurrency('INR')
+      } else {
+        setCurrency('USD')
+      }
+    } catch {
+      // default INR
+    }
+  }, [])
 
   const fetchData = useCallback(async () => {
     try {
@@ -178,6 +194,7 @@ export default function BillingPage() {
       const { subscription_id, razorpay_key_id } = await billingApi.createSubscription({
         plan: planKey,
         billing_cycle: billingCycle,
+        currency,
       })
 
       await loadRazorpayScript()
@@ -360,33 +377,60 @@ export default function BillingPage() {
       <div id="plans">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-slate-900">Plans</h2>
-          <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
-            <button
-              onClick={() => setBillingCycle('monthly')}
-              className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-                billingCycle === 'monthly' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              Monthly
-            </button>
-            <button
-              onClick={() => setBillingCycle('annual')}
-              className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-                billingCycle === 'annual' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              Annual
-              <span className="ml-1 text-xs text-emerald-600 font-semibold">Save 20%</span>
-            </button>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+              <button
+                onClick={() => setBillingCycle('monthly')}
+                className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                  billingCycle === 'monthly' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Monthly
+              </button>
+              <button
+                onClick={() => setBillingCycle('annual')}
+                className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                  billingCycle === 'annual' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Annual
+                <span className="ml-1 text-xs text-emerald-600 font-semibold">Save 20%</span>
+              </button>
+            </div>
+            <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+              <button
+                onClick={() => setCurrency('INR')}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                  currency === 'INR' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                INR
+              </button>
+              <button
+                onClick={() => setCurrency('USD')}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                  currency === 'USD' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                USD
+              </button>
+            </div>
           </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {PLAN_CARDS.map((plan) => {
             const isCurrent = sub?.plan === plan.key
-            const priceInr = billingCycle === 'monthly' ? plan.monthly_inr : Math.round(plan.annual_inr / 12)
-            const priceUsd = billingCycle === 'monthly' ? plan.monthly_usd : Math.round(plan.annual_usd / 12)
-
+            const isINR = currency === 'INR'
+            const priceMain = isINR
+              ? (billingCycle === 'monthly' ? plan.monthly_inr : Math.round(plan.annual_inr / 12))
+              : (billingCycle === 'monthly' ? plan.monthly_usd : Math.round(plan.annual_usd / 12))
+            const priceLabel = isINR
+              ? `\u20B9${priceMain.toLocaleString('en-IN')}`
+              : `$${priceMain}`
+            const annualTotal = isINR
+              ? `\u20B9${plan.annual_inr.toLocaleString('en-IN')}/year`
+              : `$${plan.annual_usd}/year`
             return (
               <div
                 key={plan.key}
@@ -409,13 +453,12 @@ export default function BillingPage() {
 
                 <h3 className="text-lg font-bold text-slate-900">{plan.name}</h3>
                 <div className="mt-2 mb-1">
-                  <span className="text-3xl font-extrabold text-slate-900">₹{priceInr.toLocaleString('en-IN')}</span>
+                  <span className="text-3xl font-extrabold text-slate-900">{priceLabel}</span>
                   <span className="text-slate-500 text-sm">/mo</span>
-                  <span className="ml-2 text-xs text-slate-400">(~${priceUsd}/mo)</span>
                 </div>
                 {billingCycle === 'annual' && (
                   <p className="text-xs text-emerald-600 font-medium mb-3">
-                    Billed ₹{plan.annual_inr.toLocaleString('en-IN')}/year
+                    Billed {annualTotal} (save 20%)
                   </p>
                 )}
 

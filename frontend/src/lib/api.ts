@@ -498,7 +498,7 @@ export const billingApi = {
     return data
   },
 
-  createSubscription: async (payload: { plan: string; billing_cycle: string }): Promise<CreateSubscriptionResponse> => {
+  createSubscription: async (payload: { plan: string; billing_cycle: string; currency?: string }): Promise<CreateSubscriptionResponse> => {
     const { data } = await api.post('/api/billing/create-subscription', payload)
     return data
   },
@@ -512,7 +512,7 @@ export const billingApi = {
     return data
   },
 
-  changePlan: async (payload: { plan: string; billing_cycle: string }): Promise<CreateSubscriptionResponse> => {
+  changePlan: async (payload: { plan: string; billing_cycle: string; currency?: string }): Promise<CreateSubscriptionResponse> => {
     const { data } = await api.post('/api/billing/change-plan', payload)
     return data
   },
