@@ -416,7 +416,7 @@ export default function ReportDetailPage() {
   const params  = useParams<{ reportId: string }>()
   const reportId = params.reportId
 
-  const { features: planFeatures } = usePlanFeatures()
+  const { features: planFeatures, status: subStatus } = usePlanFeatures()
   const [report,          setReport]        = useState<Report | null>(null)
   const [loading,         setLoading]       = useState(true)
   const [error,           setError]         = useState<string | null>(null)
@@ -669,6 +669,14 @@ export default function ReportDetailPage() {
           )}
         </div>
       </div>
+
+      {subStatus === 'trialing' && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 flex items-center justify-between gap-3">
+          <p className="text-sm text-blue-700">
+            This report contains a trial watermark. <a href="/dashboard/billing" className="font-semibold underline hover:text-blue-800">Upgrade to remove it.</a>
+          </p>
+        </div>
+      )}
 
       {filesExpired && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-5 py-4 flex items-center justify-between gap-4 flex-wrap">
