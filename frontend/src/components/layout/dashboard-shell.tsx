@@ -7,6 +7,7 @@ import { useState } from 'react'
 import { Menu } from 'lucide-react'
 import { Sidebar } from './sidebar'
 import { SignOutButton } from './sign-out-button'
+import { ExpiredTrialBanner } from './expired-trial-banner'
 
 interface DashboardShellProps {
   email: string
@@ -64,6 +65,7 @@ export function DashboardShell({ email, agencyName, children }: DashboardShellPr
 
         {/* Page content */}
         <main className="flex-1 overflow-y-auto p-4 md:p-6">
+          <ExpiredTrialBanner />
           <div className="animate-in fade-in duration-200">{children}</div>
         </main>
       </div>

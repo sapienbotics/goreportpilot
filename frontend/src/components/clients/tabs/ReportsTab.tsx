@@ -55,7 +55,8 @@ export default function ReportsTab({
   csvFiles, setCsvFiles,
   handleGenerate, handleSaveConfig, handleCustomSectionImageUpload,
 }: Props) {
-  const { features: planFeatures } = usePlanFeatures()
+  const { features: planFeatures, status: subStatus } = usePlanFeatures()
+  const isExpired = subStatus === 'expired' || subStatus === 'cancelled'
   const [showCsvUpload, setShowCsvUpload] = useState(false)
 
   function removeCsv(index: number) {
@@ -214,11 +215,18 @@ export default function ReportsTab({
 
               {genError && <p className="text-sm text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">{genError}</p>}
 
-              <button onClick={handleGenerate} disabled={!periodStart || !periodEnd}
-                className="inline-flex items-center gap-2 rounded-lg bg-indigo-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-800 transition-colors disabled:opacity-50">
-                <Sparkles className="h-4 w-4" />
-                Generate Report with AI
-              </button>
+              {isExpired ? (
+                <div className="rounded-lg bg-rose-50 border border-rose-200 px-4 py-3 text-sm text-rose-700 flex items-center gap-2">
+                  <Lock className="h-4 w-4 shrink-0" />
+                  Trial expired — <a href="/dashboard/billing" className="font-semibold underline hover:text-rose-800">upgrade to generate reports</a>
+                </div>
+              ) : (
+                <button onClick={handleGenerate} disabled={!periodStart || !periodEnd}
+                  className="inline-flex items-center gap-2 rounded-lg bg-indigo-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-800 transition-colors disabled:opacity-50">
+                  <Sparkles className="h-4 w-4" />
+                  Generate Report with AI
+                </button>
+              )}
             </div>
           )}
         </CardContent>

@@ -119,6 +119,14 @@ async def _generate_report_internal(
     if supabase is None:
         supabase = get_supabase_admin()
 
+    # 0 — Subscription status check: block expired/cancelled users
+    sub = get_user_subscription(user_id)
+    if sub.get("status") in ("expired", "cancelled"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your subscription has expired. Please upgrade to continue generating reports.",
+        )
+
     # 1 — Verify client ownership
     client_result = (
         supabase.table("clients")
@@ -134,7 +142,7 @@ async def _generate_report_internal(
     client = client_result.data
 
     # 1a — Plan enforcement: clamp AI tone and visual template to allowed values
-    sub = get_user_subscription(user_id)
+    # (sub was fetched above in step 0)
     user_plan = sub.get("plan", "trial")
     plan_cfg = get_plan(user_plan)
     plan_features = plan_cfg.get("features", {})
@@ -622,6 +630,14 @@ async def download_pdf(
     user_id: str = Depends(get_current_user_id),
 ) -> FileResponse:
     """Download the PDF file for a report."""
+    # Subscription check: block expired/cancelled users
+    pdf_sub = get_user_subscription(user_id)
+    if pdf_sub.get("status") in ("expired", "cancelled"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your subscription has expired. Please upgrade to continue downloading reports.",
+        )
+
     supabase = get_supabase_admin()
     result = (
         supabase.table("reports")
@@ -830,6 +846,14 @@ async def send_report(
     Attaches PDF and/or PPTX depending on payload.attachment.
     Logs the delivery attempt in the report_deliveries table.
     """
+    # Subscription check: block expired/cancelled users from sending reports
+    send_sub = get_user_subscription(user_id)
+    if send_sub.get("status") in ("expired", "cancelled"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your subscription has expired. Please upgrade to continue sending reports.",
+        )
+
     supabase = get_supabase_admin()
 
     # Fetch report

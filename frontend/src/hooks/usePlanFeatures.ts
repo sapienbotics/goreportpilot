@@ -27,14 +27,16 @@ const DEFAULT_FEATURES: PlanFeatures = {
  * Fetch the current user's plan features.
  * Returns generous defaults (trial-level) while loading to avoid flash of locked state.
  */
-export function usePlanFeatures(): { features: PlanFeatures; loading: boolean } {
+export function usePlanFeatures(): { features: PlanFeatures; status: string; loading: boolean } {
   const [features, setFeatures] = useState<PlanFeatures>(DEFAULT_FEATURES)
+  const [status, setStatus] = useState<string>('trialing')
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     billingApi
       .getSubscription()
       .then((sub) => {
+        setStatus(sub.status)
         const f = (sub.features ?? {}) as Record<string, unknown>
         setFeatures({
           plan: sub.plan,
@@ -53,5 +55,5 @@ export function usePlanFeatures(): { features: PlanFeatures; loading: boolean } 
       .finally(() => setLoading(false))
   }, [])
 
-  return { features, loading }
+  return { features, status, loading }
 }
