@@ -155,26 +155,7 @@ export default function PricingToggle() {
         </span>
       </div>
 
-      {/* Currency toggle */}
-      <div className="flex items-center justify-center gap-2 mb-10">
-        <button
-          onClick={() => setCurrency('INR')}
-          className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-            isINR ? 'bg-indigo-100 text-indigo-700' : 'text-slate-400 hover:text-slate-600'
-          }`}
-        >
-          INR
-        </button>
-        <span className="text-slate-300">|</span>
-        <button
-          onClick={() => setCurrency('USD')}
-          className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-            !isINR ? 'bg-indigo-100 text-indigo-700' : 'text-slate-400 hover:text-slate-600'
-          }`}
-        >
-          USD
-        </button>
-      </div>
+      <div className="mb-10" />
 
       {/* Cards */}
       <div className="grid md:grid-cols-3 gap-6">
@@ -245,6 +226,9 @@ export default function PricingToggle() {
 
       <p className="mt-8 text-center text-sm text-slate-400">
         All plans include a 14-day free trial. No credit card required.
+      </p>
+      <p className="mt-2 text-center text-xs text-slate-400">
+        Prices shown in {isINR ? 'INR' : 'USD'}. International cards accepted.
       </p>
     </div>
   )

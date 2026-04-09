@@ -377,44 +377,24 @@ export default function BillingPage() {
       <div id="plans">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-slate-900">Plans</h2>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
-              <button
-                onClick={() => setBillingCycle('monthly')}
-                className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-                  billingCycle === 'monthly' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                Monthly
-              </button>
-              <button
-                onClick={() => setBillingCycle('annual')}
-                className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-                  billingCycle === 'annual' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                Annual
-                <span className="ml-1 text-xs text-emerald-600 font-semibold">Save 20%</span>
-              </button>
-            </div>
-            <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
-              <button
-                onClick={() => setCurrency('INR')}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                  currency === 'INR' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                INR
-              </button>
-              <button
-                onClick={() => setCurrency('USD')}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                  currency === 'USD' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                USD
-              </button>
-            </div>
+          <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+            <button
+              onClick={() => setBillingCycle('monthly')}
+              className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                billingCycle === 'monthly' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              Monthly
+            </button>
+            <button
+              onClick={() => setBillingCycle('annual')}
+              className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                billingCycle === 'annual' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              Annual
+              <span className="ml-1 text-xs text-emerald-600 font-semibold">Save 20%</span>
+            </button>
           </div>
         </div>
 
@@ -496,6 +476,9 @@ export default function BillingPage() {
             )
           })}
         </div>
+        <p className="mt-4 text-center text-xs text-slate-400">
+          Prices shown in {currency === 'INR' ? 'INR' : 'USD'}. International cards accepted.
+        </p>
       </div>
 
       {/* ── Section 3: Payment History ───────────────────────────────────── */}
