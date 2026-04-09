@@ -19,6 +19,19 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def get_plan_from_razorpay_plan_id(razorpay_plan_id: str) -> tuple[str, str]:
+    """Returns (plan_name, billing_cycle) from Razorpay plan ID."""
+    plan_map = {
+        settings.RAZORPAY_PLAN_STARTER_MONTHLY: ("starter", "monthly"),
+        settings.RAZORPAY_PLAN_STARTER_ANNUAL: ("starter", "annual"),
+        settings.RAZORPAY_PLAN_PRO_MONTHLY: ("pro", "monthly"),
+        settings.RAZORPAY_PLAN_PRO_ANNUAL: ("pro", "annual"),
+        settings.RAZORPAY_PLAN_AGENCY_MONTHLY: ("agency", "monthly"),
+        settings.RAZORPAY_PLAN_AGENCY_ANNUAL: ("agency", "annual"),
+    }
+    return plan_map.get(razorpay_plan_id, ("trial", "monthly"))
+
+
 # ---------------------------------------------------------------------------
 # Pydantic schemas
 # ---------------------------------------------------------------------------
@@ -149,16 +162,14 @@ async def create_subscription(
 
     razorpay_subscription_id = subscription.get("id")
 
-    # Store Razorpay IDs and intended plan/cycle, but do NOT change the
-    # status. User keeps their current status (trialing/expired/etc.) until
-    # payment is confirmed via verify-payment or webhook. This prevents
-    # users from getting plan access just by initiating checkout.
+    # Store ONLY Razorpay IDs. Do NOT write plan or billing_cycle here.
+    # The plan is set ONLY after payment is confirmed (verify-payment or
+    # webhook). This prevents users from getting plan access just by
+    # initiating checkout and then cancelling the payment modal.
     supabase.table("subscriptions").update(
         {
             "razorpay_subscription_id": razorpay_subscription_id,
             "razorpay_plan_id": razorpay_plan_id,
-            "plan": payload.plan,
-            "billing_cycle": payload.billing_cycle,
             "updated_at": datetime.utcnow().isoformat(),
         }
     ).eq("user_id", user_id).execute()
@@ -193,20 +204,26 @@ async def verify_payment(
     supabase = get_supabase_admin()
     now = datetime.utcnow()
 
-    # Fetch current subscription to get the plan name
+    # Fetch current subscription to get the razorpay_plan_id for reverse lookup
     sub_result = (
         supabase.table("subscriptions")
-        .select("id,plan,billing_cycle")
+        .select("id,razorpay_plan_id")
         .eq("user_id", user_id)
         .maybe_single()
         .execute()
     )
     sub_data = sub_result.data if sub_result else None
-    plan_name = sub_data.get("plan", "starter") if sub_data else "starter"
     sub_id = sub_data.get("id") if sub_data else None
+    razorpay_plan_id = sub_data.get("razorpay_plan_id", "") if sub_data else ""
+
+    # Derive plan and billing_cycle from the Razorpay plan ID — this is the
+    # ONLY place (along with webhooks) where plan/billing_cycle get written.
+    plan_name, billing_cycle = get_plan_from_razorpay_plan_id(razorpay_plan_id)
 
     supabase.table("subscriptions").update(
         {
+            "plan": plan_name,
+            "billing_cycle": billing_cycle,
             "status": "active",
             "razorpay_subscription_id": payload.razorpay_subscription_id,
             "last_payment_at": now.isoformat(),
@@ -232,7 +249,7 @@ async def verify_payment(
     except Exception as exc:
         logger.warning("Failed to log initial payment: %s", exc)
 
-    logger.info("Subscription activated for user %s (plan=%s)", user_id, plan_name)
+    logger.info("Subscription activated for user %s (plan=%s, cycle=%s)", user_id, plan_name, billing_cycle)
     return {"success": True, "status": "active"}
 
 
@@ -337,9 +354,13 @@ async def razorpay_webhook(request: Request) -> dict:
         if event_type == "subscription.activated":
             sub_entity = payload.get("subscription", {}).get("entity", {})
             rzp_sub_id = sub_entity.get("id")
+            rzp_plan_id = sub_entity.get("plan_id", "")
             if rzp_sub_id:
+                plan_name, billing_cycle = get_plan_from_razorpay_plan_id(rzp_plan_id)
                 supabase.table("subscriptions").update(
                     {
+                        "plan": plan_name,
+                        "billing_cycle": billing_cycle,
                         "status": "active",
                         "current_period_start": now.isoformat(),
                         "current_period_end": (now + timedelta(days=30)).isoformat(),
@@ -351,10 +372,14 @@ async def razorpay_webhook(request: Request) -> dict:
             sub_entity = payload.get("subscription", {}).get("entity", {})
             payment_entity = payload.get("payment", {}).get("entity", {})
             rzp_sub_id = sub_entity.get("id")
+            rzp_plan_id = sub_entity.get("plan_id", "")
             if rzp_sub_id:
-                # Update subscription period
+                plan_name, billing_cycle = get_plan_from_razorpay_plan_id(rzp_plan_id)
+                # Update subscription period and plan (belt-and-suspenders)
                 supabase.table("subscriptions").update(
                     {
+                        "plan": plan_name,
+                        "billing_cycle": billing_cycle,
                         "status": "active",
                         "last_payment_at": now.isoformat(),
                         "current_period_start": now.isoformat(),
@@ -367,7 +392,7 @@ async def razorpay_webhook(request: Request) -> dict:
                 # Find user and log payment
                 sub_result = (
                     supabase.table("subscriptions")
-                    .select("id, user_id, plan")
+                    .select("id, user_id, razorpay_plan_id")
                     .eq("razorpay_subscription_id", rzp_sub_id)
                     .maybe_single()
                     .execute()
@@ -381,8 +406,8 @@ async def razorpay_webhook(request: Request) -> dict:
                             "amount": payment_entity.get("amount", 0),
                             "currency": payment_entity.get("currency", "INR"),
                             "status": "captured",
-                            "plan": sub_result.data.get("plan"),
-                            "description": f"Subscription payment — {sub_result.data.get('plan', '')} plan",
+                            "plan": plan_name,
+                            "description": f"Subscription payment — {plan_name} plan",
                         }
                     ).execute()
 
