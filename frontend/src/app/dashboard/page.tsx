@@ -7,6 +7,14 @@ import Link from 'next/link'
 import { Users, FileText, Clock, Send, Plus, AlertCircle, CheckCircle2, Activity } from 'lucide-react'
 import api from '@/lib/api'
 import { Skeleton } from '@/components/ui/skeleton'
+import OnboardingChecklist from '@/components/dashboard/onboarding-checklist'
+
+interface OnboardingStatus {
+  has_client: boolean
+  has_connection: boolean
+  has_report: boolean
+  complete: boolean
+}
 
 interface DashboardStats {
   total_clients: number
@@ -25,6 +33,7 @@ interface DashboardStats {
     description: string
     time: string
   }[]
+  onboarding: OnboardingStatus
 }
 
 const PLATFORM_LABELS: Record<string, string> = {
@@ -126,6 +135,9 @@ export default function DashboardPage() {
           {error}
         </div>
       )}
+
+      {/* Onboarding checklist — shown for new users */}
+      {stats?.onboarding && <OnboardingChecklist onboarding={stats.onboarding} />}
 
       {/* Metric cards — 2 cols on mobile, 4 on desktop */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

@@ -173,6 +173,15 @@ async def _build_dashboard_stats(user_id: str) -> dict:
     activity.sort(key=lambda x: x.get("created_at", ""), reverse=True)
     activity = activity[:5]
 
+    # ── Onboarding status ──────────────────────────────────────────────────
+    total_connections = len(connections)
+    onboarding = {
+        "has_client": total_clients >= 1,
+        "has_connection": total_connections >= 1,
+        "has_report": reports_all_time >= 1,
+        "complete": total_clients >= 1 and total_connections >= 1 and reports_all_time >= 1,
+    }
+
     return {
         "total_clients": total_clients,
         "client_limit": client_limit,
@@ -181,4 +190,5 @@ async def _build_dashboard_stats(user_id: str) -> dict:
         "reports_due_this_week": due_this_week,
         "connection_health": health,
         "recent_activity": activity,
+        "onboarding": onboarding,
     }
