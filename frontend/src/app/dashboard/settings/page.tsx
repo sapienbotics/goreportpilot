@@ -4,7 +4,9 @@
 // Each tab calls PATCH /api/settings/profile with the relevant field subset.
 
 import { useEffect, useRef, useState } from 'react'
-import { Check, Loader2, Upload, User, Palette, Mail, Sparkles, Bell } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { createBrowserClient } from '@supabase/ssr'
+import { AlertTriangle, Check, Loader2, Upload, User, Palette, Mail, Sparkles, Bell, X } from 'lucide-react'
 import { settingsApi } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -52,6 +54,13 @@ export default function SettingsPage() {
   const logoInputRef    = useRef<HTMLInputElement>(null)
   const [logoUploading, setLogoUploading] = useState(false)
   const [logoPreview,   setLogoPreview]   = useState<string>('')
+
+  // Delete account
+  const router = useRouter()
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [deleteEmail,     setDeleteEmail]     = useState('')
+  const [deleting,        setDeleting]        = useState(false)
+  const [deleteErr,       setDeleteErr]       = useState<string | null>(null)
 
   // ── Load profile on mount ──────────────────────────────────────────────────
   useEffect(() => {
@@ -242,6 +251,108 @@ export default function SettingsPage() {
             />
           </CardContent>
         </Card>
+      )}
+
+      {/* ── Danger Zone ─────────────────────────────────────────────────── */}
+      <div className="mt-8 rounded-xl border-2 border-rose-200 bg-rose-50/50">
+        <div className="px-6 py-4 border-b border-rose-200">
+          <h2 className="text-base font-semibold text-rose-700 flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4" />
+            Danger Zone
+          </h2>
+        </div>
+        <div className="px-6 py-4 flex items-center justify-between gap-4">
+          <div>
+            <h3 className="text-sm font-medium text-slate-900">Delete Account</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              Permanently delete your account and all associated data including clients, reports, connections, and billing information. This action cannot be undone.
+            </p>
+          </div>
+          <button
+            onClick={() => { setShowDeleteModal(true); setDeleteEmail(''); setDeleteErr(null) }}
+            className="shrink-0 rounded-lg border border-rose-300 bg-white px-4 py-2 text-sm font-semibold text-rose-600 hover:bg-rose-50 transition-colors"
+          >
+            Delete My Account
+          </button>
+        </div>
+      </div>
+
+      {/* ── Delete Account Modal ──────────────────────────────────────── */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+              <h2 className="text-lg font-semibold text-slate-900">Are you sure you want to delete your account?</h2>
+              <button onClick={() => setShowDeleteModal(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="px-6 py-4 space-y-4">
+              <p className="text-sm text-slate-600">This will permanently delete:</p>
+              <ul className="list-disc pl-5 text-sm text-slate-600 space-y-1">
+                <li>Your profile and agency settings</li>
+                <li>All clients and their data</li>
+                <li>All report history</li>
+                <li>All platform connections</li>
+                <li>Your subscription and payment history</li>
+              </ul>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Type your email to confirm:
+                </label>
+                <Input
+                  value={deleteEmail}
+                  onChange={(e) => setDeleteEmail(e.target.value)}
+                  placeholder={str('agency_email') || 'your@email.com'}
+                  type="email"
+                />
+              </div>
+              {deleteErr && (
+                <p className="text-sm text-rose-600">{deleteErr}</p>
+              )}
+            </div>
+            <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={!deleteEmail.trim() || deleting}
+                onClick={async () => {
+                  setDeleting(true)
+                  setDeleteErr(null)
+                  try {
+                    await settingsApi.deleteAccount(deleteEmail.trim())
+                    // Sign out from Supabase
+                    const supabase = createBrowserClient(
+                      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+                      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+                    )
+                    await supabase.auth.signOut()
+                    router.push('/?deleted=1')
+                  } catch (err) {
+                    const msg = err instanceof Error ? err.message : 'Failed to delete account'
+                    setDeleteErr(msg)
+                  } finally {
+                    setDeleting(false)
+                  }
+                }}
+                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {deleting ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Deleting…
+                  </span>
+                ) : (
+                  'Permanently Delete Account'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

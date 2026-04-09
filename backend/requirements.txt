@@ -23,3 +23,4 @@ google-auth-httplib2==0.2.0
 resend==0.8.0
 stripe==8.4.0
 razorpay==2.0.1
+slowapi==0.1.9

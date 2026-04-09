@@ -8,6 +8,7 @@ import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from pydantic import BaseModel
 
 from config import settings as app_settings
 from middleware.auth import get_current_user_id
@@ -174,3 +175,80 @@ async def upload_agency_logo(
 
     logger.info("Agency logo uploaded for user %s → %s (bg_removed=%s)", user_id, public_url, bg_removed)
     return {"url": public_url, "bg_removed": bg_removed}
+
+
+# ---------------------------------------------------------------------------
+# DELETE /api/settings/account  — self-service account deletion
+# ---------------------------------------------------------------------------
+
+class DeleteAccountPayload(BaseModel):
+    confirm_email: str
+
+
+@router.delete("/account")
+async def delete_account(
+    payload: DeleteAccountPayload,
+    user_id: str = Depends(get_current_user_id),
+) -> dict:
+    """
+    Permanently delete the authenticated user's account and all associated data.
+    The confirm_email must match the user's actual email as a safety check.
+    Deletion of auth.users cascades to profiles, clients, connections, reports,
+    shared_reports, scheduled_reports, subscriptions, and payment_history.
+    """
+    supabase = get_supabase_admin()
+
+    # 1. Verify confirm_email matches the authenticated user's email
+    user_result = supabase.auth.admin.get_user_by_id(user_id)
+    if not user_result or not user_result.user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+    user_email = user_result.user.email or ""
+    if payload.confirm_email.strip().lower() != user_email.strip().lower():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email does not match your account email",
+        )
+
+    # 2. Delete user's logos from Supabase Storage
+    try:
+        logo_files = supabase.storage.from_("logos").list(f"{user_id}/")
+        if logo_files:
+            # List all files recursively (agency/ and client/ subfolders)
+            for folder in logo_files:
+                folder_name = folder.get("name", "")
+                if folder_name:
+                    sub_files = supabase.storage.from_("logos").list(f"{user_id}/{folder_name}/")
+                    if sub_files:
+                        paths = [f"{user_id}/{folder_name}/{f['name']}" for f in sub_files if f.get("name")]
+                        if paths:
+                            supabase.storage.from_("logos").remove(paths)
+    except Exception as exc:
+        logger.warning("Failed to clean up logos for user %s: %s", user_id, exc)
+
+    # 3. Log the deletion in admin_activity_log BEFORE deleting (so user_id is still valid)
+    try:
+        supabase.table("admin_activity_log").insert({
+            "admin_id": user_id,
+            "action": "self_delete",
+            "target_type": "user",
+            "target_id": user_id,
+            "details": {"email": user_email, "reason": "self-service account deletion"},
+        }).execute()
+    except Exception as exc:
+        logger.warning("Failed to log account deletion for user %s: %s", user_id, exc)
+
+    # 4. Delete from auth.users — CASCADE handles all related tables
+    try:
+        supabase.auth.admin.delete_user(user_id)
+    except Exception as exc:
+        logger.error("Failed to delete auth user %s: %s", user_id, exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete account. Please try again or contact support.",
+        ) from exc
+
+    logger.info("Account self-deleted: user_id=%s, email=%s", user_id, user_email)
+    return {"success": True, "message": "Account and all associated data have been permanently deleted."}

@@ -7,6 +7,8 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from config import settings
 from services.plans import PLANS, get_plan
@@ -15,6 +17,7 @@ from middleware.plan_enforcement import get_user_subscription
 from services.supabase_client import get_supabase_admin
 import services.razorpay_service as rzp_svc
 
+limiter = Limiter(key_func=get_remote_address)
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
@@ -110,7 +113,9 @@ async def get_subscription(user_id: str = Depends(get_current_user_id)) -> dict:
 # ---------------------------------------------------------------------------
 
 @router.post("/create-subscription")
+@limiter.limit("5/minute")
 async def create_subscription(
+    request: Request,
     payload: CreateSubscriptionPayload,
     user_id: str = Depends(get_current_user_id),
 ) -> dict:
@@ -259,6 +264,7 @@ async def verify_payment(
 
 @router.post("/change-plan")
 async def change_plan(
+    request: Request,
     payload: ChangePlanPayload,
     user_id: str = Depends(get_current_user_id),
 ) -> dict:
@@ -270,8 +276,8 @@ async def change_plan(
     if current_rzp_sub_id and sub.get("status") == "active":
         rzp_svc.cancel_subscription(current_rzp_sub_id, cancel_at_end=False)
 
-    # Create new subscription
-    return await create_subscription(payload, user_id)
+    # Create new subscription (pass request through for rate limiter)
+    return await create_subscription(request, payload, user_id)
 
 
 # ---------------------------------------------------------------------------

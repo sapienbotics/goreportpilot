@@ -8,7 +8,7 @@ import os
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse
 
 from middleware.auth import get_current_user_id
@@ -22,7 +22,10 @@ from models.schemas import (
     ReportUpdateRequest,
 )
 from services.supabase_client import get_supabase_admin
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
+limiter = Limiter(key_func=get_remote_address)
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
@@ -405,8 +408,10 @@ async def _generate_report_internal(
 # ---------------------------------------------------------------------------
 
 @router.post("/generate", response_model=ReportResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit("10/hour")
 async def generate_report(
-    request: ReportGenerateRequest,
+    request: Request,
+    payload: ReportGenerateRequest,
     user_id: str = Depends(get_current_user_id),
 ) -> ReportResponse:
     """
@@ -415,13 +420,13 @@ async def generate_report(
     5. PPTX + PDF    6. Save to disk  7. Store in Supabase
     """
     row, client_name = await _generate_report_internal(
-        client_id=request.client_id,
+        client_id=payload.client_id,
         user_id=user_id,
-        period_start=request.period_start,
-        period_end=request.period_end,
-        template=request.template,
-        visual_template=request.visual_template,
-        csv_sources=request.csv_sources,
+        period_start=payload.period_start,
+        period_end=payload.period_end,
+        template=payload.template,
+        visual_template=payload.visual_template,
+        csv_sources=payload.csv_sources,
     )
     return ReportResponse(**_map_db_row(row, client_name=client_name))
 
@@ -782,7 +787,9 @@ async def regenerate_section(
 # ---------------------------------------------------------------------------
 
 @router.post("/{report_id}/send", status_code=status.HTTP_200_OK)
+@limiter.limit("20/hour")
 async def send_report(
+    request: Request,
     report_id: str,
     payload: ReportSendRequest,
     user_id: str = Depends(get_current_user_id),
@@ -944,7 +951,9 @@ async def send_report(
 # ---------------------------------------------------------------------------
 
 @router.post("/{report_id}/regenerate", response_model=ReportResponse)
+@limiter.limit("10/hour")
 async def regenerate_report(
+    request: Request,
     report_id: str,
     user_id: str = Depends(get_current_user_id),
 ) -> ReportResponse:

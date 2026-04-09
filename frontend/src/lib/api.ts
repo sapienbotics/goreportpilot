@@ -288,6 +288,13 @@ export const settingsApi = {
     return data
   },
 
+  deleteAccount: async (confirmEmail: string): Promise<{ success: boolean; message: string }> => {
+    const { data } = await api.delete('/api/settings/account', {
+      data: { confirm_email: confirmEmail },
+    })
+    return data
+  },
+
   uploadLogo: async (file: File): Promise<{ url: string }> => {
     const formData = new FormData()
     formData.append('file', file)

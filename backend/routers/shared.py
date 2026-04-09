@@ -24,7 +24,10 @@ from pydantic import BaseModel
 from config import settings
 from middleware.auth import get_current_user_id
 from services.supabase_client import get_supabase_admin
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
+limiter = Limiter(key_func=get_remote_address)
 logger = logging.getLogger(__name__)
 
 # Two routers — one for /api/reports (authenticated), one for /api/shared (public)
@@ -426,7 +429,8 @@ def _fetch_report_data(supabase: Any, report_id: str) -> dict:
 
 
 @public_router.get("/{share_hash}")
-async def get_shared_report_meta(share_hash: str) -> dict:
+@limiter.limit("30/minute")
+async def get_shared_report_meta(request: Request, share_hash: str) -> dict:
     """
     Return lightweight metadata for a share link so the frontend can decide
     whether to show a password gate, expired state, or proceed to fetch data.
