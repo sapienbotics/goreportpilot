@@ -32,7 +32,10 @@ def _calculate_next_run(
 ) -> datetime:
     """
     Calculate the next UTC datetime this schedule should run.
-    Always returns a future datetime (at least a moment ahead of now).
+
+    Always returns a future datetime. Crucially, if the schedule's
+    target day matches today and the target time hasn't yet passed,
+    the returned datetime is later *today* — not next week/month.
     """
     now = datetime.utcnow()
 
@@ -43,32 +46,38 @@ def _calculate_next_run(
 
     if frequency in ("weekly", "biweekly"):
         target_dow = day_of_week if day_of_week is not None else 0  # 0 = Monday
-        days_ahead  = (target_dow - now.weekday()) % 7
-        # biweekly uses 14-day cycles; push ahead by 14 if same-day
-        step = 14 if frequency == "biweekly" else 7
-        if days_ahead == 0:
-            days_ahead = step
-        next_date = (now + timedelta(days=days_ahead)).date()
+        step       = 14 if frequency == "biweekly" else 7
+        days_ahead = (target_dow - now.weekday()) % 7
 
-    else:  # monthly
-        target_day = day_of_month if day_of_month is not None else 1
-        target_day = min(target_day, 28)  # guard against February edge cases
-
-        # Try current month first
-        try:
-            candidate = now.replace(day=target_day, hour=hour, minute=minute, second=0, microsecond=0)
-        except ValueError:
-            candidate = now.replace(day=28, hour=hour, minute=minute, second=0, microsecond=0)
-
+        # Build the candidate at the nearest target weekday (which may be today).
+        candidate_date = (now + timedelta(days=days_ahead)).date()
+        candidate = datetime.combine(
+            candidate_date,
+            datetime.min.time().replace(hour=hour, minute=minute),
+        )
+        # If the computed moment has already passed, advance by one full cycle.
         if candidate <= now:
-            # Move to next month
-            month = now.month + 1 if now.month < 12 else 1
-            year  = now.year + 1 if now.month == 12 else now.year
-            candidate = candidate.replace(year=year, month=month)
-
+            candidate = candidate + timedelta(days=step)
         return candidate
 
-    return datetime.combine(next_date, datetime.min.time().replace(hour=hour, minute=minute))
+    # monthly ------------------------------------------------------------------
+    target_day = day_of_month if day_of_month is not None else 1
+    target_day = min(target_day, 28)  # guard against February edge cases
+
+    # Try current month first — this already correctly returns today at the
+    # target time when today == target_day and the target time is still ahead.
+    try:
+        candidate = now.replace(day=target_day, hour=hour, minute=minute, second=0, microsecond=0)
+    except ValueError:
+        candidate = now.replace(day=28, hour=hour, minute=minute, second=0, microsecond=0)
+
+    if candidate <= now:
+        # Already passed this month — move to next month
+        month = now.month + 1 if now.month < 12 else 1
+        year  = now.year + 1 if now.month == 12 else now.year
+        candidate = candidate.replace(year=year, month=month)
+
+    return candidate
 
 
 def _row_to_response(row: dict) -> ScheduledReportResponse:

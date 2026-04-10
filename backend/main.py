@@ -31,14 +31,14 @@ os.makedirs(os.path.join(_LOGOS_DIR, "clients"),  exist_ok=True)
 # ── Background scheduler loop ─────────────────────────────────────────────────
 
 async def _scheduler_loop() -> None:
-    """Check for due scheduled reports every hour."""
+    """Check for due scheduled reports every 15 minutes."""
     while True:
         try:
             from services.scheduler import check_and_run_scheduled_reports  # noqa: PLC0415
             await check_and_run_scheduled_reports()
         except Exception as exc:
             logger.error("Scheduler loop error: %s", exc)
-        await asyncio.sleep(3600)  # run every hour
+        await asyncio.sleep(900)  # run every 15 minutes
 
 
 @asynccontextmanager
@@ -46,7 +46,7 @@ async def lifespan(app: FastAPI):
     """FastAPI lifespan — start background tasks on startup, cancel on shutdown."""
     logger.info("ReportPilot API starting — environment=%s", settings.ENVIRONMENT)
     scheduler_task = asyncio.create_task(_scheduler_loop())
-    logger.info("Background scheduler started (checks every 60 min)")
+    logger.info("Background scheduler started (checks every 15 min)")
     yield
     scheduler_task.cancel()
     try:
