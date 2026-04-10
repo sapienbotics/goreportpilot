@@ -247,6 +247,25 @@ def select_kpis(data: dict, currency_symbol: str = "$") -> list[dict]:
             return f"\u25B2 +{v:.1f}%"
         return f"\u25BC {v:.1f}%"
 
+    def _fmt_currency(v) -> str:
+        """
+        Format a scalar currency value for KPI cards.
+
+        Drops the decimal when the value is a whole number (₹500.00 → ₹500)
+        and keeps two decimals otherwise (₹61.21). Large values are delegated
+        to ``_fmt_num`` so they pick up the K/M/B compact notation.
+        """
+        try:
+            num = float(v)
+        except (ValueError, TypeError):
+            return f"{currency_symbol}{v}"
+        if abs(num) >= 1_000:
+            # Large values use compact notation (no decimals shown).
+            return f"{currency_symbol}{_fmt_num(num)}"
+        if num == int(num):
+            return f"{currency_symbol}{int(num):,}"
+        return f"{currency_symbol}{num:,.2f}"
+
     # ── GA4 KPIs ────────────────────────────────────────────────────────────
     if ga4.get("sessions"):
         all_kpis.append({
@@ -282,7 +301,7 @@ def select_kpis(data: dict, currency_symbol: str = "$") -> list[dict]:
     # ── Meta Ads KPIs — only if spend > 0 ──────────────────────────────────
     if meta.get("spend") and meta["spend"] > 0:
         all_kpis.append({
-            "label": "AD SPEND", "value": f"{currency_symbol}{_fmt_num(meta['spend'])}",
+            "label": "AD SPEND", "value": _fmt_currency(meta["spend"]),
             "change": _fmt_change(meta.get("spend_change")), "priority": 9,
         })
         if meta.get("roas") and meta["roas"] > 0:
@@ -295,11 +314,23 @@ def select_kpis(data: dict, currency_symbol: str = "$") -> list[dict]:
                 "label": "AD CONVERSIONS", "value": _fmt_num(meta["conversions"]),
                 "change": _fmt_change(meta.get("conversions_change")), "priority": 7,
             })
-        if meta.get("cost_per_conversion") and meta["cost_per_conversion"] > 0:
-            all_kpis.append({
-                "label": "COST / CONV.", "value": f"{currency_symbol}{meta['cost_per_conversion']:.2f}",
-                "change": _fmt_change(None), "priority": 6,
-            })
+        # Cost / Conversion: only meaningful when conversions > 0. When the
+        # period has zero conversions, render "N/A" rather than the raw spend
+        # value (which would otherwise surface as a misleading huge number).
+        _meta_convs = meta.get("conversions") or 0
+        _meta_cpc   = meta.get("cost_per_conversion")
+        if _meta_cpc is not None:
+            if _meta_convs == 0:
+                _cpc_val = "N/A"
+            elif _meta_cpc > 0:
+                _cpc_val = _fmt_currency(_meta_cpc)
+            else:
+                _cpc_val = None
+            if _cpc_val is not None:
+                all_kpis.append({
+                    "label": "COST / CONV.", "value": _cpc_val,
+                    "change": _fmt_change(None), "priority": 6,
+                })
         if meta.get("ctr"):
             all_kpis.append({
                 "label": "CTR", "value": f"{float(meta['ctr']):.2f}%",
@@ -309,7 +340,7 @@ def select_kpis(data: dict, currency_symbol: str = "$") -> list[dict]:
     # ── Google Ads KPIs ─────────────────────────────────────────────────────
     if gads.get("spend") and gads["spend"] > 0:
         all_kpis.append({
-            "label": "SEARCH SPEND", "value": f"{currency_symbol}{_fmt_num(gads['spend'])}",
+            "label": "SEARCH SPEND", "value": _fmt_currency(gads["spend"]),
             "change": _fmt_change(gads.get("spend_change")), "priority": 8,
         })
         if gads.get("conversions"):
@@ -346,7 +377,7 @@ def select_kpis(data: dict, currency_symbol: str = "$") -> list[dict]:
                 change_pct = None
             unit = metric.get("unit", "number")
             if unit == "currency":
-                val_str = f"{currency_symbol}{curr:,.0f}" if isinstance(curr, (int, float)) else str(curr)
+                val_str = _fmt_currency(curr) if isinstance(curr, (int, float)) else str(curr)
             elif unit == "percent":
                 val_str = f"{curr}%"
             else:
@@ -418,7 +449,7 @@ def select_kpis(data: dict, currency_symbol: str = "$") -> list[dict]:
             if meta.get("cpc") and meta["cpc"] > 0:
                 secondary.append({
                     "label": "CPC",
-                    "value": f"{currency_symbol}{float(meta['cpc']):.2f}",
+                    "value": _fmt_currency(meta["cpc"]),
                     "change": _fmt_change(meta.get("cpc_change")), "priority": 2,
                 })
 

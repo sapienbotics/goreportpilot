@@ -132,6 +132,24 @@ OKABE_ITO: list[str] = [
 # graying everything else out.
 _MUTED_BAR = "#CBD5E1"  # slate-300
 
+# GA4 channel / source label cleanup. The raw API returns ugly parenthesized
+# sentinels like "(none)" for direct traffic and "(not set)" when a medium is
+# missing. Rewrite these to human-friendly labels before plotting.
+_SOURCE_LABEL_MAP: Dict[str, str] = {
+    "(none)":         "Direct",
+    "(direct)":       "Direct",
+    "direct":         "Direct",
+    "(not set)":      "Other",
+    "(not provided)": "Other",
+}
+
+
+def _clean_source_label(label: str) -> str:
+    """Map ugly GA4 source sentinels to human-friendly labels."""
+    if not label:
+        return "Other"
+    return _SOURCE_LABEL_MAP.get(str(label).strip().lower(), str(label))
+
 
 def _setup_chart_style(theme: Dict[str, Any], brand_color: str | None = None) -> Dict[str, Any]:
     """
@@ -319,8 +337,16 @@ def generate_traffic_sources_chart(
             for k, v in sorted(sources.items(), key=lambda x: x[1], reverse=True)
         ]
 
-    labels = [s["source"] for s in sources]
-    values = [s["sessions"] for s in sources]
+    # Clean up raw GA4 sentinels like "(none)" → "Direct".
+    # Merge values when multiple raw labels collapse to the same clean label.
+    _merged: Dict[str, int] = {}
+    for s in sources:
+        clean = _clean_source_label(s["source"])
+        _merged[clean] = _merged.get(clean, 0) + int(s.get("sessions", 0) or 0)
+    # Re-sort by value descending so the biggest source is at the top.
+    _ordered = sorted(_merged.items(), key=lambda kv: kv[1], reverse=True)
+    labels = [k for k, _ in _ordered]
+    values = [v for _, v in _ordered]
     # Okabe-Ito color-blind-safe multi-series palette — cycle if more
     # labels than colors.
     palette = (OKABE_ITO * ((len(labels) // len(OKABE_ITO)) + 1))[:len(labels)]
@@ -392,6 +418,15 @@ def generate_spend_vs_conversions_chart(
     ax2.tick_params(axis="y", labelcolor=colors["secondary"])
     ax2.spines["right"].set_visible(True)
     ax2.spines["right"].set_color(theme["spine_color"])
+
+    # When every day has zero conversions, matplotlib auto-scales the axis
+    # to tiny fractional labels like "-0.04" / "0.00" / "0.04". Force a
+    # sensible 0..1 range and show only the "0" tick so the empty series
+    # reads cleanly as "no conversions this period".
+    _max_conv = max(conversions) if conversions else 0
+    if _max_conv == 0:
+        ax2.set_ylim(0, 1)
+        ax2.set_yticks([0])
 
     _ti = _truncate_chart_title(title_override)
     if _ti:

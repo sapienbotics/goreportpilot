@@ -440,11 +440,13 @@ async def _generate_report_internal(
         "cost_per_conversion": meta_s.get("cost_per_conversion"),
     }
 
-    # 8 — Human-readable title
+    # 8 — Human-readable title — use the END month of the reporting period
+    # so e.g. "Acme — March 2026 Performance Report" rather than the start.
+    # Reports are named by the most recent month they cover.
     try:
-        month_year = datetime.strptime(period_start, "%Y-%m-%d").strftime("%B %Y")
+        month_year = datetime.strptime(period_end, "%Y-%m-%d").strftime("%B %Y")
     except ValueError:
-        month_year = period_start
+        month_year = period_end
     title = f"{client['name']} — {month_year} Performance Report"
 
     # 9 — Persist report record in Supabase (use actual DB column names)

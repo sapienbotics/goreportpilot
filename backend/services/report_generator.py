@@ -254,6 +254,41 @@ SLIDE_MAP = {
 SLIDE_MAP_V2 = SLIDE_INDEX
 
 
+def _format_period(start_str: str, end_str: str) -> str:
+    """
+    Convert ISO period dates to a human-readable string for the cover slide
+    and `{{report_period}}` placeholder.
+
+    Examples
+    --------
+    ``_format_period("2026-03-01", "2026-03-31")`` -> ``"March 1 — 31, 2026"``
+    ``_format_period("2026-01-15", "2026-03-15")`` -> ``"January 15 — March 15, 2026"``
+    ``_format_period("2025-01-01", "2026-03-30")`` -> ``"January 2025 — March 2026"``
+
+    On any parse error the raw "start to end" string is returned as a
+    graceful fallback.
+    """
+    if not start_str or not end_str:
+        return f"{start_str or ''} to {end_str or ''}".strip()
+    try:
+        start = datetime.strptime(start_str, "%Y-%m-%d")
+        end = datetime.strptime(end_str, "%Y-%m-%d")
+    except (ValueError, TypeError):
+        return f"{start_str} to {end_str}"
+
+    if start.year == end.year and start.month == end.month:
+        # Same month — "March 1 — 31, 2026"
+        return f"{start.strftime('%B')} {start.day} \u2014 {end.day}, {end.year}"
+    if start.year == end.year:
+        # Same year — "January 15 — March 15, 2026"
+        return (
+            f"{start.strftime('%B')} {start.day} \u2014 "
+            f"{end.strftime('%B')} {end.day}, {end.year}"
+        )
+    # Multi-year — "January 2025 — March 2026"
+    return f"{start.strftime('%B %Y')} \u2014 {end.strftime('%B %Y')}"
+
+
 def _fmt_num(val: Any) -> str:
     """Format a number with comma separators (full precision)."""
     try:
@@ -357,6 +392,7 @@ def _build_replacements(
     report_date = datetime.now().strftime("%B %d, %Y")
     p_start = data.get("period_start", "")
     p_end   = data.get("period_end", "")
+    report_period_label = _format_period(p_start, p_end)
 
     # Template-specific label — avoids "Performance Report" appearing twice on cover
     _template_labels = {
@@ -367,7 +403,7 @@ def _build_replacements(
 
     replacements = {
         "{{client_name}}":           client_info.get("name", "Client"),
-        "{{report_period}}":         f"{p_start} to {p_end}",
+        "{{report_period}}":         report_period_label,
         "{{agency_name}}":           agency_name,
         # When no agency email is configured, substitute a "Confidential • Page N"
         # token so the next_steps footer renders properly.  _renumber_slide_footers
@@ -1383,6 +1419,7 @@ def generate_pptx_report(
                     for block in blocks:
                         p = tf.add_paragraph()
                         p.space_after = Pt(4)
+                        p.line_spacing = Pt(18)   # consistent with body populators
                         if block["type"] == "header":
                             run = p.add_run()
                             run.text = block["text"]

@@ -191,10 +191,22 @@ def _parse_ga4_responses(
         })
     daily_data.sort(key=lambda x: x["date"])
 
-    # Traffic sources
+    # Traffic sources — rewrite the raw GA4 sentinels ("(none)", "(direct)",
+    # "(not set)") to human-friendly labels BEFORE aggregation so the AI
+    # narrative and chart both see clean values. Multiple raw labels that
+    # collapse to the same clean label (e.g. "(none)" and "(direct)" both
+    # → "Direct") have their session counts summed.
+    _SOURCE_CLEANUP = {
+        "(none)":         "Direct",
+        "(direct)":       "Direct",
+        "direct":         "Direct",
+        "(not set)":      "Other",
+        "(not provided)": "Other",
+    }
     traffic_sources: dict[str, int] = {}
     for row in sources_resp.get("rows", []):
-        medium   = _dim_val(row, 0) or "other"
+        raw      = _dim_val(row, 0) or "other"
+        medium   = _SOURCE_CLEANUP.get(str(raw).strip().lower(), raw)
         sessions = round(_met_val(row, 0))
         traffic_sources[medium] = traffic_sources.get(medium, 0) + sessions
 
