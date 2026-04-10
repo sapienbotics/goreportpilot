@@ -132,13 +132,14 @@ export default function SchedulesTab({
               )}
 
               {schedule && (
-                <div className="text-xs text-slate-400 space-y-0.5">
+                <div className="text-xs text-gray-400 space-y-0.5">
                   {schedule.next_run_at && (
                     <p>Next report: {new Date(schedule.next_run_at).toLocaleDateString('en-US', { weekday:'short', year:'numeric', month:'short', day:'numeric' })} at {scheduleLocalTime} ({getTimezoneShortLabel(schedTimezone)})</p>
                   )}
                   {schedule.last_generated_at && (
                     <p>Last generated: {new Date(schedule.last_generated_at).toLocaleDateString('en-US', { weekday:'short', year:'numeric', month:'short', day:'numeric' })}</p>
                   )}
+                  <p>Scheduled reports may take up to 15 minutes to trigger after the set time.</p>
                 </div>
               )}
             </div>
