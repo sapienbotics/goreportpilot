@@ -33,7 +33,7 @@ async def check_and_run_scheduled_reports() -> None:
     )
 
     if not result.data:
-        logger.debug("Scheduler: no due schedules at %s", now.isoformat())
+        logger.info("Scheduler: no due schedules at %s", now.isoformat())
         return
 
     logger.info("Scheduler: found %d due schedule(s)", len(result.data))

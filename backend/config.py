@@ -71,7 +71,7 @@ class Settings(BaseSettings):
 
     # Resend
     RESEND_API_KEY: str = ""
-    EMAIL_FROM_DOMAIN: str = "reportpilot.co"   # Domain for report delivery emails
+    EMAIL_FROM_DOMAIN: str = "goreportpilot.com"   # Domain for report delivery emails
 
     # App
     FRONTEND_URL: str = "http://localhost:3000"
