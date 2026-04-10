@@ -224,6 +224,33 @@ def _apply_caption(fig: Any, caption: str | None) -> None:
     )
 
 
+# Max character length for AI-generated chart action titles. Longer strings
+# would overflow the plot area — especially after the font-size bump. Any
+# overrun is truncated at the last space before the cap and terminated with
+# an ellipsis so the break reads naturally.
+_CHART_TITLE_MAX_CHARS = 80
+# Font size used for action titles (AI ``chart_insights``). Smaller than the
+# default 12pt because insight titles are longer sentences, not labels.
+_ACTION_TITLE_FONTSIZE = 10
+
+
+def _truncate_chart_title(title: str | None) -> str | None:
+    """
+    Clamp an AI-generated chart title to ``_CHART_TITLE_MAX_CHARS``.
+
+    When the input is shorter than the cap it is returned unchanged.
+    When longer, it is truncated at the last space before the cap and
+    an ellipsis ``…`` is appended. If no space exists inside the cap,
+    a hard cut at the cap length is used instead.
+    """
+    if not title or len(title) <= _CHART_TITLE_MAX_CHARS:
+        return title
+    cut = title[:_CHART_TITLE_MAX_CHARS].rfind(" ")
+    if cut <= 0:
+        cut = _CHART_TITLE_MAX_CHARS
+    return title[:cut].rstrip() + "\u2026"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Individual chart generators
 # ─────────────────────────────────────────────────────────────────────────────
@@ -250,7 +277,11 @@ def generate_sessions_chart(
             marker="o", markersize=3.5, zorder=3)
     ax.fill_between(dates, sessions, alpha=0.12, color=colors["primary"])
 
-    ax.set_title(title_override or "Sessions Over Time", loc="left")
+    _ti = _truncate_chart_title(title_override)
+    if _ti:
+        ax.set_title(_ti, loc="left", fontsize=_ACTION_TITLE_FONTSIZE)
+    else:
+        ax.set_title("Sessions Over Time", loc="left")
     ax.set_ylabel("Sessions")
     ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{int(x):,}"))
 
@@ -309,7 +340,11 @@ def generate_traffic_sources_chart(
             va="center", fontsize=9, color=theme["text_color"],
         )
 
-    ax.set_title(title_override or "Traffic Sources", loc="left")
+    _ti = _truncate_chart_title(title_override)
+    if _ti:
+        ax.set_title(_ti, loc="left", fontsize=_ACTION_TITLE_FONTSIZE)
+    else:
+        ax.set_title("Traffic Sources", loc="left")
     ax.set_xlabel("Sessions")
     ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{int(x):,}"))
     ax.invert_yaxis()
@@ -358,7 +393,11 @@ def generate_spend_vs_conversions_chart(
     ax2.spines["right"].set_visible(True)
     ax2.spines["right"].set_color(theme["spine_color"])
 
-    ax1.set_title(title_override or "Daily Spend vs Conversions", loc="left")
+    _ti = _truncate_chart_title(title_override)
+    if _ti:
+        ax1.set_title(_ti, loc="left", fontsize=_ACTION_TITLE_FONTSIZE)
+    else:
+        ax1.set_title("Daily Spend vs Conversions", loc="left")
 
     # Merge legends from both axes
     h1, l1 = ax1.get_legend_handles_labels()
@@ -390,9 +429,15 @@ def generate_campaign_performance_chart(
     colors = _setup_chart_style(theme, brand_color)
 
     top = campaigns[:5]
-    names = [
-        (c["name"].split(" - ")[-1] if " - " in c["name"] else c["name"])[:26]
+    # Truncate campaign names to 25 chars (add ellipsis) so the rotated
+    # x-axis labels stay inside the plot area and don't overlap.
+    _raw_names = [
+        c["name"].split(" - ")[-1] if " - " in c["name"] else c["name"]
         for c in top
+    ]
+    names = [
+        (n[:25] + "\u2026") if len(n) > 25 else n
+        for n in _raw_names
     ]
     spend       = [c["spend"] for c in top]
     conversions = [c["conversions"] for c in top]
@@ -438,8 +483,14 @@ def generate_campaign_performance_chart(
     ax2.spines["right"].set_color(theme["spine_color"])
 
     ax1.set_xticks(list(x))
-    ax1.set_xticklabels(names, rotation=20, ha="right", fontsize=9)
-    ax1.set_title(title_override or "Campaign Performance (Top 5)", loc="left")
+    # Steeper rotation (35°) and smaller font (7pt) so long campaign names
+    # fit without overlapping — pairs with the 25-char truncation above.
+    ax1.set_xticklabels(names, rotation=35, ha="right", fontsize=7)
+    _ti = _truncate_chart_title(title_override)
+    if _ti:
+        ax1.set_title(_ti, loc="left", fontsize=_ACTION_TITLE_FONTSIZE)
+    else:
+        ax1.set_title("Campaign Performance (Top 5)", loc="left")
 
     h1, l1 = ax1.get_legend_handles_labels()
     h2, l2 = ax2.get_legend_handles_labels()
@@ -490,8 +541,13 @@ def generate_device_breakdown_chart(
     legend_labels = [f"{l}  ({v:,} — {v/total*100:.1f}%)" for l, v in zip(labels, values)]
     ax.legend(wedges, legend_labels, loc="center left", bbox_to_anchor=(0.85, 0.5),
               fontsize=9, frameon=False)
-    ax.set_title(title_override or "Sessions by Device",
-                 fontsize=12, fontweight="bold", color=theme["title_color"], loc="left")
+    _ti = _truncate_chart_title(title_override)
+    if _ti:
+        ax.set_title(_ti, fontsize=_ACTION_TITLE_FONTSIZE, fontweight="bold",
+                     color=theme["title_color"], loc="left")
+    else:
+        ax.set_title("Sessions by Device", fontsize=12, fontweight="bold",
+                     color=theme["title_color"], loc="left")
 
     fig.tight_layout()
     _apply_caption(fig, caption)
@@ -526,7 +582,11 @@ def generate_top_pages_chart(
         ax.text(bar.get_width() + max_val * 0.015, bar.get_y() + bar.get_height() / 2,
                 f"{val:,}", va="center", fontsize=9, color=theme["text_color"])
 
-    ax.set_title(title_override or "Top Landing Pages", loc="left")
+    _ti = _truncate_chart_title(title_override)
+    if _ti:
+        ax.set_title(_ti, loc="left", fontsize=_ACTION_TITLE_FONTSIZE)
+    else:
+        ax.set_title("Top Landing Pages", loc="left")
     ax.set_xlabel("Sessions")
     ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{int(x):,}"))
     ax.invert_yaxis()
@@ -648,7 +708,11 @@ def generate_audience_demographics_chart(
 
     ax.set_xticks(list(x))
     ax.set_xticklabels(age_labels, fontsize=9)
-    ax.set_title(title_override or "Conversions by Age & Gender", loc="left")
+    _ti = _truncate_chart_title(title_override)
+    if _ti:
+        ax.set_title(_ti, loc="left", fontsize=_ACTION_TITLE_FONTSIZE)
+    else:
+        ax.set_title("Conversions by Age & Gender", loc="left")
     ax.set_ylabel("Conversions")
     ax.legend(loc="upper right")
     fig.tight_layout()

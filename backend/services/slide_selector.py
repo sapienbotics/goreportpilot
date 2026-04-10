@@ -233,9 +233,13 @@ def select_kpis(data: dict, currency_symbol: str = "$") -> list[dict]:
           positive  -> "▲ +X.X%"
           negative  -> "▼ -X.X%"
           neutral   -> "▬ ±X.X%"
+          None      -> "▬ —"   (neutral glyph + em dash — "data unavailable")
+
+        Returning a placeholder string rather than None ensures every KPI card
+        shows an indicator slot instead of rendering as a broken empty card.
         """
         if v is None:
-            return None
+            return "\u25AC \u2014"
         if abs(v) < 1.0:
             sign = "+" if v >= 0 else ""
             return f"\u25AC {sign}{v:.1f}%"
@@ -272,7 +276,7 @@ def select_kpis(data: dict, currency_symbol: str = "$") -> list[dict]:
     if ga4.get("new_users"):
         all_kpis.append({
             "label": "NEW USERS", "value": _fmt_num(ga4["new_users"]),
-            "change": None, "priority": 5,
+            "change": _fmt_change(None), "priority": 5,
         })
 
     # ── Meta Ads KPIs — only if spend > 0 ──────────────────────────────────
@@ -284,7 +288,7 @@ def select_kpis(data: dict, currency_symbol: str = "$") -> list[dict]:
         if meta.get("roas") and meta["roas"] > 0:
             all_kpis.append({
                 "label": "ROAS", "value": f"{meta['roas']:.1f}x",
-                "change": None, "priority": 8,
+                "change": _fmt_change(None), "priority": 8,
             })
         if meta.get("conversions") and meta["conversions"] > 0:
             all_kpis.append({
@@ -294,12 +298,12 @@ def select_kpis(data: dict, currency_symbol: str = "$") -> list[dict]:
         if meta.get("cost_per_conversion") and meta["cost_per_conversion"] > 0:
             all_kpis.append({
                 "label": "COST / CONV.", "value": f"{currency_symbol}{meta['cost_per_conversion']:.2f}",
-                "change": None, "priority": 6,
+                "change": _fmt_change(None), "priority": 6,
             })
         if meta.get("ctr"):
             all_kpis.append({
                 "label": "CTR", "value": f"{float(meta['ctr']):.2f}%",
-                "change": None, "priority": 5,
+                "change": _fmt_change(None), "priority": 5,
             })
 
     # ── Google Ads KPIs ─────────────────────────────────────────────────────
@@ -316,7 +320,7 @@ def select_kpis(data: dict, currency_symbol: str = "$") -> list[dict]:
         if gads.get("roas") and gads["roas"] > 0:
             all_kpis.append({
                 "label": "SEARCH ROAS", "value": f"{gads['roas']:.1f}x",
-                "change": None, "priority": 6,
+                "change": _fmt_change(None), "priority": 6,
             })
 
     # ── SEO KPIs ────────────────────────────────────────────────────────────
@@ -357,6 +361,108 @@ def select_kpis(data: dict, currency_symbol: str = "$") -> list[dict]:
     # Sort by priority descending and take top 6
     all_kpis.sort(key=lambda x: x["priority"], reverse=True)
     selected = all_kpis[:6]
+
+    # ── Pad to 6 with secondary metrics ─────────────────────────────────────
+    # Avoids blank/broken 6th KPI cards when the primary pool has fewer than
+    # six entries. Pulls from impressions, clicks, pageviews, sessions/user,
+    # avg session duration, etc. in priority order until the scorecard is
+    # full or no more data is available.
+    if len(selected) < 6:
+        existing_labels = {k["label"] for k in selected}
+        secondary: list[dict] = []
+
+        # GA4 secondary pool
+        if ga4.get("pageviews"):
+            secondary.append({
+                "label": "PAGEVIEWS", "value": _fmt_num(ga4["pageviews"]),
+                "change": _fmt_change(ga4.get("pageviews_change")), "priority": 3,
+            })
+        if ga4.get("avg_session_duration"):
+            try:
+                _secs = float(ga4["avg_session_duration"])
+                _mins = int(_secs // 60)
+                _rem = int(_secs % 60)
+                secondary.append({
+                    "label": "AVG SESSION",
+                    "value": f"{_mins}m {_rem:02d}s",
+                    "change": _fmt_change(ga4.get("avg_session_duration_change")),
+                    "priority": 3,
+                })
+            except (ValueError, TypeError):
+                pass
+        if ga4.get("sessions_per_user"):
+            secondary.append({
+                "label": "SESSIONS / USER",
+                "value": f"{float(ga4['sessions_per_user']):.2f}",
+                "change": _fmt_change(None), "priority": 3,
+            })
+        if ga4.get("engagement_rate"):
+            secondary.append({
+                "label": "ENGAGEMENT RATE",
+                "value": f"{float(ga4['engagement_rate']):.1f}%",
+                "change": _fmt_change(ga4.get("engagement_rate_change")), "priority": 3,
+            })
+
+        # Meta Ads secondary pool
+        if meta.get("spend") and meta["spend"] > 0:
+            if meta.get("impressions"):
+                secondary.append({
+                    "label": "IMPRESSIONS", "value": _fmt_num(meta["impressions"]),
+                    "change": _fmt_change(meta.get("impressions_change")), "priority": 2,
+                })
+            if meta.get("clicks"):
+                secondary.append({
+                    "label": "AD CLICKS", "value": _fmt_num(meta["clicks"]),
+                    "change": _fmt_change(meta.get("clicks_change")), "priority": 2,
+                })
+            if meta.get("cpc") and meta["cpc"] > 0:
+                secondary.append({
+                    "label": "CPC",
+                    "value": f"{currency_symbol}{float(meta['cpc']):.2f}",
+                    "change": _fmt_change(meta.get("cpc_change")), "priority": 2,
+                })
+
+        # Google Ads secondary pool
+        if gads.get("spend") and gads["spend"] > 0:
+            if gads.get("impressions"):
+                secondary.append({
+                    "label": "SEARCH IMPRESSIONS", "value": _fmt_num(gads["impressions"]),
+                    "change": _fmt_change(gads.get("impressions_change")), "priority": 2,
+                })
+            if gads.get("clicks"):
+                secondary.append({
+                    "label": "SEARCH CLICKS", "value": _fmt_num(gads["clicks"]),
+                    "change": _fmt_change(gads.get("clicks_change")), "priority": 2,
+                })
+            if gads.get("ctr"):
+                secondary.append({
+                    "label": "SEARCH CTR",
+                    "value": f"{float(gads['ctr']):.2f}%",
+                    "change": _fmt_change(gads.get("ctr_change")), "priority": 2,
+                })
+
+        # Search Console secondary pool
+        if gsc.get("impressions"):
+            secondary.append({
+                "label": "SEARCH IMPRESSIONS", "value": _fmt_num(gsc["impressions"]),
+                "change": _fmt_change(gsc.get("impressions_change")), "priority": 2,
+            })
+        if gsc.get("ctr"):
+            secondary.append({
+                "label": "ORGANIC CTR",
+                "value": f"{float(gsc['ctr']):.2f}%",
+                "change": _fmt_change(gsc.get("ctr_change")), "priority": 2,
+            })
+
+        # Keep secondaries in priority order, skipping labels already shown.
+        secondary.sort(key=lambda x: x["priority"], reverse=True)
+        for kpi in secondary:
+            if len(selected) >= 6:
+                break
+            if kpi["label"] in existing_labels:
+                continue
+            selected.append(kpi)
+            existing_labels.add(kpi["label"])
 
     logger.info("Selected %d KPIs from %d candidates: %s",
                 len(selected), len(all_kpis),

@@ -613,6 +613,7 @@ _INVERSE_METRIC_KEYWORDS: tuple[str, ...] = (
     "FREQ",             # FREQUENCY
     "POSITION",         # SEO avg position — lower rank is better
     "UNSUBSCRIBE",
+    "SPEND",            # AD SPEND / META SPEND / GOOGLE SPEND / SEARCH SPEND
 )
 
 
