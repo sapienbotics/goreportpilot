@@ -112,6 +112,26 @@ _VISUAL_TO_THEME: Dict[str, str] = {
 _FIGSIZE = (5.6, 3.0)
 _DPI = 300
 
+# ── Okabe-Ito color-blind-safe categorical palette ────────────────────────────
+# Nature Methods' recommended qualitative palette (remains distinguishable
+# under protanopia, deuteranopia, and tritanopia). Used as the default
+# multi-series cycle in charts with ≥3 categorical dimensions. Single-series
+# charts keep the brand/primary color. Order chosen for maximum perceptual
+# distance between adjacent colors.
+OKABE_ITO: list[str] = [
+    "#0072B2",  # blue
+    "#D55E00",  # vermillion
+    "#009E73",  # bluish green
+    "#CC79A7",  # reddish purple
+    "#E69F00",  # orange
+    "#56B4E9",  # sky blue
+]
+
+# Muted "de-emphasized" gray used by the highlight-one-bar strategy in
+# plot_campaign_performance() — draws the eye to the top performer by
+# graying everything else out.
+_MUTED_BAR = "#CBD5E1"  # slate-300
+
 
 def _setup_chart_style(theme: Dict[str, Any], brand_color: str | None = None) -> Dict[str, Any]:
     """
@@ -124,16 +144,20 @@ def _setup_chart_style(theme: Dict[str, Any], brand_color: str | None = None) ->
     plt.rcParams.update({
         "font.family":        _CHART_FONT,
         "font.size":          9,
-        # Spines
+        # Spines — hide top/right, keep thin bottom/left only
         "axes.spines.top":    False,
         "axes.spines.right":  False,
         "axes.spines.left":   True,
         "axes.spines.bottom": True,
         "axes.edgecolor":     theme["spine_color"],
-        # Grid
+        "axes.linewidth":     0.5,
+        # Grid — horizontal (y-axis) only, very muted. See Tufte data-ink
+        # ratio and the Phase 2 research doc.
         "axes.grid":          True,
-        "grid.alpha":         theme["grid_alpha"],
+        "axes.grid.axis":     "y",
+        "grid.alpha":         0.3,
         "grid.linestyle":     "-",
+        "grid.linewidth":     0.5,
         "grid.color":         theme["grid_color"],
         # Backgrounds
         "figure.facecolor":   theme["fig_bg"],
@@ -143,13 +167,17 @@ def _setup_chart_style(theme: Dict[str, Any], brand_color: str | None = None) ->
         "axes.titleweight":   "bold",
         "axes.titlecolor":    theme["title_color"],
         "axes.titlepad":      10,
-        # Labels and ticks
+        # Labels and ticks (tick marks removed; labels kept)
         "axes.labelsize":     10,
         "axes.labelcolor":    theme["text_color"],
         "xtick.labelsize":    9,
         "ytick.labelsize":    9,
         "xtick.color":        theme["text_color"],
         "ytick.color":        theme["text_color"],
+        "xtick.major.size":   0,
+        "ytick.major.size":   0,
+        "xtick.minor.size":   0,
+        "ytick.minor.size":   0,
         # Legend
         "legend.fontsize":    9,
         "legend.framealpha":  0.85,
@@ -160,12 +188,13 @@ def _setup_chart_style(theme: Dict[str, Any], brand_color: str | None = None) ->
         "text.color":         theme["text_color"],
     })
     return {
-        "primary":   primary,
-        "secondary": theme["secondary_color"],
-        "accent":    theme["accent_color"],
-        "danger":    theme["danger_color"],
-        "gray":      theme["gray_color"],
-        "fig_bg":    theme["fig_bg"],
+        "primary":    primary,
+        "secondary":  theme["secondary_color"],
+        "accent":     theme["accent_color"],
+        "danger":     theme["danger_color"],
+        "gray":       theme["gray_color"],
+        "fig_bg":     theme["fig_bg"],
+        "okabe_ito":  OKABE_ITO,
     }
 
 
@@ -177,6 +206,24 @@ def _save_fig(fig: Any, output_path: str, fig_bg: str = "#FAFAFA") -> str:
     return output_path
 
 
+def _apply_caption(fig: Any, caption: str | None) -> None:
+    """
+    Render an optional italic one-line caption below the plot area.
+    The caption carries the chart's "takeaway" — e.g. an AI-generated insight
+    from the narrative engine's ``chart_insights`` dict. See the Phase 2
+    research doc for the rationale (every chart should have a takeaway).
+    """
+    if not caption:
+        return
+    # Reserve room at the bottom for the caption text.
+    fig.subplots_adjust(bottom=0.18)
+    fig.text(
+        0.5, 0.02, caption,
+        ha="center", va="bottom",
+        fontsize=8, fontstyle="italic", color="#64748B",
+    )
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Individual chart generators
 # ─────────────────────────────────────────────────────────────────────────────
@@ -186,6 +233,8 @@ def generate_sessions_chart(
     output_path: str,
     brand_color: str = "#4338CA",
     theme_name: str = "light",
+    title_override: str | None = None,
+    caption: str | None = None,
 ) -> str:
     """Smooth area line chart of daily sessions over the report period."""
     theme = CHART_THEMES.get(theme_name, CHART_THEMES["light"])
@@ -201,7 +250,7 @@ def generate_sessions_chart(
             marker="o", markersize=3.5, zorder=3)
     ax.fill_between(dates, sessions, alpha=0.12, color=colors["primary"])
 
-    ax.set_title("Sessions Over Time")
+    ax.set_title(title_override or "Sessions Over Time", loc="left")
     ax.set_ylabel("Sessions")
     ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{int(x):,}"))
 
@@ -211,6 +260,7 @@ def generate_sessions_chart(
     fig.autofmt_xdate(rotation=30, ha="right")
 
     fig.tight_layout()
+    _apply_caption(fig, caption)
     return _save_fig(fig, output_path, fig_bg=theme["fig_bg"])
 
 
@@ -219,6 +269,8 @@ def generate_traffic_sources_chart(
     output_path: str,
     brand_color: str = "#4338CA",
     theme_name: str = "light",
+    title_override: str | None = None,
+    caption: str | None = None,
 ) -> str | None:
     """Horizontal bar chart of traffic sources by session count."""
     # A single traffic source doesn't make a useful comparison chart
@@ -238,10 +290,9 @@ def generate_traffic_sources_chart(
 
     labels = [s["source"] for s in sources]
     values = [s["sessions"] for s in sources]
-    palette = [
-        colors["primary"], colors["secondary"], colors["accent"],
-        colors["gray"], colors["danger"],
-    ]
+    # Okabe-Ito color-blind-safe multi-series palette — cycle if more
+    # labels than colors.
+    palette = (OKABE_ITO * ((len(labels) // len(OKABE_ITO)) + 1))[:len(labels)]
 
     fig, ax = plt.subplots(figsize=_FIGSIZE)
     ax.set_facecolor(theme["axes_bg"])
@@ -258,12 +309,13 @@ def generate_traffic_sources_chart(
             va="center", fontsize=9, color=theme["text_color"],
         )
 
-    ax.set_title("Traffic Sources")
+    ax.set_title(title_override or "Traffic Sources", loc="left")
     ax.set_xlabel("Sessions")
     ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{int(x):,}"))
     ax.invert_yaxis()
 
     fig.tight_layout()
+    _apply_caption(fig, caption)
     return _save_fig(fig, output_path, fig_bg=theme["fig_bg"])
 
 
@@ -273,6 +325,8 @@ def generate_spend_vs_conversions_chart(
     currency_symbol: str = "$",
     brand_color: str = "#4338CA",
     theme_name: str = "light",
+    title_override: str | None = None,
+    caption: str | None = None,
 ) -> str:
     """Dual-axis chart: daily ad spend (bars) vs conversions (line)."""
     theme = CHART_THEMES.get(theme_name, CHART_THEMES["light"])
@@ -304,7 +358,7 @@ def generate_spend_vs_conversions_chart(
     ax2.spines["right"].set_visible(True)
     ax2.spines["right"].set_color(theme["spine_color"])
 
-    ax1.set_title("Daily Spend vs Conversions")
+    ax1.set_title(title_override or "Daily Spend vs Conversions", loc="left")
 
     # Merge legends from both axes
     h1, l1 = ax1.get_legend_handles_labels()
@@ -316,6 +370,7 @@ def generate_spend_vs_conversions_chart(
     fig.autofmt_xdate(rotation=30, ha="right")
 
     fig.tight_layout()
+    _apply_caption(fig, caption)
     return _save_fig(fig, output_path, fig_bg=theme["fig_bg"])
 
 
@@ -325,6 +380,8 @@ def generate_campaign_performance_chart(
     currency_symbol: str = "$",
     brand_color: str = "#4338CA",
     theme_name: str = "light",
+    title_override: str | None = None,
+    caption: str | None = None,
 ) -> str | None:
     """Grouped bar chart — top 5 campaigns by spend and conversions."""
     if not campaigns or len(campaigns) < 2:
@@ -345,9 +402,25 @@ def generate_campaign_performance_chart(
     x     = range(len(names))
     width = 0.35
 
+    # ── Highlight-one strategy ──────────────────────────────────────────────
+    # Identify the top campaign by conversions (fallback to spend) and keep it
+    # in the brand/secondary color; mute every other bar to draw the eye to
+    # the winner (Cole Knaflic "focus color" principle).
+    if any(v > 0 for v in conversions):
+        top_idx = max(range(len(conversions)), key=lambda i: conversions[i])
+    else:
+        top_idx = max(range(len(spend)), key=lambda i: spend[i])
+
+    spend_bar_colors = [
+        colors["primary"] if i == top_idx else _MUTED_BAR for i in range(len(spend))
+    ]
+    conv_bar_colors = [
+        colors["secondary"] if i == top_idx else _MUTED_BAR for i in range(len(conversions))
+    ]
+
     ax1.bar([i - width / 2 for i in x], spend, width,
             label=f"Spend ({currency_symbol})",
-            color=colors["primary"], edgecolor="none", alpha=0.85)
+            color=spend_bar_colors, edgecolor="none", alpha=0.9)
     ax1.set_ylabel(f"Spend ({currency_symbol})", color=colors["primary"])
     ax1.tick_params(axis="y", labelcolor=colors["primary"])
     ax1.yaxis.set_major_formatter(
@@ -358,7 +431,7 @@ def generate_campaign_performance_chart(
     ax2.set_facecolor(theme["axes_bg"])
     ax2.bar([i + width / 2 for i in x], conversions, width,
             label="Conversions",
-            color=colors["secondary"], edgecolor="none", alpha=0.85)
+            color=conv_bar_colors, edgecolor="none", alpha=0.9)
     ax2.set_ylabel("Conversions", color=colors["secondary"])
     ax2.tick_params(axis="y", labelcolor=colors["secondary"])
     ax2.spines["right"].set_visible(True)
@@ -366,13 +439,14 @@ def generate_campaign_performance_chart(
 
     ax1.set_xticks(list(x))
     ax1.set_xticklabels(names, rotation=20, ha="right", fontsize=9)
-    ax1.set_title("Campaign Performance (Top 5)")
+    ax1.set_title(title_override or "Campaign Performance (Top 5)", loc="left")
 
     h1, l1 = ax1.get_legend_handles_labels()
     h2, l2 = ax2.get_legend_handles_labels()
     ax1.legend(h1 + h2, l1 + l2, loc="upper right")
 
     fig.tight_layout()
+    _apply_caption(fig, caption)
     return _save_fig(fig, output_path, fig_bg=theme["fig_bg"])
 
 
@@ -385,6 +459,8 @@ def generate_device_breakdown_chart(
     output_path: str,
     brand_color: str = "#4338CA",
     theme_name: str = "light",
+    title_override: str | None = None,
+    caption: str | None = None,
 ) -> str | None:
     """Donut chart of sessions by device type (Desktop/Mobile/Tablet)."""
     if not device_data or len(device_data) < 2:
@@ -394,7 +470,8 @@ def generate_device_breakdown_chart(
 
     labels = [d["device"] for d in device_data]
     values = [d["sessions"] for d in device_data]
-    chart_colors = [colors["primary"], colors["secondary"], colors["accent"]][:len(labels)]
+    # Okabe-Ito palette for color-blind safety on the 3-slice donut.
+    chart_colors = OKABE_ITO[:len(labels)]
 
     fig, ax = plt.subplots(figsize=_FIGSIZE)
     fig.set_facecolor(theme["fig_bg"])
@@ -413,9 +490,11 @@ def generate_device_breakdown_chart(
     legend_labels = [f"{l}  ({v:,} — {v/total*100:.1f}%)" for l, v in zip(labels, values)]
     ax.legend(wedges, legend_labels, loc="center left", bbox_to_anchor=(0.85, 0.5),
               fontsize=9, frameon=False)
-    ax.set_title("Sessions by Device", fontsize=12, fontweight="bold", color=theme["title_color"])
+    ax.set_title(title_override or "Sessions by Device",
+                 fontsize=12, fontweight="bold", color=theme["title_color"], loc="left")
 
     fig.tight_layout()
+    _apply_caption(fig, caption)
     return _save_fig(fig, output_path, fig_bg=theme["fig_bg"])
 
 
@@ -424,6 +503,8 @@ def generate_top_pages_chart(
     output_path: str,
     brand_color: str = "#4338CA",
     theme_name: str = "light",
+    title_override: str | None = None,
+    caption: str | None = None,
 ) -> str | None:
     """Horizontal bar chart of top landing pages by sessions."""
     if not pages_data or len(pages_data) < 2:
@@ -445,11 +526,12 @@ def generate_top_pages_chart(
         ax.text(bar.get_width() + max_val * 0.015, bar.get_y() + bar.get_height() / 2,
                 f"{val:,}", va="center", fontsize=9, color=theme["text_color"])
 
-    ax.set_title("Top Landing Pages")
+    ax.set_title(title_override or "Top Landing Pages", loc="left")
     ax.set_xlabel("Sessions")
     ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{int(x):,}"))
     ax.invert_yaxis()
     fig.tight_layout()
+    _apply_caption(fig, caption)
     return _save_fig(fig, output_path, fig_bg=theme["fig_bg"])
 
 
@@ -507,9 +589,8 @@ def generate_top_countries_chart(
     top = countries_data[:7]
     labels = [c["country"] for c in top]
     values = [c["sessions"] for c in top]
-    palette = [colors["primary"], colors["secondary"], colors["accent"],
-               colors["gray"], colors["danger"]]
-    bar_colors = (palette * 3)[:len(labels)]
+    # Okabe-Ito palette, cycled to cover up to 7 bars.
+    bar_colors = (OKABE_ITO * 2)[:len(labels)]
 
     fig, ax = plt.subplots(figsize=_FIGSIZE)
     ax.set_facecolor(theme["axes_bg"])
@@ -533,6 +614,8 @@ def generate_audience_demographics_chart(
     output_path: str,
     brand_color: str = "#4338CA",
     theme_name: str = "light",
+    title_override: str | None = None,
+    caption: str | None = None,
 ) -> str | None:
     """Grouped bar chart: age groups x gender, by conversions."""
     if not age_gender_data or len(age_gender_data) < 2:
@@ -557,17 +640,19 @@ def generate_audience_demographics_chart(
     x = range(len(age_labels))
     width = 0.35
 
+    # Okabe-Ito blue + vermillion for the two gender series (color-blind safe).
     ax.bar([i - width / 2 for i in x], male_vals, width,
-           label="Male", color=colors["primary"], edgecolor="none", alpha=0.85)
+           label="Male", color=OKABE_ITO[0], edgecolor="none", alpha=0.85)
     ax.bar([i + width / 2 for i in x], female_vals, width,
-           label="Female", color=colors["secondary"], edgecolor="none", alpha=0.85)
+           label="Female", color=OKABE_ITO[1], edgecolor="none", alpha=0.85)
 
     ax.set_xticks(list(x))
     ax.set_xticklabels(age_labels, fontsize=9)
-    ax.set_title("Conversions by Age & Gender")
+    ax.set_title(title_override or "Conversions by Age & Gender", loc="left")
     ax.set_ylabel("Conversions")
     ax.legend(loc="upper right")
     fig.tight_layout()
+    _apply_caption(fig, caption)
     return _save_fig(fig, output_path, fig_bg=theme["fig_bg"])
 
 
@@ -586,9 +671,8 @@ def generate_placements_chart(
 
     labels = [p["placement"] for p in placements_data]
     values = [p["spend"] for p in placements_data]
-    palette = [colors["primary"], colors["secondary"], colors["accent"],
-               colors["gray"], colors["danger"]]
-    bar_colors = (palette * 3)[:len(labels)]
+    # Okabe-Ito palette for color-blind-safe multi-series placements.
+    bar_colors = (OKABE_ITO * 2)[:len(labels)]
 
     fig, ax = plt.subplots(figsize=_FIGSIZE)
     ax.set_facecolor(theme["axes_bg"])
@@ -652,7 +736,9 @@ def generate_conversion_funnel_chart(
 
     stages = list(funnel_data.keys())
     values = list(funnel_data.values())
-    bar_colors = [colors["primary"], colors["secondary"], colors["accent"]][:len(stages)]
+    # Okabe-Ito progression: blue → vermillion → bluish green for the
+    # 3-stage funnel. Color-blind safe and reads as a natural progression.
+    bar_colors = OKABE_ITO[:len(stages)]
 
     fig, ax = plt.subplots(figsize=(10.0, 3.5))
     ax.set_facecolor(theme["axes_bg"])
@@ -689,11 +775,14 @@ def generate_gads_spend_conversions_chart(
     currency_symbol: str = "$",
     brand_color: str = "#4338CA",
     theme_name: str = "light",
+    title_override: str | None = None,
+    caption: str | None = None,
 ) -> str:
     """Dual-axis chart: daily Google Ads spend (bars) vs conversions (line)."""
     # Reuse the same pattern as Meta spend chart
     return generate_spend_vs_conversions_chart(
-        daily_data, output_path, currency_symbol, brand_color, theme_name
+        daily_data, output_path, currency_symbol, brand_color, theme_name,
+        title_override=title_override, caption=caption,
     )
 
 
@@ -844,14 +933,15 @@ def generate_csv_comparison_chart(
 
     ax.barh([i - width / 2 for i in x], previous, width,
             label="Previous", color=colors["gray"], alpha=0.5, edgecolor="none")
+    # WCAG AA: emerald-700 (#047857, 5.1:1) rather than emerald-600 (#059669, 3.8:1)
     bar_colors = []
     for c, p in zip(current, previous):
         # For metrics where lower is better (cost, bounces), invert
         name_lower = labels[current.index(c)].lower() if c in current else ""
         if "cost" in name_lower or "bounce" in name_lower or "unsubscribe" in name_lower:
-            bar_colors.append("#059669" if c <= p else "#E11D48")
+            bar_colors.append("#047857" if c <= p else "#E11D48")
         else:
-            bar_colors.append("#059669" if c >= p else "#E11D48")
+            bar_colors.append("#047857" if c >= p else "#E11D48")
 
     for i, (c_val, color) in enumerate(zip(current, bar_colors)):
         ax.barh(i + width / 2, c_val, width, color=color, alpha=0.85, edgecolor="none")
@@ -874,16 +964,25 @@ def generate_all_charts(
     output_dir: str,
     brand_color: str = "#4338CA",
     visual_template: str = "modern_clean",
+    chart_insights: Dict[str, str] | None = None,
 ) -> Dict[str, str]:
     """
     Generate ONLY charts that have sufficient data — never generate empty charts.
     Returns {chart_name: file_path}.
     Synchronous — call via asyncio.to_thread() in async contexts.
+
+    ``chart_insights`` (optional) is the per-chart "action title" dict from the
+    AI narrative engine — e.g. ``{"sessions_trend": "Sessions grew 23% in
+    March, driven by the new landing pages"}``. When a key matches a chart,
+    the insight replaces the generic chart title so the reader sees a
+    takeaway headline rather than a descriptive label. See Phase 2 Gap
+    analysis items 1, 2, 9 in ``docs/REPORT-QUALITY-RESEARCH-2026.md``.
     """
     os.makedirs(output_dir, exist_ok=True)
 
     theme_name = _VISUAL_TO_THEME.get(visual_template, "light")
     charts: Dict[str, str] = {}
+    insights = chart_insights or {}
     ga4 = data.get("ga4", {})
     meta = data.get("meta_ads", {})
     gads = data.get("google_ads", {})
@@ -900,22 +999,26 @@ def generate_all_charts(
     if ga4.get("daily") and len(ga4["daily"]) >= 3:
         _try("sessions", generate_sessions_chart,
              ga4["daily"], os.path.join(output_dir, "sessions.png"),
-             brand_color=brand_color, theme_name=theme_name)
+             brand_color=brand_color, theme_name=theme_name,
+             title_override=insights.get("sessions_trend"))
 
     if ga4.get("traffic_sources") and len(ga4["traffic_sources"]) >= 2:
         _try("traffic_sources", generate_traffic_sources_chart,
              ga4["traffic_sources"], os.path.join(output_dir, "traffic_sources.png"),
-             brand_color=brand_color, theme_name=theme_name)
+             brand_color=brand_color, theme_name=theme_name,
+             title_override=insights.get("traffic_sources"))
 
     if ga4.get("device_breakdown") and len(ga4["device_breakdown"]) >= 2:
         _try("device_breakdown", generate_device_breakdown_chart,
              ga4["device_breakdown"], os.path.join(output_dir, "device_breakdown.png"),
-             brand_color=brand_color, theme_name=theme_name)
+             brand_color=brand_color, theme_name=theme_name,
+             title_override=insights.get("device_breakdown"))
 
     if ga4.get("top_pages") and len(ga4["top_pages"]) >= 2:
         _try("top_pages", generate_top_pages_chart,
              ga4["top_pages"], os.path.join(output_dir, "top_pages.png"),
-             brand_color=brand_color, theme_name=theme_name)
+             brand_color=brand_color, theme_name=theme_name,
+             title_override=insights.get("top_pages"))
 
     if ga4.get("new_vs_returning"):
         nvr = ga4["new_vs_returning"]
@@ -953,17 +1056,20 @@ def generate_all_charts(
         if meta.get("daily") and len(meta["daily"]) >= 3:
             _try("spend_conversions", generate_spend_vs_conversions_chart,
                  meta["daily"], os.path.join(output_dir, "spend_conversions.png"),
-                 currency_symbol=cur_sym, brand_color=brand_color, theme_name=theme_name)
+                 currency_symbol=cur_sym, brand_color=brand_color, theme_name=theme_name,
+                 title_override=insights.get("spend_conversions"))
 
         if meta.get("campaigns") and len(meta["campaigns"]) >= 1:
             _try("campaigns", generate_campaign_performance_chart,
                  meta["campaigns"], os.path.join(output_dir, "campaigns.png"),
-                 currency_symbol=cur_sym, brand_color=brand_color, theme_name=theme_name)
+                 currency_symbol=cur_sym, brand_color=brand_color, theme_name=theme_name,
+                 title_override=insights.get("campaign_performance"))
 
         if meta.get("age_gender") and len(meta["age_gender"]) >= 2:
             _try("audience_demographics", generate_audience_demographics_chart,
                  meta["age_gender"], os.path.join(output_dir, "audience_demographics.png"),
-                 brand_color=brand_color, theme_name=theme_name)
+                 brand_color=brand_color, theme_name=theme_name,
+                 title_override=insights.get("audience_demographics"))
 
         if meta.get("placements") and len(meta["placements"]) >= 2:
             _try("placements", generate_placements_chart,
@@ -981,7 +1087,8 @@ def generate_all_charts(
         if gads.get("campaigns") and len(gads["campaigns"]) >= 1:
             _try("gads_campaigns", generate_campaign_performance_chart,
                  gads["campaigns"], os.path.join(output_dir, "gads_campaigns.png"),
-                 currency_symbol=cur_sym, brand_color=brand_color, theme_name=theme_name)
+                 currency_symbol=cur_sym, brand_color=brand_color, theme_name=theme_name,
+                 title_override=insights.get("campaign_performance"))
 
         if gads.get("search_terms") and len(gads["search_terms"]) >= 3:
             _try("search_terms_bar", generate_search_terms_chart,

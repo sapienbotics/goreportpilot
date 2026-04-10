@@ -188,6 +188,8 @@ def _to_lines(value: Any) -> list[str]:
 
 
 # ── Colour constants ────────────────────────────────────────────────────────
+# NOTE: emerald upgraded from #059669 to #047857 (emerald-700, WCAG AA 5.1:1)
+# to pass contrast ratio checks for small trend labels on white backgrounds.
 _INDIGO        = RGBColor(0x43, 0x38, 0xCA)
 _WHITE         = RGBColor(0xFF, 0xFF, 0xFF)
 _SLATE_900     = RGBColor(0x0F, 0x17, 0x2A)
@@ -196,7 +198,7 @@ _SLATE_500     = RGBColor(0x64, 0x74, 0x8B)
 _SLATE_400     = RGBColor(0x94, 0xA3, 0xB8)
 _SLATE_200     = RGBColor(0xE2, 0xE8, 0xF0)
 _SLATE_100     = RGBColor(0xF1, 0xF5, 0xF9)
-_EMERALD       = RGBColor(0x05, 0x96, 0x69)
+_EMERALD       = RGBColor(0x04, 0x78, 0x57)   # emerald-700, WCAG AA
 _AMBER         = RGBColor(0xD9, 0x77, 0x06)
 _ROSE          = RGBColor(0xE1, 0x1D, 0x48)
 
@@ -208,7 +210,7 @@ _RL_SLATE_400  = rl_colors.HexColor("#94A3B8")
 _RL_SLATE_200  = rl_colors.HexColor("#E2E8F0")
 _RL_SLATE_100  = rl_colors.HexColor("#F1F5F9")
 _RL_SLATE_50   = rl_colors.HexColor("#F8FAFC")
-_RL_EMERALD    = rl_colors.HexColor("#059669")
+_RL_EMERALD    = rl_colors.HexColor("#047857")   # emerald-700, WCAG AA
 _RL_AMBER      = rl_colors.HexColor("#D97706")
 _RL_ROSE       = rl_colors.HexColor("#E11D48")
 
@@ -253,18 +255,64 @@ SLIDE_MAP_V2 = SLIDE_INDEX
 
 
 def _fmt_num(val: Any) -> str:
-    """Format a number with comma separators."""
+    """Format a number with comma separators (full precision)."""
     try:
         return f"{int(val):,}"
     except (ValueError, TypeError):
         return str(val) if val else "0"
 
 
+def _fmt_compact(val: Any) -> str:
+    """
+    Format a number in compact K/M/B notation for KPI card big-number slots.
+    Keeps full precision with commas for values under 1,000.
+
+    Examples:
+        847       -> "847"
+        1234      -> "1.2K"
+        12_456    -> "12.5K"
+        1_234_567 -> "1.2M"
+        2_300_000_000 -> "2.3B"
+
+    Do NOT use this for detailed tables or narrative text — only for the
+    large hero numbers on scorecard slides (see Phase 5 gap analysis item 4).
+    """
+    try:
+        num = float(val)
+    except (ValueError, TypeError):
+        return str(val) if val else "0"
+    abs_num = abs(num)
+    if abs_num < 1_000:
+        # Keep integer precision for small numbers
+        return f"{int(num):,}" if num == int(num) else f"{num:,.1f}"
+    if abs_num < 1_000_000:
+        return f"{num / 1_000:.1f}K"
+    if abs_num < 1_000_000_000:
+        return f"{num / 1_000_000:.1f}M"
+    return f"{num / 1_000_000_000:.1f}B"
+
+
 def _fmt_change(val: float | None) -> str:
-    """Format a percentage change value."""
+    """
+    Format a percentage change with a leading direction glyph:
+        positive (> +1%)   -> "▲ +12.3%"
+        negative (< −1%)   -> "▼ -5.1%"
+        neutral (|val|<1%) -> "▬ +0.3%"
+        None               -> "N/A"
+
+    The ±1% neutral band prevents noise-level changes (±0.x%) from lighting up
+    as real trends. Color is applied later by ``_colorize_kpi_changes``, which
+    also handles inverse metrics (CPC, CPA, bounce rate, etc.).
+    """
     if val is None:
         return "N/A"
-    return f"+{val:.1f}%" if val >= 0 else f"{val:.1f}%"
+    # Neutral / dead-zone band: −1% < val < +1%
+    if abs(val) < 1.0:
+        sign = "+" if val >= 0 else ""
+        return f"\u25AC {sign}{val:.1f}%"
+    if val >= 0:
+        return f"\u25B2 +{val:.1f}%"
+    return f"\u25BC {val:.1f}%"
 
 
 def _narrative_to_text(content: Any) -> str:
@@ -553,36 +601,109 @@ def _replace_charts(prs: Any, charts: Dict[str, str]) -> None:
     logger.info("_replace_charts: %d chart(s) embedded", replaced)
 
 
-def _colorize_kpi_changes(prs: Any, data: Dict[str, Any]) -> None:
-    """Color KPI change values on the KPI slide (index 2).
+# KPI label keywords where LOWER is better. A positive change on these
+# metrics is a BAD outcome (rising costs, worsening ranking, rising
+# bounce, higher frequency) and must render in the negative color.
+_INVERSE_METRIC_KEYWORDS: tuple[str, ...] = (
+    "BOUNCE",
+    "COST",             # COST / CONV., CPC, CPA
+    "CPC",
+    "CPA",
+    "CPM",
+    "FREQ",             # FREQUENCY
+    "POSITION",         # SEO avg position — lower rank is better
+    "UNSUBSCRIBE",
+)
 
-    Finds text matching change patterns (+X.X%, -X.X%, N/A) and applies:
-      - Green (#059669) for positive changes
-      - Red (#E11D48) for negative changes
-      - Gray (#94A3B8) for N/A
+
+def _is_inverse_label(text: str) -> bool:
+    """Return True when the given label text describes a 'lower is better' metric."""
+    t = (text or "").upper()
+    return any(kw in t for kw in _INVERSE_METRIC_KEYWORDS)
+
+
+def _colorize_kpi_changes(prs: Any, data: Dict[str, Any]) -> None:
     """
-    # Target KPI slide specifically (index 2) and the cover/exec slides
-    # where change text won't appear, but be safe and scan all slides
+    Colorize KPI trend indicators produced by ``_fmt_change``.
+
+    Recognised run formats:
+        "▲ +12.3%"  -> positive direction
+        "▼ -5.1%"   -> negative direction
+        "▬ +0.3%"   -> neutral (inside the ±1% dead zone)
+        "+12.3%"    -> legacy positive (pre-glyph callers)
+        "-5.1%"     -> legacy negative
+        "N/A"       -> missing data
+
+    Color mapping is INVERTED for cost / bounce / position / frequency labels
+    (the ``_INVERSE_METRIC_KEYWORDS`` set): on those cards, ▲ is red and
+    ▼ is green because lower values are better.
+
+    The inverse determination is best-effort: we look first at the shape's
+    own text frame (label + value + change are often in the same box), then
+    fall back to the spatially-nearest label shape on the same slide.
+    """
     for slide in prs.slides:
+        # Pre-scan all shapes on the slide so we can find the nearest label
+        # for any change run that lives in its own shape.
+        shapes_info: list[tuple[Any, str]] = []
         for shape in slide.shapes:
             if not shape.has_text_frame:
                 continue
+            shapes_info.append((shape, shape.text_frame.text or ""))
+
+        for shape, shape_full_text in shapes_info:
+            shape_has_inverse = _is_inverse_label(shape_full_text)
             for para in shape.text_frame.paragraphs:
                 for run in para.runs:
                     text = run.text.strip()
                     if not text:
                         continue
-                    # Positive change: "+12.3%" or "+12.3% vs prev period"
-                    if text.startswith("+") and "%" in text:
-                        run.font.color.rgb = _EMERALD
-                        run.font.bold = True
-                    # Negative change: "-5.2%" or "-5.2% vs prev period"
-                    elif text.startswith("-") and "%" in text:
-                        run.font.color.rgb = _ROSE
-                        run.font.bold = True
-                    # N/A
-                    elif text == "N/A":
+
+                    # Classify direction by leading glyph or sign.
+                    is_up = text.startswith("\u25B2") or (
+                        text.startswith("+") and "%" in text
+                    )
+                    is_down = text.startswith("\u25BC") or (
+                        text.startswith("-") and "%" in text
+                    )
+                    is_flat = text.startswith("\u25AC")
+
+                    if text == "N/A":
                         run.font.color.rgb = _SLATE_400
+                        continue
+
+                    if not (is_up or is_down or is_flat):
+                        continue
+
+                    # Determine inverse-metric status for this run.
+                    is_inverse = shape_has_inverse
+                    if not is_inverse:
+                        try:
+                            s_top = int(shape.top or 0)
+                            s_left = int(shape.left or 0)
+
+                            def _dist(other: tuple[Any, str]) -> int:
+                                osh, _txt = other
+                                if osh is shape:
+                                    return 10 ** 12
+                                return abs(int(osh.top or 0) - s_top) + abs(
+                                    int(osh.left or 0) - s_left
+                                )
+
+                            nearest = min(shapes_info, key=_dist, default=None)
+                            if nearest and _is_inverse_label(nearest[1]):
+                                is_inverse = True
+                        except Exception:
+                            pass
+
+                    # Apply color.
+                    if is_flat:
+                        run.font.color.rgb = _SLATE_500
+                    elif is_up:
+                        run.font.color.rgb = _ROSE if is_inverse else _EMERALD
+                    else:  # is_down
+                        run.font.color.rgb = _EMERALD if is_inverse else _ROSE
+                    run.font.bold = True
 
 
 def _get_slides_to_delete(
@@ -808,6 +929,9 @@ def _populate_text_frame_formatted(
         p = text_frame.paragraphs[0] if i == 0 else text_frame.add_paragraph()
         p.space_after  = Pt(6)
         p.space_before = Pt(0)
+        # Explicit 18pt leading for body text (≈1.45 ratio at 12pt body).
+        # See docs/REPORT-QUALITY-RESEARCH-2026.md §Phase 2 Typography.
+        p.line_spacing = Pt(18)
 
         run = p.add_run()
         run.text = para_text
@@ -867,6 +991,8 @@ def _populate_bullet_list(
         p = text_frame.paragraphs[0] if i == 0 else text_frame.add_paragraph()
         p.space_after  = Pt(8)
         p.space_before = Pt(2)
+        # Explicit 18pt leading (~1.45 ratio) — matches body paragraph style.
+        p.line_spacing = Pt(18)
 
         # Strip any existing prefix that AI or previous code may have added
         clean = item_text
@@ -1187,7 +1313,7 @@ def generate_pptx_report(
             4: "{{ads_narrative}}",
         }
         _LIST_SLIDES = {
-            5: ("{{key_wins}}",    "\u2713", RGBColor(0x05, 0x96, 0x69)),
+            5: ("{{key_wins}}",    "\u2713", RGBColor(0x04, 0x78, 0x57)),
             6: ("{{concerns}}",   "\u26A0", RGBColor(0xD9, 0x77, 0x06)),
             7: ("{{next_steps}}", "\u2192", _hex_to_rgb((branding or {}).get("brand_color") or "#4338CA")),
         }
@@ -1208,7 +1334,7 @@ def generate_pptx_report(
             SLIDE_INDEX.get("conversion_funnel", 14): "{{website_narrative}}",
         }
         _LIST_SLIDES = {
-            SLIDE_INDEX["key_wins"]:   ("{{key_wins}}",    "\u2713", RGBColor(0x05, 0x96, 0x69)),
+            SLIDE_INDEX["key_wins"]:   ("{{key_wins}}",    "\u2713", RGBColor(0x04, 0x78, 0x57)),
             SLIDE_INDEX["concerns"]:   ("{{concerns}}",   "\u26A0", RGBColor(0xD9, 0x77, 0x06)),
             SLIDE_INDEX["next_steps"]: ("{{next_steps}}", "\u2192", _hex_to_rgb((branding or {}).get("brand_color") or "#4338CA")),
         }
@@ -1928,7 +2054,7 @@ def _generate_pdf_reportlab(
             for line in _wins:
                 clean = line.lstrip("\u2022\u2713\u2714\u26A0-\u2013\u2014 ").strip()
                 if clean:
-                    story.append(Paragraph(f'<font color="#059669"><b>\u2713</b></font>\u2002{clean}', win_s))
+                    story.append(Paragraph(f'<font color="#047857"><b>\u2713</b></font>\u2002{clean}', win_s))
             story.append(Spacer(1, 0.15 * inch))
 
     # Concerns

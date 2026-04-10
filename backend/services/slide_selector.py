@@ -210,15 +210,38 @@ def select_kpis(data: dict, currency_symbol: str = "$") -> list[dict]:
     gsc = data.get("search_console", {}).get("summary", {})
 
     def _fmt_num(v):
+        """
+        KPI-card big-number formatter — compact K/M/B notation.
+        Used only for scorecard hero numbers; detailed values keep full precision.
+        """
         try:
-            return f"{int(v):,}"
+            num = float(v)
         except (ValueError, TypeError):
             return str(v) if v else "0"
+        abs_num = abs(num)
+        if abs_num < 1_000:
+            return f"{int(num):,}" if num == int(num) else f"{num:,.1f}"
+        if abs_num < 1_000_000:
+            return f"{num / 1_000:.1f}K"
+        if abs_num < 1_000_000_000:
+            return f"{num / 1_000_000:.1f}M"
+        return f"{num / 1_000_000_000:.1f}B"
 
     def _fmt_change(v):
+        """
+        Format change with direction glyph + ±1% neutral band.
+          positive  -> "▲ +X.X%"
+          negative  -> "▼ -X.X%"
+          neutral   -> "▬ ±X.X%"
+        """
         if v is None:
             return None
-        return f"+{v:.1f}%" if v >= 0 else f"{v:.1f}%"
+        if abs(v) < 1.0:
+            sign = "+" if v >= 0 else ""
+            return f"\u25AC {sign}{v:.1f}%"
+        if v >= 0:
+            return f"\u25B2 +{v:.1f}%"
+        return f"\u25BC {v:.1f}%"
 
     # ── GA4 KPIs ────────────────────────────────────────────────────────────
     if ga4.get("sessions"):

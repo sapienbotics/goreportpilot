@@ -37,7 +37,30 @@ Rules:
 - If a metric declined, don't hide it — explain it and suggest a fix
 - Keep paragraphs short (2-3 sentences max)
 - Use plain English, not marketing jargon
-- Structure: Lead with the headline insight, support with data, close with recommendation"""
+- Structure: Lead with the headline insight, support with data, close with recommendation
+
+EXECUTIVE SUMMARY STRUCTURE (SCQA — McKinsey's Pyramid Principle):
+When writing the executive_summary, follow the SCQA framework so the narrative
+flows like a senior consultant briefing:
+  - Situation:   Where the client stands now (prior-period context, current
+                 goals, baseline). One sentence.
+  - Complication: What changed this period — the biggest movement, good or
+                  bad — and why it matters.
+  - Question:    The implied question the client is already asking ("what
+                 should we do about this?"). Do NOT write this as an explicit
+                 question; let it come through the flow.
+  - Answer:      Preview the top recommendation(s) you will expand in the
+                 next_steps section.
+Do NOT label these sections. Write flowing prose — 3-4 short paragraphs, 150
+words maximum — that follows this structure naturally. Never bury a bad month;
+acknowledge it in the opening sentence if the period is down.
+
+CHART INSIGHTS:
+In addition to the narrative sections, always return a "chart_insights"
+object. Each value is a ONE-LINE active-voice takeaway (≤15 words) that will
+become the chart's title in the report — a story headline, not a label.
+Example: "Sessions grew 23% as organic search recovered" — NOT "Sessions over
+time". If a given metric is not in the data, omit that key from the object."""
 
 TONE_MODIFIERS: Dict[str, str] = {
     "professional": (
@@ -89,12 +112,16 @@ FALLBACK_NARRATIVE: Dict[str, str] = {
 
 
 _SECTION_INSTRUCTIONS: Dict[str, str] = {
-    "executive_summary":  '"{key}" — 3-4 paragraphs (max 200 words) overview of the period',
+    # SCQA-structured executive summary: Situation → Complication → Question → Answer.
+    # Rendered as flowing prose, not labelled sections. 150-word cap.
+    "executive_summary":  '"{key}" — 150 words max, structured as SCQA (Situation, Complication, implied Question, Answer) in flowing prose, NOT labelled',
     "website_performance": '"{key}" — 2-3 paragraphs analyzing website traffic and engagement',
     "paid_advertising":   '"{key}" — 2-3 paragraphs analyzing Meta Ads performance',
-    "key_wins":           '"{key}" — 3-5 bullet points of wins (start each with "✓ ")',
-    "concerns":           '"{key}" — 2-3 bullet points of concerns with recommendations (start each with "⚠ ")',
-    "next_steps":         '"{key}" — 3-5 numbered action items for the next period',
+    # Content-count enforcement (3+3+3): every report should land with exactly
+    # 3 wins, 3 concerns, and 3 next steps in the canonical structure.
+    "key_wins":           '"{key}" — EXACTLY 3 bullet points. Each must reference a specific metric with numbers. Start each with "\u2713 "',
+    "concerns":           '"{key}" — EXACTLY 3 bullet points. Each must state an observation, a likely cause, and a specific recommendation. Start each with "\u26A0 "',
+    "next_steps":         '"{key}" — EXACTLY 3 numbered items. Each MUST follow the pattern: "Next month we will [action] on [channel], based on [data point], to achieve [expected outcome]."',
     "google_ads_performance": '"{key}" — 2-3 paragraphs analyzing Google Ads search campaign performance',
     "seo_performance": '"{key}" — 2-3 paragraphs analyzing organic search performance from Google Search Console',
     "csv_performance": '"{key}" — 2 paragraphs summarizing the custom data source metrics',
@@ -205,6 +232,25 @@ async def generate_narrative(
 
     section_instructions = _build_section_instructions(requested_sections)
 
+    # chart_insights is a separate top-level key in the JSON output — not a
+    # narrative section. Each value is a ≤15-word active-voice headline used
+    # as the chart title in the rendered report.
+    _chart_insights_block = (
+        '\nALSO include a top-level "chart_insights" object in the JSON '
+        'with any of these keys that match the available data (omit keys '
+        'with no data). Each value must be a ONE-LINE (≤15 words) active-'
+        'voice takeaway used as the chart title:\n'
+        '  "sessions_trend"       — GA4 daily sessions line chart\n'
+        '  "traffic_sources"      — GA4 traffic sources bar chart\n'
+        '  "device_breakdown"     — GA4 device donut chart\n'
+        '  "top_pages"            — GA4 top landing pages bar chart\n'
+        '  "spend_conversions"    — Meta/Google Ads daily spend vs conv\n'
+        '  "campaign_performance" — Campaign performance bar chart\n'
+        '  "audience_demographics" — Meta Ads age/gender grouped bars\n'
+        'Example value: "Sessions grew 23% as organic search recovered" '
+        '— NOT "Sessions over time".'
+    )
+
     # Language instruction
     language_instruction = ""
     if language and language != "en":
@@ -269,8 +315,9 @@ TONE: {tone_modifier}
 IMPORTANT — CURRENCY: All monetary amounts for Meta Ads must use the {currency_code} currency symbol ({cur_sym}). \
 Never use "$" for Meta Ads figures unless the currency is USD.
 
-Generate ONLY the following sections as a JSON object (include only these keys, nothing else):
+Generate the following sections as a JSON object:
 {section_instructions}
+{_chart_insights_block}
 
 Return ONLY valid JSON, no markdown code blocks, no explanation outside the JSON."""
 

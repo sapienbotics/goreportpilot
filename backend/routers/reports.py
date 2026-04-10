@@ -327,9 +327,14 @@ async def _generate_report_internal(
     report_id = str(uuid.uuid4())
     charts_dir = os.path.join(REPORTS_BASE_DIR, report_id, "charts")
 
+    # Pass AI-generated per-chart action titles (from the narrative engine)
+    # so charts render with takeaway headlines instead of generic labels.
+    _chart_insights = (narrative or {}).get("chart_insights") or {}
+
     from services.chart_generator import generate_all_charts  # noqa: PLC0415
     charts = await asyncio.to_thread(
         generate_all_charts, raw_data, charts_dir, branding["brand_color"], visual_template,
+        _chart_insights,
     )
 
     client_info = {
@@ -1229,9 +1234,11 @@ async def regenerate_report(
 
     # 5 — Charts
     charts_dir = os.path.join(REPORTS_BASE_DIR, report_id, "charts")
+    _chart_insights = (narrative or {}).get("chart_insights") or {}
     from services.chart_generator import generate_all_charts  # noqa: PLC0415
     charts = await asyncio.to_thread(
         generate_all_charts, raw_data, charts_dir, branding["brand_color"], "modern_clean",
+        _chart_insights,
     )
 
     client_info = {"name": client["name"], "agency_name": branding["agency_name"]}
