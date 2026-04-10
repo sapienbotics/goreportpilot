@@ -454,37 +454,52 @@ def _embed_kpi_sparklines(
 
     Strategy
     --------
-    This helper MUST run **before** ``_replace_placeholders_in_slide`` so the
-    original ``{{kpi_i_value}}`` and ``{{kpi_i_change}}`` tokens are still
-    present in the template — we use them to locate the value and change
-    shapes for each KPI card, then compute a safe position in the vertical
-    gap between them for the sparkline picture.
+    This helper MUST run **before** ``_replace_placeholders_in_slide`` so
+    the original ``{{kpi_i_value}}`` / ``{{kpi_i_change}}`` tokens are still
+    present for shape identification. It handles two template layouts:
 
-    The sparkline PNG files live in ``charts`` under the key
-    ``sparkline__<LABEL>`` (emitted by ``chart_generator.generate_all_charts``).
-    Labels that have no corresponding series are skipped silently — the KPI
-    card simply renders without a sparkline.
+    1. **Separate shapes** — label, value and change each in their own text
+       box. Sparkline is placed in the vertical gap between the value shape
+       and the change shape.
+    2. **Combined shape** — label + value + change all in one text frame
+       (common on legacy / compact scorecards). When the value and change
+       tokens resolve to the same shape, the sparkline is placed just
+       BELOW the combined shape with a 0.2" height and a 0.05" offset.
 
-    If the template does not leave enough vertical room between the value and
-    change shapes (< 0.18"), the sparkline is skipped for that card to avoid
-    visual overlap on legacy templates.
+    Labels that have no matching sparkline PNG in ``charts`` are silently
+    skipped.
     """
     if not charts or not selected_kpi_labels:
+        logger.info(
+            "KPI sparklines: skipping (charts=%s, labels=%s)",
+            bool(charts), len(selected_kpi_labels or []),
+        )
         return
 
-    # Any sparkline keys at all?
-    _has_sparklines = any(k.startswith("sparkline__") for k in charts)
-    if not _has_sparklines:
+    # Collect all available sparkline keys for diagnostics.
+    _spark_keys = [k for k in charts if k.startswith("sparkline__")]
+    if not _spark_keys:
+        logger.info("KPI sparklines: no sparkline files were generated")
         return
+    logger.info(
+        "KPI sparklines: %d files available, KPI labels: %s",
+        len(_spark_keys), selected_kpi_labels,
+    )
 
-    # Minimum vertical gap (in EMU) between value and change shapes.
-    # 0.18" × 914_400 EMU/inch ≈ 164_592.
-    _MIN_GAP_EMU = int(0.18 * 914_400)
-    _MAX_HEIGHT = int(0.25 * 914_400)   # cap sparkline picture at 0.25"
+    # Relaxed thresholds. 0.05" is just enough to separate the sparkline
+    # from adjacent text; anything tighter and the line bleeds into runs.
+    _MIN_GAP_EMU   = int(0.05 * 914_400)
+    _MAX_HEIGHT    = int(0.25 * 914_400)
+    _FALLBACK_H    = int(0.20 * 914_400)
+    _PIC_GAP       = int(0.02 * 914_400)
 
-    for slide in prs.slides:
-        # Only process slides that contain KPI card tokens. The KPI scorecard
-        # slide has six {{kpi_i_value}} placeholders; other slides have none.
+    _slide_w       = prs.slide_width
+    _MIN_PIC_W     = int(1.2 * 914_400)
+
+    _processed_any = False
+
+    for slide_idx, slide in enumerate(prs.slides):
+        # Only process slides that contain KPI card tokens.
         _slide_text = ""
         for shape in slide.shapes:
             if shape.has_text_frame:
@@ -492,7 +507,13 @@ def _embed_kpi_sparklines(
         if "{{kpi_0_value}}" not in _slide_text:
             continue
 
-        # Build per-slot shape lookup.
+        _processed_any = True
+        logger.info(
+            "KPI sparklines: processing slide %d for %d KPIs",
+            slide_idx, len(selected_kpi_labels),
+        )
+
+        # Build per-slot shape lookup by token.
         value_shapes: dict[int, Any] = {}
         change_shapes: dict[int, Any] = {}
         for shape in slide.shapes:
@@ -505,50 +526,82 @@ def _embed_kpi_sparklines(
                 if f"{{{{kpi_{i}_change}}}}" in text:
                     change_shapes[i] = shape
 
-        # For each KPI slot, look up the matching sparkline by label and
-        # embed the picture between the value and change shapes.
+        _embedded = 0
+        _skipped: list[str] = []
         for i in range(min(6, len(selected_kpi_labels))):
             label = selected_kpi_labels[i]
             spark_path = charts.get(f"sparkline__{label}")
             if not spark_path or not os.path.exists(spark_path):
+                _skipped.append(f"{i}:{label}=no-file")
                 continue
 
             v_shape = value_shapes.get(i)
             c_shape = change_shapes.get(i)
-            if not v_shape:
+            if v_shape is None:
+                _skipped.append(f"{i}:{label}=no-value-shape")
                 continue
 
             try:
-                v_bottom = int(v_shape.top or 0) + int(v_shape.height or 0)
+                v_top    = int(v_shape.top or 0)
                 v_left   = int(v_shape.left or 0)
                 v_width  = int(v_shape.width or 0)
+                v_height = int(v_shape.height or 0)
+                v_bottom = v_top + v_height
 
-                if c_shape is not None:
-                    gap = int(c_shape.top or 0) - v_bottom
+                # Two layouts:
+                #   1. Same shape contains both tokens (combined card) →
+                #      place below the combined shape.
+                #   2. Separate shapes → place in the gap between them.
+                _same_shape = c_shape is not None and c_shape is v_shape
+
+                if _same_shape or c_shape is None:
+                    pic_h = _FALLBACK_H
+                    pic_t = v_bottom + _PIC_GAP
                 else:
-                    # No change shape — assume full height under the value.
-                    gap = _MAX_HEIGHT
+                    gap = int(c_shape.top or 0) - v_bottom
+                    if gap < _MIN_GAP_EMU:
+                        _skipped.append(
+                            f"{i}:{label}=tight-gap({gap / 914_400:.3f}in)"
+                        )
+                        continue
+                    pic_h = min(gap - _PIC_GAP, _MAX_HEIGHT)
+                    pic_t = v_bottom + _PIC_GAP
 
-                if gap < _MIN_GAP_EMU:
-                    logger.debug(
-                        "Sparkline skipped for KPI %d (%s): gap %d < min %d",
-                        i, label, gap, _MIN_GAP_EMU,
-                    )
-                    continue
-
-                pic_h = min(gap - int(0.02 * 914_400), _MAX_HEIGHT)
-                pic_w = max(int(v_width * 0.9), int(1.2 * 914_400))
+                pic_w = max(int(v_width * 0.9), _MIN_PIC_W)
                 pic_l = v_left + (v_width - pic_w) // 2
-                pic_t = v_bottom + int(0.02 * 914_400)
+                # Clamp horizontally so the picture never lands off-slide.
+                if pic_l < 0:
+                    pic_l = 0
+                if pic_l + pic_w > _slide_w:
+                    pic_l = max(0, _slide_w - pic_w)
 
                 slide.shapes.add_picture(
                     spark_path, pic_l, pic_t, width=pic_w, height=pic_h,
                 )
-                logger.debug("Embedded sparkline for KPI %d (%s)", i, label)
+                _embedded += 1
+                logger.info(
+                    "KPI sparkline embedded: slot=%d label=%s mode=%s",
+                    i, label, "combined" if _same_shape else "separate",
+                )
             except Exception as exc:
                 logger.warning(
-                    "Sparkline embed failed for KPI %d (%s): %s", i, label, exc,
+                    "Sparkline embed failed for KPI %d (%s): %s",
+                    i, label, exc,
                 )
+                _skipped.append(f"{i}:{label}=error")
+
+        if _skipped:
+            logger.info("KPI sparklines skipped: %s", ", ".join(_skipped))
+        logger.info(
+            "KPI sparklines: slide %d → embedded=%d skipped=%d",
+            slide_idx, _embedded, len(_skipped),
+        )
+
+    if not _processed_any:
+        logger.info(
+            "KPI sparklines: no slide contained {{kpi_0_value}} (template "
+            "may not declare scorecard tokens)"
+        )
 
 
 def _replace_placeholders_in_slide(slide: Any, replacements: dict[str, str]) -> None:
@@ -901,13 +954,106 @@ def _get_slides_to_delete(
     return to_delete
 
 
+def _fit_image_to_box(
+    img_width: int,
+    img_height: int,
+    max_width: int,
+    max_height: int,
+) -> tuple[int, int]:
+    """
+    Scale ``img_width × img_height`` to fit inside ``max_width × max_height``
+    while preserving aspect ratio. Returns ``(width, height)`` in whatever
+    units the caller passed in (EMU in practice).
+
+    Also protects against degenerate (zero or missing) source dimensions by
+    returning the max box as a conservative fallback.
+    """
+    if img_width <= 0 or img_height <= 0:
+        return max_width, max_height
+    ratio = min(max_width / img_width, max_height / img_height)
+    return int(img_width * ratio), int(img_height * ratio)
+
+
+def _measure_image(image_stream: "io.BytesIO") -> tuple[int, int]:
+    """
+    Return the native ``(width_px, height_px)`` of an in-memory image.
+    Falls back to ``(0, 0)`` on any PIL / decoding error — callers treat
+    that as "unknown size, use the max box".
+    """
+    try:
+        from PIL import Image  # noqa: PLC0415
+        image_stream.seek(0)
+        with Image.open(image_stream) as img:
+            w, h = img.size
+        image_stream.seek(0)
+        return int(w), int(h)
+    except Exception as exc:
+        logger.debug("Could not measure logo image: %s", exc)
+        return 0, 0
+
+
+def _add_logo_pad(
+    slide: Any,
+    left: int,
+    top: int,
+    width: int,
+    height: int,
+    padding: int | None = None,
+    fill_hex: str = "#F8FAFC",
+) -> None:
+    """
+    Place a subtle rounded-rectangle "pad" behind a logo for contrast.
+
+    Use on any slide where a logo sits over a dark background (the cover
+    slide's indigo header band, dark templates, etc.). The pad is a
+    soft off-white (``#F8FAFC`` slate-50) rather than pure white so it
+    reads as a card, not a sticker.
+
+    Must be called BEFORE ``add_picture`` so it renders behind the image
+    in the z-order.
+    """
+    if padding is None:
+        padding = int(0.05 * 914_400)   # 0.05" default pad
+    try:
+        from pptx.enum.shapes import MSO_SHAPE  # noqa: PLC0415
+        pad = slide.shapes.add_shape(
+            MSO_SHAPE.ROUNDED_RECTANGLE,
+            max(0, left - padding),
+            max(0, top - padding),
+            width + padding * 2,
+            height + padding * 2,
+        )
+        pad.fill.solid()
+        pad.fill.fore_color.rgb = _hex_to_rgb(fill_hex)
+        pad.line.fill.background()   # no border
+        try:
+            pad.adjustments[0] = 0.15  # 15% corner radius
+        except Exception:
+            pass
+    except Exception as exc:
+        logger.debug("Logo pad insertion failed: %s", exc)
+
+
 def _embed_logos(prs: Any, branding: dict | None) -> None:
     """Embed agency and client logos on the cover slide.
 
-    When an image URL is provided: download and embed it at the placeholder position.
-    When no image is provided: DELETE the placeholder shape so no empty box appears.
+    When an image URL is provided: download and embed it at the placeholder
+    position, constrained to a max bounding box so wide logos never overflow.
+    When no image is provided: DELETE the placeholder shape so no empty box
+    appears.
+
+    On the cover slide, a soft white "pad" rounded rectangle is placed
+    behind each logo for contrast against the indigo header band.
     """
     cover = prs.slides[0]
+    sw = prs.slide_width
+
+    # Max bounding boxes (EMU). Sized for a 13.33" × 7.5" widescreen slide.
+    _AGENCY_MAX_W = Inches(2.5)
+    _AGENCY_MAX_H = Inches(0.8)
+    _CLIENT_MAX_W = Inches(3.0)
+    _CLIENT_MAX_H = Inches(2.0)
+    _RIGHT_MARGIN = Inches(0.3)
 
     # Locate placeholder shapes by their text content
     agency_logo_shape = None
@@ -923,56 +1069,85 @@ def _embed_logos(prs: Any, branding: dict | None) -> None:
 
     br = branding or {}
 
-    # ── Agency logo ───────────────────────────────────────────────────────────
+    # ── Agency logo ──────────────────────────────────────────────────────
     agency_img = _download_image(br.get("agency_logo_url", ""))
-    if agency_img and agency_logo_shape:
+    if agency_img:
         try:
+            # Measure native pixel dimensions so we can preserve aspect ratio.
+            img_w_px, img_h_px = _measure_image(agency_img)
+
+            # Determine the max box: placeholder bounds if present, else the
+            # standard cover-header box. Clamp the placeholder width so a
+            # wide placeholder still can't push the logo off-slide.
+            if agency_logo_shape:
+                max_w = min(int(agency_logo_shape.width or _AGENCY_MAX_W), _AGENCY_MAX_W)
+                max_h = min(int(agency_logo_shape.height or _AGENCY_MAX_H), _AGENCY_MAX_H)
+                base_top = int(agency_logo_shape.top)
+            else:
+                max_w = _AGENCY_MAX_W
+                max_h = _AGENCY_MAX_H
+                base_top = Inches(0.3)
+
+            # Convert px → EMU proportionally using the max box ratio; if
+            # measurement failed, `_fit_image_to_box` returns the max box.
+            fit_w, fit_h = _fit_image_to_box(img_w_px, img_h_px, max_w, max_h)
+
+            # Right-align within the header band: left edge = slide_width -
+            # logo_width - right_margin. This guarantees the logo stays
+            # fully inside the slide regardless of its aspect ratio.
+            pic_left = sw - fit_w - _RIGHT_MARGIN
+            pic_top = base_top
+
+            # Soft pad behind the logo so it reads against the dark band.
+            _add_logo_pad(cover, pic_left, pic_top, fit_w, fit_h)
+
             agency_img.seek(0)
             cover.shapes.add_picture(
-                agency_img,
-                agency_logo_shape.left, agency_logo_shape.top,
-                height=agency_logo_shape.height,
+                agency_img, pic_left, pic_top, width=fit_w, height=fit_h,
             )
-            _delete_shape(cover, agency_logo_shape)   # remove placeholder text box
+            if agency_logo_shape:
+                _delete_shape(cover, agency_logo_shape)
         except Exception as e:
             logger.debug("Could not embed agency logo: %s", e)
-    elif agency_img:
-        # No placeholder found — fall back to top-right corner
-        try:
-            agency_img.seek(0)
-            sw = prs.slide_width
-            cover.shapes.add_picture(agency_img, sw - Inches(2.2), Inches(0.3), height=Inches(0.8))
-        except Exception as e:
-            logger.debug("Could not embed agency logo (fallback): %s", e)
     else:
         # No logo provided — delete the empty placeholder so it doesn't clutter the slide
         if agency_logo_shape:
             _delete_shape(cover, agency_logo_shape)
 
-    # ── Client logo ───────────────────────────────────────────────────────────
+    # ── Client logo ──────────────────────────────────────────────────────
     client_img = _download_image(br.get("client_logo_url", ""))
-    if client_img and client_logo_shape:
+    if client_img:
         try:
+            img_w_px, img_h_px = _measure_image(client_img)
+
+            if client_logo_shape:
+                max_w = min(int(client_logo_shape.width or _CLIENT_MAX_W), _CLIENT_MAX_W)
+                max_h = min(int(client_logo_shape.height or _CLIENT_MAX_H), _CLIENT_MAX_H)
+                base_top = int(client_logo_shape.top)
+                center_x = int(client_logo_shape.left) + max_w // 2
+            else:
+                max_w = _CLIENT_MAX_W
+                max_h = _CLIENT_MAX_H
+                base_top = Inches(5.5)
+                center_x = sw // 2
+
+            fit_w, fit_h = _fit_image_to_box(img_w_px, img_h_px, max_w, max_h)
+
+            # Horizontally centered around the placeholder (or slide center).
+            pic_left = center_x - fit_w // 2
+            pic_top = base_top
+
+            # Client logos typically sit on the light body area; skip the pad
+            # there. They only need contrast help when the slide background
+            # is dark, which the cover-header agency path already handles.
             client_img.seek(0)
             cover.shapes.add_picture(
-                client_img,
-                client_logo_shape.left, client_logo_shape.top,
-                height=client_logo_shape.height,
+                client_img, pic_left, pic_top, width=fit_w, height=fit_h,
             )
-            _delete_shape(cover, client_logo_shape)   # remove placeholder text box
+            if client_logo_shape:
+                _delete_shape(cover, client_logo_shape)
         except Exception as e:
             logger.debug("Could not embed client logo: %s", e)
-    elif client_img:
-        try:
-            client_img.seek(0)
-            sw = prs.slide_width
-            cover.shapes.add_picture(
-                client_img,
-                (sw - Inches(2.0)) // 2, Inches(5.5),
-                height=Inches(1.5),
-            )
-        except Exception as e:
-            logger.debug("Could not embed client logo (fallback): %s", e)
     else:
         if client_logo_shape:
             _delete_shape(cover, client_logo_shape)

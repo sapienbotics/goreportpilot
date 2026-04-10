@@ -195,7 +195,9 @@ def _parse_ga4_responses(
     # "(not set)") to human-friendly labels BEFORE aggregation so the AI
     # narrative and chart both see clean values. Multiple raw labels that
     # collapse to the same clean label (e.g. "(none)" and "(direct)" both
-    # → "Direct") have their session counts summed.
+    # → "Direct") have their session counts summed. Raw lowercase channel
+    # names ("referral", "organic") are title-cased so "Referral" /
+    # "Organic" appear in the rendered report.
     _SOURCE_CLEANUP = {
         "(none)":         "Direct",
         "(direct)":       "Direct",
@@ -206,7 +208,8 @@ def _parse_ga4_responses(
     traffic_sources: dict[str, int] = {}
     for row in sources_resp.get("rows", []):
         raw      = _dim_val(row, 0) or "other"
-        medium   = _SOURCE_CLEANUP.get(str(raw).strip().lower(), raw)
+        key      = str(raw).strip().lower()
+        medium   = _SOURCE_CLEANUP.get(key, str(raw).title())
         sessions = round(_met_val(row, 0))
         traffic_sources[medium] = traffic_sources.get(medium, 0) + sessions
 

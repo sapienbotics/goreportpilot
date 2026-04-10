@@ -145,10 +145,20 @@ _SOURCE_LABEL_MAP: Dict[str, str] = {
 
 
 def _clean_source_label(label: str) -> str:
-    """Map ugly GA4 source sentinels to human-friendly labels."""
+    """
+    Map ugly GA4 source sentinels to human-friendly labels.
+
+    Raw lowercase channel names ("referral", "organic") are title-cased so
+    the chart axis shows "Referral" / "Organic" instead of stretched-out
+    lowercase. Already-mapped labels (e.g. "Direct") are returned as-is.
+    """
     if not label:
         return "Other"
-    return _SOURCE_LABEL_MAP.get(str(label).strip().lower(), str(label))
+    key = str(label).strip().lower()
+    mapped = _SOURCE_LABEL_MAP.get(key)
+    if mapped is not None:
+        return mapped
+    return str(label).title()
 
 
 def _setup_chart_style(theme: Dict[str, Any], brand_color: str | None = None) -> Dict[str, Any]:
@@ -587,6 +597,15 @@ def generate_campaign_performance_chart(
     ax2.set_ylabel("Conversions", color=colors["secondary"])
     ax2.tick_params(axis="y", labelcolor=colors["secondary"])
     ax2.spines["right"].set_visible(True)
+
+    # When every campaign has zero conversions, matplotlib auto-scales the
+    # secondary axis to tiny fractional labels like "-0.04". Force a clean
+    # 0..1 range and show only the "0" tick so "no conversions yet" reads
+    # honestly.
+    _max_conv = max(conversions) if conversions else 0
+    if _max_conv == 0:
+        ax2.set_ylim(0, 1)
+        ax2.set_yticks([0])
     ax2.spines["right"].set_color(theme["spine_color"])
 
     ax1.set_xticks(list(x))
