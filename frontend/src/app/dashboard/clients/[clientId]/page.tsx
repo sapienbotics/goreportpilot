@@ -15,6 +15,7 @@ import { clientsApi, reportsApi, connectionsApi, authApi, scheduledReportsApi, u
 import type { ScheduledReport, ScheduledReportPayload } from '@/lib/api'
 import type { ParsedCSV } from '@/components/reports/CSVUploadForReport'
 import { cn } from '@/lib/utils'
+import { detectUserTimezone, localTimeToUtc, utcToLocalTime } from '@/lib/timezone-utils'
 import type { Client, Report, Connection, ReportConfig } from '@/types'
 import { DEFAULT_REPORT_CONFIG } from '@/types'
 
@@ -257,6 +258,10 @@ export default function ClientDetailPage({ params }: Props) {
 
   const [schedule,     setSchedule]     = useState<ScheduledReport | null>(null)
   const [schedEnabled, setSchedEnabled] = useState(false)
+  // `schedTimezone` is the IANA timezone the user is picking the time in.
+  // `schedForm.time_utc` always holds the *local* HH:MM in that timezone while
+  // the form is open; it is converted to UTC just before hitting the API.
+  const [schedTimezone, setSchedTimezone] = useState<string>(() => detectUserTimezone())
   const [schedForm,    setSchedForm]    = useState<ScheduledReportPayload>({
     client_id: clientId, frequency: 'monthly', day_of_month: 1,
     time_utc: '09:00', template: 'full', auto_send: false, send_to_emails: [],
@@ -271,7 +276,9 @@ export default function ClientDetailPage({ params }: Props) {
         setSchedule(active)
         if (active) {
           setSchedEnabled(active.is_active)
-          setSchedForm({ client_id: clientId, frequency: active.frequency as ScheduledReportPayload['frequency'], day_of_week: active.day_of_week ?? undefined, day_of_month: active.day_of_month ?? 1, time_utc: active.time_utc, template: active.template, auto_send: active.auto_send, send_to_emails: active.send_to_emails })
+          // Convert stored UTC time into the user's current timezone for display.
+          const localTime = utcToLocalTime(active.time_utc, detectUserTimezone())
+          setSchedForm({ client_id: clientId, frequency: active.frequency as ScheduledReportPayload['frequency'], day_of_week: active.day_of_week ?? undefined, day_of_month: active.day_of_month ?? 1, time_utc: localTime, template: active.template, auto_send: active.auto_send, send_to_emails: active.send_to_emails })
         }
       })
       .catch(() => {})
@@ -281,11 +288,17 @@ export default function ClientDetailPage({ params }: Props) {
     if (!client) return
     setSavingSched(true)
     try {
+      // Convert the local time (in the selected timezone) back to UTC
+      // before sending to the API — the backend only deals in UTC.
+      const payload: ScheduledReportPayload = {
+        ...schedForm,
+        time_utc: localTimeToUtc(schedForm.time_utc ?? '09:00', schedTimezone),
+      }
       if (schedule) {
-        const updated = await scheduledReportsApi.update(schedule.id, { ...schedForm, is_active: schedEnabled })
+        const updated = await scheduledReportsApi.update(schedule.id, { ...payload, is_active: schedEnabled })
         setSchedule(updated)
       } else if (schedEnabled) {
-        const created = await scheduledReportsApi.create(schedForm)
+        const created = await scheduledReportsApi.create(payload)
         setSchedule(created)
       }
       setSchedSaved(true)
@@ -482,6 +495,8 @@ export default function ClientDetailPage({ params }: Props) {
           setSchedEnabled={setSchedEnabled}
           schedForm={schedForm}
           setSchedForm={setSchedForm}
+          schedTimezone={schedTimezone}
+          setSchedTimezone={setSchedTimezone}
           savingSched={savingSched}
           schedSaved={schedSaved}
           handleSaveSchedule={handleSaveSchedule}

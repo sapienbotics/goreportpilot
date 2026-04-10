@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import type { ScheduledReport, ScheduledReportPayload } from '@/lib/api'
 import type { Client } from '@/types'
+import { TIMEZONE_OPTIONS, utcToLocalTime, getTimezoneShortLabel } from '@/lib/timezone-utils'
 
 interface Props {
   client: Client
@@ -12,6 +13,8 @@ interface Props {
   setSchedEnabled: (v: boolean) => void
   schedForm: ScheduledReportPayload
   setSchedForm: React.Dispatch<React.SetStateAction<ScheduledReportPayload>>
+  schedTimezone: string
+  setSchedTimezone: (tz: string) => void
   savingSched: boolean
   schedSaved: boolean
   handleSaveSchedule: () => void
@@ -22,8 +25,11 @@ export default function SchedulesTab({
   client, schedule,
   schedEnabled, setSchedEnabled,
   schedForm, setSchedForm,
+  schedTimezone, setSchedTimezone,
   savingSched, schedSaved, handleSaveSchedule,
 }: Props) {
+  // The schedule row from the API stores `time_utc` in UTC; convert it for display.
+  const scheduleLocalTime = schedule ? utcToLocalTime(schedule.time_utc, schedTimezone) : ''
   return (
     <div className="space-y-4 max-w-2xl">
       <Card>
@@ -80,10 +86,21 @@ export default function SchedulesTab({
                 )}
 
                 <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1.5">At (UTC)</label>
+                  <label className="block text-xs font-medium text-slate-500 mb-1.5">At</label>
                   <Input type="time" value={schedForm.time_utc}
                     onChange={e => setSchedForm(f => ({ ...f, time_utc: e.target.value }))}
                     className="w-28" />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1.5">Timezone</label>
+                  <select value={schedTimezone}
+                    onChange={e => setSchedTimezone(e.target.value)}
+                    className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    {TIMEZONE_OPTIONS.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
@@ -117,7 +134,7 @@ export default function SchedulesTab({
               {schedule && (
                 <div className="text-xs text-slate-400 space-y-0.5">
                   {schedule.next_run_at && (
-                    <p>Next report: {new Date(schedule.next_run_at).toLocaleDateString('en-US', { weekday:'short', year:'numeric', month:'short', day:'numeric' })} at {schedule.time_utc} UTC</p>
+                    <p>Next report: {new Date(schedule.next_run_at).toLocaleDateString('en-US', { weekday:'short', year:'numeric', month:'short', day:'numeric' })} at {scheduleLocalTime} ({getTimezoneShortLabel(schedTimezone)})</p>
                   )}
                   {schedule.last_generated_at && (
                     <p>Last generated: {new Date(schedule.last_generated_at).toLocaleDateString('en-US', { weekday:'short', year:'numeric', month:'short', day:'numeric' })}</p>
