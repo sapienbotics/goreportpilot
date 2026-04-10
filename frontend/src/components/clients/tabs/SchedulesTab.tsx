@@ -1,10 +1,23 @@
 'use client'
-import { Clock, Check, Loader2 } from 'lucide-react'
+import { Clock, Check, Loader2, Lock } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import type { ScheduledReport, ScheduledReportPayload } from '@/lib/api'
 import type { Client } from '@/types'
 import { TIMEZONE_OPTIONS, utcToLocalTime, getTimezoneShortLabel } from '@/lib/timezone-utils'
+import { usePlanFeatures } from '@/hooks/usePlanFeatures'
+
+// All visual templates the backend supports. Plan gating is computed
+// against the current user's ``features.visual_templates`` list — any
+// template NOT in that list is rendered disabled with a "(Pro)" suffix.
+const VISUAL_TEMPLATE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'modern_clean',    label: 'Modern Clean' },
+  { value: 'dark_executive',  label: 'Dark Executive' },
+  { value: 'colorful_agency', label: 'Colorful Agency' },
+  { value: 'bold_geometric',  label: 'Bold Geometric' },
+  { value: 'minimal_elegant', label: 'Minimal Elegant' },
+  { value: 'gradient_modern', label: 'Gradient Modern' },
+]
 
 interface Props {
   client: Client
@@ -30,6 +43,7 @@ export default function SchedulesTab({
 }: Props) {
   // The schedule row from the API stores `time_utc` in UTC; convert it for display.
   const scheduleLocalTime = schedule ? utcToLocalTime(schedule.time_utc, schedTimezone) : ''
+  const { features: planFeatures } = usePlanFeatures()
   return (
     <div className="space-y-4 max-w-2xl">
       <Card>
@@ -112,6 +126,38 @@ export default function SchedulesTab({
                   <option value="full">Full Report — 8 slides</option>
                   <option value="summary">Summary — 4 slides</option>
                   <option value="brief">One-Page Brief — 2 slides</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1.5 flex items-center gap-1">
+                  Visual style
+                  {!planFeatures.visual_templates.includes(schedForm.visual_template ?? 'modern_clean') && (
+                    <Lock className="h-3 w-3 text-amber-500" />
+                  )}
+                </label>
+                <select value={schedForm.visual_template ?? 'modern_clean'}
+                  onChange={e => setSchedForm(f => ({ ...f, visual_template: e.target.value }))}
+                  className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                  {VISUAL_TEMPLATE_OPTIONS.map(opt => {
+                    const locked = !planFeatures.visual_templates.includes(opt.value)
+                    return (
+                      <option key={opt.value} value={opt.value} disabled={locked}>
+                        {opt.label}{locked ? ' (Pro)' : ''}
+                      </option>
+                    )
+                  })}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1.5">Attachment format</label>
+                <select value={schedForm.attachment_type ?? 'both'}
+                  onChange={e => setSchedForm(f => ({ ...f, attachment_type: e.target.value as 'pdf' | 'pptx' | 'both' }))}
+                  className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                  <option value="both">Both (PDF + PPTX)</option>
+                  <option value="pdf">PDF only</option>
+                  <option value="pptx">PPTX only</option>
                 </select>
               </div>
 

@@ -287,6 +287,12 @@ class ScheduledReportCreate(BaseModel):
     template: str = "full"          # "full" | "summary" | "brief"
     auto_send: bool = False
     send_to_emails: list[str] = []
+    # Attachment format for the delivered email: "pdf" | "pptx" | "both".
+    attachment_type: str = "both"
+    # Visual template applied when rendering the report. Clamped to the
+    # user's plan-allowed list inside _generate_report_internal, so any
+    # invalid value here is silently overridden at run time.
+    visual_template: str = "modern_clean"
 
 
 class ScheduledReportUpdate(BaseModel):
@@ -298,6 +304,8 @@ class ScheduledReportUpdate(BaseModel):
     auto_send: bool | None = None
     send_to_emails: list[str] | None = None
     is_active: bool | None = None
+    attachment_type: str | None = None
+    visual_template: str | None = None
 
 
 class ScheduledReportResponse(BaseModel):
@@ -312,6 +320,8 @@ class ScheduledReportResponse(BaseModel):
     auto_send: bool
     send_to_emails: list[str]
     is_active: bool
+    attachment_type: str = "both"
+    visual_template: str = "modern_clean"
     last_generated_at: datetime | None = None
     next_run_at: datetime | None = None
     created_at: datetime

@@ -56,10 +56,35 @@ async def _process_scheduled_report(schedule: dict, supabase, now: datetime) -> 
     from datetime import timedelta  # noqa: PLC0415
     from routers.reports import _generate_report_internal  # noqa: PLC0415
 
-    client_id = schedule["client_id"]
-    user_id   = schedule["user_id"]
-    template  = schedule.get("template", "full")
-    frequency = schedule.get("frequency", "monthly")
+    client_id       = schedule["client_id"]
+    user_id         = schedule["user_id"]
+    template        = schedule.get("template", "full")
+    frequency       = schedule.get("frequency", "monthly")
+    visual_template = schedule.get("visual_template") or "modern_clean"
+
+    # ── Plan pre-check for the visual template ────────────────────────────
+    # _generate_report_internal will also clamp internally, but we
+    # log a warning here for operator visibility when a schedule
+    # references a template the user's current plan no longer allows
+    # (e.g. downgraded from Pro to Starter).
+    try:
+        from middleware.plan_enforcement import get_user_subscription  # noqa: PLC0415
+        from services.plans import get_plan  # noqa: PLC0415
+        _sub = get_user_subscription(user_id)
+        _plan_name = _sub.get("plan", "trial")
+        _allowed = (
+            get_plan(_plan_name).get("features", {}).get("visual_templates")
+            or ["modern_clean"]
+        )
+        if visual_template not in _allowed:
+            logger.warning(
+                "Scheduler: plan %s does not allow visual_template=%s for "
+                "schedule %s — overriding to modern_clean",
+                _plan_name, visual_template, schedule.get("id"),
+            )
+            visual_template = "modern_clean"
+    except Exception as exc:
+        logger.debug("Scheduler: plan pre-check skipped — %s", exc)
 
     # ── Calculate report period based on frequency ──────────────────────────
     today = now.date()
@@ -75,8 +100,8 @@ async def _process_scheduled_report(schedule: dict, supabase, now: datetime) -> 
 
     # ── Generate the report ─────────────────────────────────────────────────
     logger.info(
-        "Scheduler: generating %s %s report for client %s (%s → %s)",
-        frequency, template, client_id, period_start, period_end,
+        "Scheduler: generating %s %s report for client %s (%s → %s, visual=%s)",
+        frequency, template, client_id, period_start, period_end, visual_template,
     )
     row, client_name = await _generate_report_internal(
         client_id=client_id,
@@ -84,6 +109,7 @@ async def _process_scheduled_report(schedule: dict, supabase, now: datetime) -> 
         period_start=str(period_start),
         period_end=str(period_end),
         template=template,
+        visual_template=visual_template,
         supabase=supabase,
     )
     report_id = row["id"]
@@ -159,11 +185,20 @@ async def _send_scheduled_report(
         email_footer=_p.get("email_footer", ""),
     )
 
-    # Attach files from disk
+    # Attach files from disk — honor the schedule's attachment_type setting
+    # so "pdf only" schedules don't also ship a 2 MB PPTX the user didn't ask
+    # for. Defaults to "both" for legacy rows.
     from routers.reports import REPORTS_BASE_DIR  # noqa: PLC0415
     report_dir = os.path.join(REPORTS_BASE_DIR, row["id"])
     pdf_path   = os.path.join(report_dir, "report.pdf")
     pptx_path  = os.path.join(report_dir, "report.pptx")
+
+    attachment_type = (schedule.get("attachment_type") or "both").lower()
+    if attachment_type not in ("pdf", "pptx", "both"):
+        attachment_type = "both"
+
+    send_pdf  = attachment_type in ("pdf",  "both") and os.path.exists(pdf_path)
+    send_pptx = attachment_type in ("pptx", "both") and os.path.exists(pptx_path)
 
     try:
         await send_report_email(
@@ -172,10 +207,13 @@ async def _send_scheduled_report(
             html_body=html_body,
             sender_name=sender_name,
             reply_to=reply_to or None,
-            pptx_path=pptx_path if os.path.exists(pptx_path) else None,
-            pdf_path=pdf_path  if os.path.exists(pdf_path)  else None,
+            pptx_path=pptx_path if send_pptx else None,
+            pdf_path=pdf_path  if send_pdf  else None,
         )
         supabase.table("reports").update({"status": "sent"}).eq("id", row["id"]).execute()
-        logger.info("Scheduled report %s sent to %s", row["id"], schedule["send_to_emails"])
+        logger.info(
+            "Scheduled report %s sent to %s (attachment_type=%s)",
+            row["id"], schedule["send_to_emails"], attachment_type,
+        )
     except Exception as exc:
         logger.error("Scheduler: email send failed for report %s: %s", row["id"], exc)

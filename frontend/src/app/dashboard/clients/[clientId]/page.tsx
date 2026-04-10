@@ -265,6 +265,7 @@ export default function ClientDetailPage({ params }: Props) {
   const [schedForm,    setSchedForm]    = useState<ScheduledReportPayload>({
     client_id: clientId, frequency: 'monthly', day_of_month: 1,
     time_utc: '09:00', template: 'full', auto_send: false, send_to_emails: [],
+    attachment_type: 'both', visual_template: 'modern_clean',
   })
   const [savingSched, setSavingSched] = useState(false)
   const [schedSaved,  setSchedSaved]  = useState(false)
@@ -278,7 +279,18 @@ export default function ClientDetailPage({ params }: Props) {
           setSchedEnabled(active.is_active)
           // Convert stored UTC time into the user's current timezone for display.
           const localTime = utcToLocalTime(active.time_utc, detectUserTimezone())
-          setSchedForm({ client_id: clientId, frequency: active.frequency as ScheduledReportPayload['frequency'], day_of_week: active.day_of_week ?? undefined, day_of_month: active.day_of_month ?? 1, time_utc: localTime, template: active.template, auto_send: active.auto_send, send_to_emails: active.send_to_emails })
+          setSchedForm({
+            client_id: clientId,
+            frequency: active.frequency as ScheduledReportPayload['frequency'],
+            day_of_week: active.day_of_week ?? undefined,
+            day_of_month: active.day_of_month ?? 1,
+            time_utc: localTime,
+            template: active.template,
+            auto_send: active.auto_send,
+            send_to_emails: active.send_to_emails,
+            attachment_type: active.attachment_type ?? 'both',
+            visual_template: active.visual_template ?? 'modern_clean',
+          })
         }
       })
       .catch(() => {})

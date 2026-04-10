@@ -135,17 +135,19 @@ async def create_schedule(
     )
 
     insert_data = {
-        "client_id":      payload.client_id,
-        "user_id":        user_id,
-        "frequency":      payload.frequency,
-        "day_of_week":    payload.day_of_week,
-        "day_of_month":   payload.day_of_month,
-        "time_utc":       payload.time_utc,
-        "template":       payload.template,
-        "auto_send":      payload.auto_send,
-        "send_to_emails": payload.send_to_emails,
-        "is_active":      True,
-        "next_run_at":    next_run.isoformat(),
+        "client_id":        payload.client_id,
+        "user_id":          user_id,
+        "frequency":        payload.frequency,
+        "day_of_week":      payload.day_of_week,
+        "day_of_month":     payload.day_of_month,
+        "time_utc":         payload.time_utc,
+        "template":         payload.template,
+        "auto_send":        payload.auto_send,
+        "send_to_emails":   payload.send_to_emails,
+        "attachment_type":  payload.attachment_type,
+        "visual_template":  payload.visual_template,
+        "is_active":        True,
+        "next_run_at":      next_run.isoformat(),
     }
 
     result = supabase.table("scheduled_reports").insert(insert_data).execute()

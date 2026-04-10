@@ -323,6 +323,8 @@ export const settingsApi = {
 // Scheduled Reports API
 // ---------------------------------------------------------------------------
 
+export type ScheduledAttachmentType = 'pdf' | 'pptx' | 'both'
+
 export interface ScheduledReportPayload {
   client_id: string
   frequency: 'weekly' | 'biweekly' | 'monthly'
@@ -332,6 +334,8 @@ export interface ScheduledReportPayload {
   template?: string
   auto_send?: boolean
   send_to_emails?: string[]
+  attachment_type?: ScheduledAttachmentType
+  visual_template?: string
 }
 
 export interface ScheduledReport {
@@ -346,6 +350,8 @@ export interface ScheduledReport {
   auto_send: boolean
   send_to_emails: string[]
   is_active: boolean
+  attachment_type: ScheduledAttachmentType
+  visual_template: string
   last_generated_at?: string | null
   next_run_at?: string | null
   created_at: string
