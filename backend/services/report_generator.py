@@ -452,21 +452,18 @@ def _embed_kpi_sparklines(
     """
     Embed small sparkline PNGs on the KPI scorecard slide.
 
-    Strategy
-    --------
-    This helper MUST run **before** ``_replace_placeholders_in_slide`` so
-    the original ``{{kpi_i_value}}`` / ``{{kpi_i_change}}`` tokens are still
-    present for shape identification. It handles two template layouts:
+    Must run **before** ``_replace_placeholders_in_slide`` so the
+    ``{{kpi_i_value}}`` / ``{{kpi_i_change}}`` tokens are still present
+    for shape identification. Handles both separate-shape and combined-
+    shape card layouts.
 
-    1. **Separate shapes** — label, value and change each in their own text
-       box. Sparkline is placed in the vertical gap between the value shape
-       and the change shape.
-    2. **Combined shape** — label + value + change all in one text frame
-       (common on legacy / compact scorecards). When the value and change
-       tokens resolve to the same shape, the sparkline is placed just
-       BELOW the combined shape with a 0.2" height and a 0.05" offset.
+    Picture height is fixed at 0.25" so sparklines read clearly on every
+    template. Earlier gap-proportional sizing collapsed them to ~0.08"
+    on tight cards. Separate-shape cards with a gap tighter than
+    ``_MIN_GAP_EMU`` are skipped entirely rather than overlapping the
+    change indicator.
 
-    Labels that have no matching sparkline PNG in ``charts`` are silently
+    Labels with no matching sparkline PNG in ``charts`` are silently
     skipped.
     """
     if not charts or not selected_kpi_labels:
@@ -486,15 +483,11 @@ def _embed_kpi_sparklines(
         len(_spark_keys), selected_kpi_labels,
     )
 
-    # Relaxed thresholds. 0.05" is just enough to separate the sparkline
-    # from adjacent text; anything tighter and the line bleeds into runs.
-    _MIN_GAP_EMU   = int(0.05 * 914_400)
-    _MAX_HEIGHT    = int(0.25 * 914_400)
-    _FALLBACK_H    = int(0.20 * 914_400)
-    _PIC_GAP       = int(0.02 * 914_400)
-
-    _slide_w       = prs.slide_width
-    _MIN_PIC_W     = int(1.2 * 914_400)
+    _PIC_HEIGHT  = Inches(0.25)
+    _MIN_GAP_EMU = Inches(0.05)
+    _PIC_GAP     = Inches(0.02)
+    _MIN_PIC_W   = Inches(1.2)
+    _slide_w     = prs.slide_width
 
     _processed_any = False
 
@@ -548,25 +541,20 @@ def _embed_kpi_sparklines(
                 v_height = int(v_shape.height or 0)
                 v_bottom = v_top + v_height
 
-                # Two layouts:
-                #   1. Same shape contains both tokens (combined card) →
-                #      place below the combined shape.
-                #   2. Separate shapes → place in the gap between them.
                 _same_shape = c_shape is not None and c_shape is v_shape
 
-                if _same_shape or c_shape is None:
-                    pic_h = _FALLBACK_H
-                    pic_t = v_bottom + _PIC_GAP
-                else:
+                # Separate-shape cards with a too-tight gap are skipped
+                # outright — the sparkline would overlap the change glyph.
+                if c_shape is not None and not _same_shape:
                     gap = int(c_shape.top or 0) - v_bottom
                     if gap < _MIN_GAP_EMU:
                         _skipped.append(
                             f"{i}:{label}=tight-gap({gap / 914_400:.3f}in)"
                         )
                         continue
-                    pic_h = min(gap - _PIC_GAP, _MAX_HEIGHT)
-                    pic_t = v_bottom + _PIC_GAP
 
+                pic_t = v_bottom + _PIC_GAP
+                pic_h = _PIC_HEIGHT
                 pic_w = max(int(v_width * 0.9), _MIN_PIC_W)
                 pic_l = v_left + (v_width - pic_w) // 2
                 # Clamp horizontally so the picture never lands off-slide.
@@ -992,48 +980,6 @@ def _measure_image(image_stream: "io.BytesIO") -> tuple[int, int]:
         return 0, 0
 
 
-def _add_logo_pad(
-    slide: Any,
-    left: int,
-    top: int,
-    width: int,
-    height: int,
-    padding: int | None = None,
-    fill_hex: str = "#F8FAFC",
-) -> None:
-    """
-    Place a subtle rounded-rectangle "pad" behind a logo for contrast.
-
-    Use on any slide where a logo sits over a dark background (the cover
-    slide's indigo header band, dark templates, etc.). The pad is a
-    soft off-white (``#F8FAFC`` slate-50) rather than pure white so it
-    reads as a card, not a sticker.
-
-    Must be called BEFORE ``add_picture`` so it renders behind the image
-    in the z-order.
-    """
-    if padding is None:
-        padding = int(0.05 * 914_400)   # 0.05" default pad
-    try:
-        from pptx.enum.shapes import MSO_SHAPE  # noqa: PLC0415
-        pad = slide.shapes.add_shape(
-            MSO_SHAPE.ROUNDED_RECTANGLE,
-            max(0, left - padding),
-            max(0, top - padding),
-            width + padding * 2,
-            height + padding * 2,
-        )
-        pad.fill.solid()
-        pad.fill.fore_color.rgb = _hex_to_rgb(fill_hex)
-        pad.line.fill.background()   # no border
-        try:
-            pad.adjustments[0] = 0.15  # 15% corner radius
-        except Exception:
-            pass
-    except Exception as exc:
-        logger.debug("Logo pad insertion failed: %s", exc)
-
-
 def _embed_logos(prs: Any, branding: dict | None) -> None:
     """Embed agency and client logos on the cover slide.
 
@@ -1042,8 +988,8 @@ def _embed_logos(prs: Any, branding: dict | None) -> None:
     When no image is provided: DELETE the placeholder shape so no empty box
     appears.
 
-    On the cover slide, a soft white "pad" rounded rectangle is placed
-    behind each logo for contrast against the indigo header band.
+    Logos render directly on the slide with no background pad — agencies
+    are expected to upload logos that work against the cover-header color.
     """
     cover = prs.slides[0]
     sw = prs.slide_width
@@ -1098,9 +1044,9 @@ def _embed_logos(prs: Any, branding: dict | None) -> None:
             pic_left = sw - fit_w - _RIGHT_MARGIN
             pic_top = base_top
 
-            # Soft pad behind the logo so it reads against the dark band.
-            _add_logo_pad(cover, pic_left, pic_top, fit_w, fit_h)
-
+            # Logo renders directly on the indigo header with no background
+            # pad — agencies are expected to upload a logo that works on
+            # dark backgrounds (most already do).
             agency_img.seek(0)
             cover.shapes.add_picture(
                 agency_img, pic_left, pic_top, width=fit_w, height=fit_h,

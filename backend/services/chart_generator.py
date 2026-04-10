@@ -253,13 +253,17 @@ def _apply_caption(fig: Any, caption: str | None) -> None:
 
 
 # Max character length for AI-generated chart action titles. Longer strings
-# would overflow the plot area — especially after the font-size bump. Any
-# overrun is truncated at the last space before the cap and terminated with
-# an ellipsis so the break reads naturally.
-_CHART_TITLE_MAX_CHARS = 80
+# would overflow the plot area — especially after the font-size bump.
+_CHART_TITLE_MAX_CHARS = 75
 # Font size used for action titles (AI ``chart_insights``). Smaller than the
 # default 12pt because insight titles are longer sentences, not labels.
 _ACTION_TITLE_FONTSIZE = 10
+
+# Natural sentence-ish boundaries preferred when truncating a title. Order
+# matters — a period is a stronger break than a comma. A separator is only
+# accepted if it falls AFTER the halfway mark of the clipped prefix so we
+# don't lop off too much of the original message.
+_TITLE_BOUNDARY_SEPS: tuple[str, ...] = (". ", ", ", "; ", " \u2014 ")
 
 
 def plot_sparkline(
@@ -314,17 +318,34 @@ def _truncate_chart_title(title: str | None) -> str | None:
     """
     Clamp an AI-generated chart title to ``_CHART_TITLE_MAX_CHARS``.
 
-    When the input is shorter than the cap it is returned unchanged.
-    When longer, it is truncated at the last space before the cap and
-    an ellipsis ``…`` is appended. If no space exists inside the cap,
-    a hard cut at the cap length is used instead.
+    Strategy
+    --------
+    1. Titles shorter than the cap pass through untouched.
+    2. Otherwise, look for the rightmost natural boundary (``". "``,
+       ``", "``, ``"; "``, ``" — "``) in the SECOND HALF of the clipped
+       prefix. If found, end the title there WITHOUT an ellipsis — the
+       sentence reads complete, which looks cleaner than trailing dots.
+    3. Fall back to the last space before the cap + ``…`` so a partial
+       clause still breaks on a word boundary.
+    4. Last resort: hard cut at the cap + ``…``.
     """
     if not title or len(title) <= _CHART_TITLE_MAX_CHARS:
         return title
-    cut = title[:_CHART_TITLE_MAX_CHARS].rfind(" ")
-    if cut <= 0:
-        cut = _CHART_TITLE_MAX_CHARS
-    return title[:cut].rstrip() + "\u2026"
+
+    clipped = title[:_CHART_TITLE_MAX_CHARS]
+    half = _CHART_TITLE_MAX_CHARS / 2
+
+    # Prefer natural sentence-ish boundaries in the second half.
+    for sep in _TITLE_BOUNDARY_SEPS:
+        last_sep = clipped.rfind(sep)
+        if last_sep > half:
+            return title[:last_sep + len(sep)].rstrip(" ,;")
+
+    # Word-boundary fallback.
+    last_space = clipped.rfind(" ")
+    if last_space > 0:
+        return clipped[:last_space].rstrip() + "\u2026"
+    return clipped + "\u2026"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
