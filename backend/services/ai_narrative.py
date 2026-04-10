@@ -94,6 +94,53 @@ TONE_MODIFIERS: Dict[str, str] = {
     ),
 }
 
+# Bad-month detection threshold: any primary KPI (sessions, users,
+# conversions) dropping more than 5% MoM counts as a "bad month" and
+# triggers a mandatory acknowledgement in the opening sentence of the
+# executive summary. Below this threshold the AI follows normal SCQA flow.
+_BAD_MONTH_DROP_PCT = -5.0
+
+# Extra system-prompt clause injected when ``_detect_bad_month`` returns
+# True. Implements the four-beat recovery sequence from
+# docs/REPORT-QUALITY-RESEARCH-2026.md §Phase 3 "Presenting a bad month".
+_BAD_MONTH_INSTRUCTION = """
+
+CRITICAL — BAD-MONTH DETECTED:
+This reporting period saw a material decline in one or more primary KPIs
+(sessions, users, or conversions dropped by more than 5% vs the previous
+period). You MUST acknowledge this decline in the OPENING SENTENCE of the
+executive_summary — do NOT bury it, do NOT soften it with generic language.
+
+Use the four-beat recovery sequence:
+  1. Lead with the honest number ("Sessions fell 14% this month.")
+  2. Give context (YoY comparison if still positive, seasonality, known
+     external events like algorithm updates or holiday shifts).
+  3. Explain the likely cause — a specific hypothesis, not "underperformance".
+  4. State what changes next month (the first recommendation).
+
+This is a trust-preserving move. Clients respect transparency; they punish
+sugarcoating. Never hide bad results."""
+
+
+def _detect_bad_month(data: Dict[str, Any]) -> bool:
+    """
+    Return True when primary KPIs declined materially this period.
+
+    Heuristic: any of sessions / users / conversions dropped more than
+    5% MoM. One serious decline is enough to trigger the bad-month
+    narrative treatment — we do not require ALL metrics to fall.
+    """
+    ga4_summary = (data.get("ga4") or {}).get("summary") or {}
+    for key in ("sessions_change", "users_change", "conversions_change"):
+        change = ga4_summary.get(key)
+        try:
+            if change is not None and float(change) <= _BAD_MONTH_DROP_PCT:
+                return True
+        except (ValueError, TypeError):
+            continue
+    return False
+
+
 FALLBACK_NARRATIVE: Dict[str, str] = {
     "executive_summary": (
         "This report covers the performance period requested. "
@@ -321,12 +368,22 @@ Generate the following sections as a JSON object:
 
 Return ONLY valid JSON, no markdown code blocks, no explanation outside the JSON."""
 
+    # Detect declining primary KPIs and inject the bad-month clause so the
+    # AI leads with the decline in the executive_summary.
+    is_bad_month = _detect_bad_month(data)
+    _bad_month_clause = _BAD_MONTH_INSTRUCTION if is_bad_month else ""
+    if is_bad_month:
+        logger.info(
+            "Bad month detected for client %s — injecting recovery-sequence prompt",
+            client_name,
+        )
+
     try:
         ai = _get_openai_client()
         response = await ai.chat.completions.create(
             model="gpt-4.1",
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT + language_instruction},
+                {"role": "system", "content": SYSTEM_PROMPT + language_instruction + _bad_month_clause},
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.7,

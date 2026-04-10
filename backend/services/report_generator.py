@@ -444,6 +444,113 @@ def _build_replacements(
     return replacements
 
 
+def _embed_kpi_sparklines(
+    prs: Any,
+    charts: Dict[str, str],
+    selected_kpi_labels: list[str],
+) -> None:
+    """
+    Embed small sparkline PNGs on the KPI scorecard slide.
+
+    Strategy
+    --------
+    This helper MUST run **before** ``_replace_placeholders_in_slide`` so the
+    original ``{{kpi_i_value}}`` and ``{{kpi_i_change}}`` tokens are still
+    present in the template — we use them to locate the value and change
+    shapes for each KPI card, then compute a safe position in the vertical
+    gap between them for the sparkline picture.
+
+    The sparkline PNG files live in ``charts`` under the key
+    ``sparkline__<LABEL>`` (emitted by ``chart_generator.generate_all_charts``).
+    Labels that have no corresponding series are skipped silently — the KPI
+    card simply renders without a sparkline.
+
+    If the template does not leave enough vertical room between the value and
+    change shapes (< 0.18"), the sparkline is skipped for that card to avoid
+    visual overlap on legacy templates.
+    """
+    if not charts or not selected_kpi_labels:
+        return
+
+    # Any sparkline keys at all?
+    _has_sparklines = any(k.startswith("sparkline__") for k in charts)
+    if not _has_sparklines:
+        return
+
+    # Minimum vertical gap (in EMU) between value and change shapes.
+    # 0.18" × 914_400 EMU/inch ≈ 164_592.
+    _MIN_GAP_EMU = int(0.18 * 914_400)
+    _MAX_HEIGHT = int(0.25 * 914_400)   # cap sparkline picture at 0.25"
+
+    for slide in prs.slides:
+        # Only process slides that contain KPI card tokens. The KPI scorecard
+        # slide has six {{kpi_i_value}} placeholders; other slides have none.
+        _slide_text = ""
+        for shape in slide.shapes:
+            if shape.has_text_frame:
+                _slide_text += shape.text_frame.text
+        if "{{kpi_0_value}}" not in _slide_text:
+            continue
+
+        # Build per-slot shape lookup.
+        value_shapes: dict[int, Any] = {}
+        change_shapes: dict[int, Any] = {}
+        for shape in slide.shapes:
+            if not shape.has_text_frame:
+                continue
+            text = shape.text_frame.text
+            for i in range(6):
+                if f"{{{{kpi_{i}_value}}}}" in text:
+                    value_shapes[i] = shape
+                if f"{{{{kpi_{i}_change}}}}" in text:
+                    change_shapes[i] = shape
+
+        # For each KPI slot, look up the matching sparkline by label and
+        # embed the picture between the value and change shapes.
+        for i in range(min(6, len(selected_kpi_labels))):
+            label = selected_kpi_labels[i]
+            spark_path = charts.get(f"sparkline__{label}")
+            if not spark_path or not os.path.exists(spark_path):
+                continue
+
+            v_shape = value_shapes.get(i)
+            c_shape = change_shapes.get(i)
+            if not v_shape:
+                continue
+
+            try:
+                v_bottom = int(v_shape.top or 0) + int(v_shape.height or 0)
+                v_left   = int(v_shape.left or 0)
+                v_width  = int(v_shape.width or 0)
+
+                if c_shape is not None:
+                    gap = int(c_shape.top or 0) - v_bottom
+                else:
+                    # No change shape — assume full height under the value.
+                    gap = _MAX_HEIGHT
+
+                if gap < _MIN_GAP_EMU:
+                    logger.debug(
+                        "Sparkline skipped for KPI %d (%s): gap %d < min %d",
+                        i, label, gap, _MIN_GAP_EMU,
+                    )
+                    continue
+
+                pic_h = min(gap - int(0.02 * 914_400), _MAX_HEIGHT)
+                pic_w = max(int(v_width * 0.9), int(1.2 * 914_400))
+                pic_l = v_left + (v_width - pic_w) // 2
+                pic_t = v_bottom + int(0.02 * 914_400)
+
+                slide.shapes.add_picture(
+                    spark_path, pic_l, pic_t, width=pic_w, height=pic_h,
+                )
+                logger.debug("Embedded sparkline for KPI %d (%s)", i, label)
+            except Exception as exc:
+                logger.warning(
+                    "Sparkline embed failed for KPI %d (%s): %s", i, label, exc,
+                )
+
+
 def _replace_placeholders_in_slide(slide: Any, replacements: dict[str, str]) -> None:
     """Find and replace all {{placeholder}} text in a slide, preserving formatting."""
     for shape in slide.shapes:
@@ -1336,6 +1443,17 @@ def generate_pptx_report(
             formatted_content[k] = v
         else:
             replacements[k] = ""  # Clear unused placeholders
+
+    # ── KPI sparkline embedding (pre-replacement) ──────────────────────────
+    # Must run BEFORE _replace_placeholders_in_slide so the {{kpi_i_value}}
+    # and {{kpi_i_change}} tokens are still present for shape lookup.
+    try:
+        cur_sym_spark = _currency_symbol(data)
+        _selected = select_kpis(data, currency_symbol=cur_sym_spark)
+        _kpi_labels = [k["label"] for k in _selected]
+        _embed_kpi_sparklines(prs, charts, _kpi_labels)
+    except Exception as exc:
+        logger.warning("KPI sparkline embedding skipped: %s", exc)
 
     # ── Generic pass: single-value placeholders (names, KPIs, dates, logos) ─
     for slide in prs.slides:

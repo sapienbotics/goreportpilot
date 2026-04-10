@@ -252,6 +252,54 @@ _CHART_TITLE_MAX_CHARS = 80
 _ACTION_TITLE_FONTSIZE = 10
 
 
+def plot_sparkline(
+    values: List[float],
+    output_path: str,
+    color: str = "#4338CA",
+) -> str | None:
+    """
+    Render a minimal sparkline PNG for use inside a KPI card.
+
+    Tufte definition: "small, high-resolution graphics embedded in a context
+    of words, numbers, images." No axes, no gridlines, no title — just the
+    line itself with a dot at the most recent point. Designed for ~2" × 0.3"
+    embedding under a KPI big number.
+
+    Returns the output_path on success, None if insufficient data.
+    """
+    # Need at least 3 points to form a meaningful sparkline. 1-2 points
+    # would render as a dot or tiny stub and add visual noise.
+    if not values or len(values) < 3:
+        return None
+    # Filter out obviously invalid points.
+    clean = [float(v) for v in values if v is not None]
+    if len(clean) < 3:
+        return None
+
+    fig, ax = plt.subplots(figsize=(2.0, 0.35))
+    fig.patch.set_alpha(0.0)         # transparent background — PNG alpha
+    ax.set_facecolor("none")
+    ax.plot(range(len(clean)), clean,
+            color=color, linewidth=1.2, solid_capstyle="round")
+    # Dot on the most recent value so the reader sees "current position".
+    ax.plot(len(clean) - 1, clean[-1],
+            marker="o", markersize=3.0, color=color, zorder=3)
+    # Strip every chart decoration — a sparkline has no axes.
+    ax.set_xticks([])
+    ax.set_yticks([])
+    for side in ("top", "right", "bottom", "left"):
+        ax.spines[side].set_visible(False)
+    # Tight margins so the line uses the entire 2" × 0.35" area.
+    ax.margins(x=0.02, y=0.25)
+    fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
+    try:
+        fig.savefig(output_path, dpi=_DPI, transparent=True,
+                    bbox_inches="tight", pad_inches=0.02)
+    finally:
+        plt.close(fig)
+    return output_path
+
+
 def _truncate_chart_title(title: str | None) -> str | None:
     """
     Clamp an AI-generated chart title to ``_CHART_TITLE_MAX_CHARS``.
@@ -357,14 +405,34 @@ def generate_traffic_sources_chart(
                    color=palette[:len(labels)],
                    height=0.55, edgecolor="none")
 
+    # ── Direct-label vs y-axis-label strategy ──────────────────────────────
+    # Knaflic / McKinsey convention: when there are 4 or fewer categories,
+    # put the name + value directly next to each bar and suppress the y-axis
+    # tick labels. This removes the "legend lookup" cognitive hop. For 5+
+    # categories, fall back to y-axis tick labels + inline value only.
+    _direct_label = len(labels) <= 4
     max_val = max(values) if values else 1
-    for bar, val in zip(bars, values):
-        ax.text(
-            bar.get_width() + max_val * 0.015,
-            bar.get_y() + bar.get_height() / 2,
-            f"{val:,}",
-            va="center", fontsize=9, color=theme["text_color"],
-        )
+
+    if _direct_label:
+        # Hide y-axis tick labels entirely — the bar is self-explaining.
+        ax.set_yticks(range(len(labels)))
+        ax.set_yticklabels([""] * len(labels))
+        for bar, lbl, val in zip(bars, labels, values):
+            ax.text(
+                bar.get_width() + max_val * 0.015,
+                bar.get_y() + bar.get_height() / 2,
+                f"{lbl}  —  {val:,}",
+                va="center", fontsize=9,
+                color=theme["text_color"], fontweight="bold",
+            )
+    else:
+        for bar, val in zip(bars, values):
+            ax.text(
+                bar.get_width() + max_val * 0.015,
+                bar.get_y() + bar.get_height() / 2,
+                f"{val:,}",
+                va="center", fontsize=9, color=theme["text_color"],
+            )
 
     _ti = _truncate_chart_title(title_override)
     if _ti:
@@ -374,6 +442,10 @@ def generate_traffic_sources_chart(
     ax.set_xlabel("Sessions")
     ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f"{int(x):,}"))
     ax.invert_yaxis()
+
+    # Give the inline labels headroom so they don't clip the plot right edge.
+    if _direct_label:
+        ax.set_xlim(0, max_val * 1.35)
 
     fig.tight_layout()
     _apply_caption(fig, caption)
@@ -1058,6 +1130,69 @@ def generate_csv_comparison_chart(
 # Orchestrator
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _build_sparkline_series(data: Dict[str, Any]) -> Dict[str, List[float]]:
+    """
+    Derive per-metric daily time series for sparkline rendering.
+
+    Returns a dict keyed by the KPI label (matching the labels in
+    ``slide_selector.select_kpis``) so the orchestrator can look up the
+    correct series for each card.
+    """
+    series: Dict[str, List[float]] = {}
+
+    ga4_daily = (data.get("ga4") or {}).get("daily") or []
+    if ga4_daily:
+        _sessions = [float(d.get("sessions") or 0) for d in ga4_daily]
+        _users    = [float(d.get("users") or 0) for d in ga4_daily]
+        if any(_sessions):
+            series["SESSIONS"] = _sessions
+        if any(_users):
+            series["USERS"] = _users
+        # Daily conversions — present on some GA4 pulls
+        _convs = [float(d.get("conversions") or 0) for d in ga4_daily]
+        if any(_convs):
+            series["CONVERSIONS"] = _convs
+        # Bounce rate / pageviews as secondary candidates
+        _pv = [float(d.get("pageviews") or 0) for d in ga4_daily]
+        if any(_pv):
+            series["PAGEVIEWS"] = _pv
+
+    meta_daily = (data.get("meta_ads") or {}).get("daily") or []
+    if meta_daily:
+        _spend = [float(d.get("spend") or 0) for d in meta_daily]
+        _mconv = [float(d.get("conversions") or 0) for d in meta_daily]
+        _clicks = [float(d.get("clicks") or 0) for d in meta_daily]
+        if any(_spend):
+            series["AD SPEND"] = _spend
+        if any(_mconv):
+            series["AD CONVERSIONS"] = _mconv
+        if any(_clicks):
+            series["AD CLICKS"] = _clicks
+
+    gads_daily = (data.get("google_ads") or {}).get("daily") or []
+    if gads_daily:
+        _gspend = [float(d.get("spend") or 0) for d in gads_daily]
+        _gconv  = [float(d.get("conversions") or 0) for d in gads_daily]
+        _gclicks = [float(d.get("clicks") or 0) for d in gads_daily]
+        if any(_gspend):
+            series["SEARCH SPEND"] = _gspend
+        if any(_gconv):
+            series["SEARCH CONV."] = _gconv
+        if any(_gclicks):
+            series["SEARCH CLICKS"] = _gclicks
+
+    gsc_daily = (data.get("search_console") or {}).get("daily") or []
+    if gsc_daily:
+        _oclicks = [float(d.get("clicks") or 0) for d in gsc_daily]
+        _oimpr   = [float(d.get("impressions") or 0) for d in gsc_daily]
+        if any(_oclicks):
+            series["ORGANIC CLICKS"] = _oclicks
+        if any(_oimpr):
+            series["SEARCH IMPRESSIONS"] = _oimpr
+
+    return series
+
+
 def generate_all_charts(
     data: Dict[str, Any],
     output_dir: str,
@@ -1213,6 +1348,24 @@ def generate_all_charts(
             _try(f"csv_{safe_name}", generate_csv_comparison_chart,
                  csv_source, os.path.join(output_dir, f"csv_{safe_name}.png"),
                  brand_color=brand_color, theme_name=theme_name)
+
+    # ── Sparklines — one per KPI that has a daily series ───────────────────
+    # Emitted with the "sparkline__<LABEL>" key so ``_embed_kpi_sparklines``
+    # can look them up by the selected KPI labels (from slide_selector).
+    _sparkline_dir = os.path.join(output_dir, "sparklines")
+    _series = _build_sparkline_series(data)
+    if _series:
+        os.makedirs(_sparkline_dir, exist_ok=True)
+        _spark_color = brand_color or "#4338CA"
+        for label, values in _series.items():
+            _safe = label.replace(" ", "_").replace("/", "").replace(".", "").lower()
+            _path = os.path.join(_sparkline_dir, f"spark_{_safe}.png")
+            try:
+                result = plot_sparkline(values, _path, color=_spark_color)
+                if result:
+                    charts[f"sparkline__{label}"] = result
+            except Exception as exc:
+                logger.error("Sparkline '%s' failed: %s", label, exc)
 
     logger.info(
         "Generated %d charts in %s (template=%s, theme=%s)",
