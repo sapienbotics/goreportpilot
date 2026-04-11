@@ -30,7 +30,11 @@ Plus six structural gaps that each depress conversion measurably in published Sa
 - FAQ content references the old model name ("GPT-4o" instead of GPT-4.1) and a "25 clients" ceiling that no longer exists
 - No mobile-specific hero experience (the CSS report mockup is the "hero visual" — does it even render legibly on a 375px viewport?)
 
-**Estimated conversion impact if all Tier-1 fixes land: +30–60%** on signup rate, extrapolating from published landing-page experiment data. Largest single lever is fixing social proof + adding integration logos above the fold.
+**Benchmarks to anchor the target state:**
+- B2B SaaS landing pages average **1.1–2.5%** visitor-to-lead; median **2.9–3.5%**; top 25% hit **11.6%+**; top 10% reach **8–15%** ([SaaS Hero — 2026 Benchmarks](https://www.saashero.net/content/2026-b2b-saas-conversion-benchmarks/); [Pixelswithin — B2B SaaS Conversion 2026](https://pixelswithin.com/b2b-saas-conversion-benchmarks-2026/)).
+- ReportPilot should target **≥5% as a first milestone** and aim for **8–12%** as the top-quartile goal.
+
+**Estimated conversion impact if all Tier-1 fixes land: +30–60%** on signup rate, extrapolating from published landing-page experiment data. Largest single lever is fixing social proof + adding integration logos above the fold. The **first-person CTA copy change** ("Start my free trial") alone has produced documented CTR gains of up to **90%** in published A/B tests ([Mouseflow — SaaS CTAs](https://mouseflow.com/blog/ctas-for-saas/); [HubSpot — CTA Examples](https://blog.hubspot.com/marketing/call-to-action-examples)).
 
 ---
 
@@ -259,20 +263,42 @@ Currently ONE social proof signal on the entire page: "Join 100+ agencies automa
 What works: it's a complete sentence, makes a specific promise, and uses a classic two-beat structure (problem-solved / what-you-do). The contrast coloring on "You Review and Send" reinforces that the agency stays in control — an important trust move in an AI-skittish market.
 
 What doesn't:
-- **No specific outcome promise.** Compare to competitors: AgencyAnalytics leads with "White-label client reporting platform for digital marketing agencies" (specific audience). DashThis leads with "The automated marketing reporting tool for agencies" (specific category). Whatagraph leads with "Marketing reporting software that saves you hours" (specific outcome). The GoReportPilot headline is poetic but vague — who is the customer and what do they get?
-- **Missing the audience word.** The word "agency", "freelancer", "consultant" or "marketer" should appear in the H1 or immediate subhead for keyword + positioning clarity.
+- **Length.** 8 words and 49 characters — right at the edge of the widely-cited 8-word / 44-char ceiling for high-converting H1s ([SaaS Hero — Enterprise Landing Page Design 2026](https://www.saashero.net/design/enterprise-landing-page-design-2026/); [Swipe Pages — 12 Best SaaS Landing Pages 2026](https://swipepages.com/blog/12-best-saas-landing-page-examples-of-2026/)).
+- **Missing the audience word.** The word "agency", "freelancer", or "marketer" should appear in the H1 or immediate subhead. Every high-performing competitor in this niche names the audience explicitly: AgencyAnalytics' "Built for agencies", Databox's "for teams that need answers now", NinjaCat's "Built for Marketing". Generic B2B framing loses in this category — agency owners self-identify strongly.
+- **Missing the specific outcome.** "AI Writes Your Client Reports" is a capability, not an outcome. The Feature-Benefit Transformation framework argues you should lead with the end state ("get your weekends back") and explain the mechanism in the subhead ([Landing Rabbit — SaaS Hero Text](https://landingrabbit.com/blog/saas-website-hero-text); [Dayana Mayfield — SaaS Copywriting 2026](https://dayanamayfield.com/saas-copywriting/)).
 
-**Recommended H1 alternatives** (A/B candidates):
+**Actual 2026 competitor hero copy** (extracted for direct comparison):
 
-1. "Client reports that write themselves. You just review and send." — clearer promise, keeps the "review and send" hook.
-2. "The AI-powered client reporting tool for marketing agencies." — category-defining, audience-named, SEO-friendly.
-3. "Branded PowerPoint reports in 5 minutes. Not 5 hours." — leads with time savings + format.
+| Competitor | H1 | Subheadline |
+|---|---|---|
+| **AgencyAnalytics** | "Client reporting, upgraded with AI. Built for agencies" | "Automate the busywork, surface insights faster, and deliver client-ready reports in minutes." |
+| **DashThis** | "Marketing reporting made easy" | "Get 10 dashboards for 14 days" |
+| **Whatagraph** | "The easiest marketing intelligence platform you'll ever use" | "Whatagraph replaces complex reporting tools with a smart AI workflow that connects your data, cleans it, and delivers instant marketing insights—all in one place." |
+| **Swydo** | "The #1 Automated Reporting & Monitoring Tool for Online Marketers" | "Save time & prove results with professional online marketing reports & dashboards your clients actually understand" |
+| **Databox** | "AI-powered analytics for teams that need answers now" | "Turn business performance data into clear answers your team can understand, explain, and act on – instantly." |
+| **NinjaCat** | "Turn Fragmented Data into AI-Driven Insights" | "The Enterprise Data, Analytics & AI Agents Platform Built for Marketing" |
 
-**Subheadline** currently misses Google Ads, Search Console, and CSV. Fix the factual issue first — then experiment with outcome-driven versions.
+**Patterns worth stealing:**
 
-**Primary CTA: "Start Free Trial"** — fine, standard, clear. Published tests show "Start Free Trial" beats "Sign Up" by ~15-30% in B2B SaaS; keep it. Reinforcement line below CTA ("Join 100+ agencies...") needs to be either verified or replaced with a specific/verifiable signal (e.g., "14-day free trial · No credit card · 5-minute setup").
+- **Three-verb mechanism cadence** shows up repeatedly in winning subheads: AgencyAnalytics "automate → surface → deliver", Whatagraph "connect → clean → deliver", Databox "understand → explain → act". This is a reusable pattern for GoReportPilot's subheadline.
+- **Explicit niche anchor** — "Built for agencies" (AgencyAnalytics) / "for Online Marketers" (Swydo) / "Built for Marketing" (NinjaCat).
+- **Concrete numeric promise in the subhead** — DashThis's "10 dashboards for 14 days" is extremely specific and frictionless.
 
-**Secondary CTA: "See How It Works"** — good, low-commitment, scrolls the visitor into the funnel instead of out of it. Keep.
+**Recommended H1 alternatives** (A/B candidates, each under 8 words):
+
+1. **"Branded client reports, written by AI"** (7 words, 42 chars) — outcome-first, product category clear, under the 8-word ceiling. Pairs with subhead: "GoReportPilot connects GA4, Meta Ads and Google Ads, writes the commentary, and delivers a white-label PPTX + PDF in under 5 minutes."
+2. **"Client reports that write themselves"** (5 words, 35 chars) — shortest, highest emotional pull, keeps mystery.
+3. **"AI client reports for marketing agencies"** (6 words, 40 chars) — adds the audience word, maximum SEO keyword density.
+
+**Subheadline rewrite strategy:** use the three-verb cadence ("Connect → Write → Deliver") seen across the category winners, and name the data sources explicitly. Current subheadline misses Google Ads, Search Console, and CSV upload — fix the factual gap first, then adopt the verb cadence.
+
+**Primary CTA — major opportunity: switch to first-person.** Published A/B tests consistently show that changing "Start your free trial" → **"Start my free trial"** produces CTR gains of up to **90%** ([Mouseflow — SaaS CTAs](https://mouseflow.com/blog/ctas-for-saas/); [HubSpot — CTA Examples](https://blog.hubspot.com/marketing/call-to-action-examples)). The current button says "Start Free Trial" — dropping the possessive entirely misses both variants. **Try "Start My Free Trial"** on the primary CTA. This is a 2-word change with potentially the highest single-lever impact on the page.
+
+**CTA reinforcement microcopy**: every category-leading competitor stacks reassurances under the CTA. Swydo uses "Free for 14 days / No credit card required / Cancel anytime". DashThis uses "Don't worry, we don't need your credit card info". GoReportPilot currently has "Join 100+ agencies automating their client reports" (unverified). Replace with verifiable reassurance: **"Free 14 days · No credit card · From $19/mo · Cancel anytime"**.
+
+**Price anchor above the fold — underused lever.** Only 2 of 6 audited competitors (Swydo and Databox) show starting price on their homepage. At **$19/mo**, GoReportPilot has a *huge* cost-anchor advantage vs Swydo's €69 and Databox's $199. Adding "From $19/mo" next to the CTA is a **category-breaking move** because it plants a disruptive anchor before the visitor even scrolls to the pricing section.
+
+**Secondary CTA: "See How It Works"** — good, low-commitment, scrolls into the funnel rather than out. Keep.
 
 ### 3.2 Above-the-fold content
 
@@ -283,10 +309,25 @@ On a typical 1440×900 desktop, above the fold currently shows:
 - The "Join 100+ agencies" line
 - The left edge of the hero mockup
 
-**What's missing from above the fold** (all proven conversion levers per published SaaS landing-page data):
-- Integration logos (GA4, Meta, Google Ads, Search Console) — tells visitors "this supports my data" in <1 second
-- One verifiable trust signal (G2 badge, customer count, "trusted by" logo strip)
-- A visible price anchor (e.g., "From $19/mo — 14-day free trial")
+**The hero must answer three questions in under 5 seconds** ([The Thunderclap — Above the Fold](https://www.thethunderclap.com/blog/above-the-fold-optimization)): what does it do, who is it for, and what should I do next. GoReportPilot's hero answers question 1 and partially question 3, but punts on question 2 (no audience word) and has no trust signal to reinforce the answer.
+
+**Research-backed above-the-fold checklist** (every item is a documented conversion lever):
+
+| Element | Present? | Documented impact when added |
+|---|---|---|
+| Pre-heading label (e.g., "Client reporting platform") | ✗ | ~10% of sites use it; aids 5-second comprehension |
+| Outcome-first H1 ≤8 words | Borderline (8 words, 49 chars) | Exceeds the 44-char ceiling cited in winning examples |
+| Mechanism subheadline (15–25 words) | ~40 words, too long | Needs trimming |
+| **Single** primary CTA | ✗ Has two equal-weight CTAs | 68% of SaaS sites have competing CTAs — it's the #1 documented cause of decision fatigue ([Genesys Growth 2026](https://genesysgrowth.com/blog/designing-b2b-saas-landing-pages)) |
+| CTA reassurance microcopy | ✗ (current line is unverified) | Near-universal among top performers |
+| **Integration logo strip** | ✗ | Above-the-fold placement drives 2–3× more engagement than same element lower down |
+| Product visual / screenshot | ✓ CSS mockup | Present but mobile-unverified |
+| **User-count or logo bar** | ✗ | 5 of 6 audited competitors have this directly below the hero |
+| **G2 / Capterra rating badge** | ✗ | 5 of 6 audited competitors put this above the fold |
+| **Visible starting price** | ✗ | Underused lever — only 2 of 6 competitors show it; GoReportPilot's $19/mo is a category-breaking anchor |
+
+**What the current page gets right above the fold**: clean visual hierarchy, clear H1, working mobile nav.
+**What's missing**: the entire trust-signal layer (logos, ratings, counts) and the price anchor. These three changes alone — integration logos, verifiable trust metric, and visible $19/mo anchor — put the page in line with every category leader.
 
 ### 3.3 Feature presentation
 
@@ -323,6 +364,8 @@ Feature cards should also include a tiny **visual** — a rendered mini-screensh
 
 ### 3.5 Mobile experience
 
+**Mobile is 60–75% of initial SaaS research traffic, and 58% of pricing-page visits** ([ALM Corp — 47 Best SaaS Websites 2026](https://almcorp.com/blog/best-saas-websites/); [InfluenceFlow SaaS Pricing 2026](https://influenceflow.io/resources/saas-pricing-page-best-practices-complete-guide-for-2026/)). Desktop-optimized pricing pages convert **2.3× worse** on mobile than properly adapted ones. This is the most under-tested area on most B2B SaaS sites.
+
 **Structural OK:**
 - Sticky nav with mobile hamburger → slide-down menu
 - Hero grid collapses to single column below `lg:`
@@ -331,13 +374,26 @@ Feature cards should also include a tiny **visual** — a rendered mini-screensh
 
 **Needs verification on real devices (I couldn't test from code alone):**
 - Does the CSS hero mockup render legibly at 375px? The 3-column KPI card row at `grid-cols-3` will squeeze each card to ~100px wide — text may truncate.
-- Is the FAQ accordion touch-target compliant (≥44×44px)?
-- Does the pricing toggle work on touch (not just click)?
-- Is the comparison table actually readable when scrolled, or does it feel broken?
+- Is the FAQ accordion touch-target compliant (≥44×44px)? The mobile hamburger button is `p-2` on a 20×20 icon = ~36×36px — **below the 44×44 minimum**.
+- Is the pricing toggle touch-target compliant? Current toggle is `h-6 w-11` = 24×44px — **below the vertical 44px minimum**.
+- Does the comparison table actually read legibly when horizontally scrolled, or does it feel broken?
 
-**Mobile-specific recommendation:** swap the CSS hero mockup for a **mobile-optimized hero image** (an actual 4×-DPI PNG of one slide from a rendered report) below `md:`. The CSS mockup is beautiful on desktop but needs verification at mobile widths.
+**Mobile-specific recommendation:** swap the CSS hero mockup for a **mobile-optimized hero image** (a rendered 4×-DPI PNG of one slide from a real report) below `md:`. The CSS mockup is beautiful on desktop but unverified at mobile widths.
 
 ### 3.6 Page speed
+
+**2026 Core Web Vitals thresholds** (note: FID was replaced by INP in March 2024):
+- **LCP ≤ 2.5s** (Largest Contentful Paint)
+- **INP ≤ 200ms** (Interaction to Next Paint)
+- **CLS ≤ 0.1** (Cumulative Layout Shift)
+
+([Digital Applied — Core Web Vitals 2026](https://www.digitalapplied.com/blog/core-web-vitals-2026-inp-lcp-cls-optimization-guide); [Nitropack — Most Important CWV Metrics](https://nitropack.io/blog/most-important-core-web-vitals-metrics/))
+
+**Conversion impact** — published benchmarks:
+- A **1-second delay** in load time = **~7% fewer conversions**
+- Target: under **2 seconds** total page load for SaaS landing pages
+- **53% of sites** currently fail Google's "Good" thresholds and lose 8–35% of conversions as a result
+- **43% of sites fail the INP threshold** — improving INP from 450ms to 120ms produced a documented **15% conversion lift** on one SaaS landing page
 
 Current state is **probably fast** based on code inspection (no heavy images, CSS-only hero, server component for the main page, client components only where interactive). But cannot verify without running Lighthouse.
 
@@ -351,7 +407,7 @@ Current state is **probably fast** based on code inspection (no heavy images, CS
 ```
 npx lighthouse https://goreportpilot.com --view
 ```
-Targets: LCP < 2.5s, FID < 100ms, CLS < 0.1, Performance ≥ 90 on mobile.
+Targets: LCP < 2.5s, INP < 200ms, CLS < 0.1, Performance ≥ 90 on mobile.
 
 ### 3.7 SEO
 
@@ -589,6 +645,60 @@ Today the page hits items 1-4 well, has a weak/unverified version of item 5, is 
 
 Fixing items 5, 6, and 8 above the fold is the single highest-ROI improvement available. These three changes alone should produce a measurable conversion lift based on the broadly documented B2B SaaS landing-page literature.
 
+### Worked example hero draft
+
+Here's a concrete hero section that satisfies every research-backed rule in Phase 3. Ship this as A/B variant B against the current hero and measure:
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  Nav: Logo · Features · Pricing · Sign In · Get Started  │
+├──────────────────────────────────────────────────────────┤
+│                                                           │
+│  CLIENT REPORTING PLATFORM           ← pre-heading label  │
+│                                                           │
+│  Branded client reports,             ← H1: 7 words,      │
+│  written by AI.                         42 chars          │
+│                                                           │
+│  GoReportPilot connects GA4, Meta     ← subhead:         │
+│  Ads and Google Ads, writes the          3-verb cadence  │
+│  commentary, and delivers a white-       (connect→write  │
+│  label PPTX + PDF in under 5             →deliver)       │
+│  minutes.                                                 │
+│                                                           │
+│  [Start My Free Trial →]   Watch demo ← 1 primary CTA    │
+│                                         + text link      │
+│  Free 14 days · No credit card        ← verified         │
+│  From $19/mo · Cancel anytime            reassurance +   │
+│                                          price anchor    │
+│                                                           │
+│  ────────────────────────────────                         │
+│  [GA4 logo] [Meta logo] [Google Ads]  ← integration      │
+│  [Search Console] [+ CSV]                logo strip      │
+│  ────────────────────────────────                         │
+│                                                           │
+│  ⭐ 4.8 on G2 · 4.7 on Capterra       ← trust row        │
+│  Trusted by X freelance marketers        (real metric    │
+│                                           when verified) │
+│                                                           │
+│  [rendered report hero image / CSS mockup below fold]    │
+└──────────────────────────────────────────────────────────┘
+```
+
+**Why each piece is there (research-backed):**
+
+| Element | Rule being satisfied |
+|---|---|
+| "CLIENT REPORTING PLATFORM" pre-heading | Only ~10% of sites use it; aids 5-second comprehension |
+| H1 under 8 words / 44 chars | Hard benchmark from published winning examples |
+| 3-verb subhead (connect → write → deliver) | Pattern used by AgencyAnalytics, Whatagraph, Databox |
+| Single primary CTA | 68% of SaaS sites dilute focus with competing CTAs |
+| "Start **My** Free Trial" (first-person) | Up to 90% CTR lift in published A/B tests |
+| "From $19/mo" under the CTA | Category-breaking price anchor (only 2 of 6 competitors show price) |
+| "Free 14 days · No credit card" | Near-universal reassurance pattern across all audited competitors |
+| Integration logo strip | Fastest "does this support my stack" signal; missing on current page |
+| G2/Capterra rating row | 5 of 6 audited competitors have this above the fold |
+| "Trusted by X marketers" | Lightweight crowd social proof — but only when verifiable |
+
 ---
 
 ## Sources & references
@@ -600,13 +710,66 @@ Fixing items 5, 6, and 8 above the fold is the single highest-ROI improvement av
 - `docs/COMPETITOR-FEATURE-MATRIX-2026.md` — which competitors do/don't export PPTX
 - `docs/REPORT-QUALITY-RESEARCH-2026.md` — design principles already applied to the report generator (relevant for feature-card positioning)
 
-**External frameworks referenced** (well-documented B2B SaaS landing-page literature):
-- Above-the-fold checklist — standard across published SaaS landing-page experiment reports
-- "Features tell, benefits sell" — classic B2B copywriting principle
-- FAQ rich snippets / Google structured data docs — [developers.google.com/search/docs/appearance/structured-data/faqpage](https://developers.google.com/search/docs/appearance/structured-data/faqpage)
-- Next.js metadata & sitemap API — [nextjs.org/docs/app/api-reference/file-conventions/metadata](https://nextjs.org/docs/app/api-reference/file-conventions/metadata)
-- Lighthouse Core Web Vitals targets — [web.dev/vitals](https://web.dev/vitals)
+**External research sources — B2B SaaS landing page best practices 2026:**
 
-*Note: This analysis cites widely-documented B2B SaaS landing-page frameworks that are stable across 2024–2026. A fresh competitor-specific landing-page audit (actual hero copy pulled from agencyanalytics.com / dashthis.com / whatagraph.com / databox.com as of April 2026) was intended but not completed in this pass — the research pipeline stalled. Adding that audit in a follow-up would strengthen the §3.1 competitor-comparison bullets and let the page lift specific winning phrases. It does not change any of the Tier-1 recommendations above, which stand on internal-consistency and factual-accuracy grounds alone.*
+*Hero copy, headlines, and messaging:*
+- [SaaS Hero — Enterprise Landing Page Design 2026](https://www.saashero.net/design/enterprise-landing-page-design-2026/)
+- [SaaS Hero — 25 High-Converting B2B SaaS Landing Pages](https://www.saashero.net/design/high-converting-landing-page-examples/)
+- [SaaS Hero — 18 B2B Landing Page Best Practices](https://www.saashero.net/design/saas-landing-page-best-practices/)
+- [Swipe Pages — 12 Best SaaS Landing Pages 2026](https://swipepages.com/blog/12-best-saas-landing-page-examples-of-2026/)
+- [Landing Rabbit — SaaS Hero Text](https://landingrabbit.com/blog/saas-website-hero-text)
+- [Landing Rabbit — PAS Formula](https://landingrabbit.com/blog/pas-formula)
+- [Landing Rabbit — Hero Section](https://landingrabbit.com/blog/saas-website-hero-section)
+- [Dayana Mayfield — SaaS Copywriting 2026](https://dayanamayfield.com/saas-copywriting/)
+- [Trajectory Web Design — Hero Message Formulas](https://www.trajectorywebdesign.com/blog/website-hero-message/)
+- [Genesys Growth — Designing B2B SaaS Landing Pages 2026](https://genesysgrowth.com/blog/designing-b2b-saas-landing-pages)
+
+*CTAs and conversion psychology:*
+- [Mouseflow — SaaS CTAs (first-person lift data)](https://mouseflow.com/blog/ctas-for-saas/)
+- [HubSpot — 49 CTA Examples](https://blog.hubspot.com/marketing/call-to-action-examples)
+- [Best Version Media — Button Text for Clicks](https://www.bestversionmedia.com/button-text-that-gets-clicks-the-secrets-to-high-converting-ctas/)
+- [Profile Tree — High-Converting CTAs](https://profiletree.com/high-converting-cta-buttons/)
+- [The Thunderclap — Above the Fold Optimization](https://www.thethunderclap.com/blog/above-the-fold-optimization)
+- [The Thunderclap — SaaS CRO Best Practices](https://www.thethunderclap.com/blog/saas-cro-best-practices-for-conversions)
+
+*Social proof and trust signals:*
+- [LaunchWall — Social Proof for SaaS](https://launchwall.online/blog/social-proof-for-saas-landing-pages)
+- [Ravefy — Social Proof Strategy 2026](https://ravefy.io/blog/social-proof-strategy-for-saas-landing-pages)
+- [Nudgify — 12 Ways to Use Landing Page Social Proof](https://www.nudgify.com/social-proof-landing-pages/)
+- [Klientboost — Landing Page Testimonials](https://www.klientboost.com/landing-pages/landing-page-testimonials/)
+
+*Pricing page optimization:*
+- [InfluenceFlow — SaaS Pricing Page Guide 2026](https://influenceflow.io/resources/saas-pricing-page-best-practices-complete-guide-for-2026/)
+- [PipelineRoad — Pricing Page Best Practices](https://pipelineroad.com/agency/blog/saas-pricing-page-best-practices)
+- [Artisan Strategies — SaaS Pricing Page Best Practices](https://www.artisangrowthstrategies.com/blog/saas-pricing-page-best-practices-2025)
+
+*Conversion benchmarks and mobile:*
+- [SaaS Hero — 2026 B2B SaaS Conversion Benchmarks](https://www.saashero.net/content/2026-b2b-saas-conversion-benchmarks/)
+- [Pixelswithin — B2B SaaS Conversion 2026](https://pixelswithin.com/b2b-saas-conversion-benchmarks-2026/)
+- [Artisan Strategies — 2026 Conversion Benchmarks (1,200 companies)](https://www.artisangrowthstrategies.com/blog/saas-conversion-rate-benchmarks-2026-data-1200-companies)
+- [Genesys Growth — 40 Landing Page Conversion Stats](https://genesysgrowth.com/blog/landing-page-conversion-stats-for-marketing-leaders)
+- [ALM Corp — 47 Best SaaS Websites 2026 (mobile data)](https://almcorp.com/blog/best-saas-websites/)
+
+*Core Web Vitals 2026:*
+- [Digital Applied — Core Web Vitals 2026 (INP/LCP/CLS)](https://www.digitalapplied.com/blog/core-web-vitals-2026-inp-lcp-cls-optimization-guide)
+- [Nitropack — Most Important Core Web Vitals](https://nitropack.io/blog/most-important-core-web-vitals-metrics/)
+
+*Agency-specific pain points and positioning:*
+- [Instapage — State of Marketing Agencies](https://instapage.com/blog/state-of-marketing-agency-report/)
+- [Funnel — Agency Reporting Tools](https://funnel.io/blog/marketing-agency-reporting-tools)
+- [DashClicks — Agency Pain Points](https://www.dashclicks.com/blog/common-pain-points-digital-agencies-face)
+
+*Competitor landing pages audited (April 2026):*
+- [agencyanalytics.com](https://agencyanalytics.com) — "Client reporting, upgraded with AI. Built for agencies"
+- [dashthis.com](https://dashthis.com) — "Marketing reporting made easy"
+- [whatagraph.com](https://whatagraph.com) — "The easiest marketing intelligence platform you'll ever use"
+- [swydo.com](https://swydo.com) — "The #1 Automated Reporting & Monitoring Tool for Online Marketers"
+- [databox.com](https://databox.com) — "AI-powered analytics for teams that need answers now"
+- [ninjacat.io](https://ninjacat.io) — "Turn Fragmented Data into AI-Driven Insights"
+
+*Google / Next.js technical references:*
+- [FAQ rich snippets / Google structured data docs](https://developers.google.com/search/docs/appearance/structured-data/faqpage)
+- [Next.js metadata & sitemap API](https://nextjs.org/docs/app/api-reference/file-conventions/metadata)
+- [Lighthouse / web.dev Core Web Vitals](https://web.dev/vitals)
 
 *End of document. Date of analysis: April 11, 2026.*
