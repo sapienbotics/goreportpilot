@@ -4,13 +4,14 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
-  BarChart3, Users, CreditCard, Link2, FileText,
+  BarChart3, TrendingUp, Users, CreditCard, Link2, FileText,
   Server, Shield, Menu, X, ArrowLeft,
 } from 'lucide-react'
 import { SignOutButton } from './sign-out-button'
 
 const NAV_ITEMS = [
   { label: 'Overview',       href: '/admin',               icon: BarChart3 },
+  { label: 'Analytics',      href: '/admin/analytics',     icon: TrendingUp },
   { label: 'Users',          href: '/admin/users',         icon: Users },
   { label: 'Subscriptions',  href: '/admin/subscriptions', icon: CreditCard },
   { label: 'Connections',    href: '/admin/connections',    icon: Link2 },

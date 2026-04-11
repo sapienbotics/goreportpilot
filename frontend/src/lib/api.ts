@@ -596,6 +596,7 @@ export const adminApi = {
   // Overview
   getStats: async () => { const { data } = await api.get('/api/admin/stats'); return data },
   getActivity: async () => { const { data } = await api.get('/api/admin/activity'); return data },
+  getAnalytics: async () => { const { data } = await api.get('/api/admin/analytics'); return data },
 
   // Users
   getUsers: async (params?: string) => { const { data } = await api.get(`/api/admin/users${params ? '?' + params : ''}`); return data },
