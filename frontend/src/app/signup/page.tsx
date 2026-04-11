@@ -51,6 +51,12 @@ export default function SignupPage() {
       return
     }
 
+    // Fire GA4 sign_up event. No-op when the user hasn't accepted cookies
+    // (window.gtag is only defined after <AnalyticsProvider> loads the tag).
+    if (typeof window !== 'undefined' && window.gtag) {
+      window.gtag('event', 'sign_up', { method: 'email' })
+    }
+
     setSignupEmail(data.email)
     setSignupComplete(true)
   }

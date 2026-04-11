@@ -22,6 +22,7 @@ import MobileNav from '@/components/landing/mobile-nav'
 import PricingToggle from '@/components/landing/pricing-toggle'
 import FaqAccordion from '@/components/landing/faq-accordion'
 import CurrencyPrice from '@/components/landing/CurrencyPrice'
+import HeroCTA from '@/components/landing/HeroCTA'
 
 export default function LandingPage() {
   return (
@@ -76,12 +77,7 @@ export default function LandingPage() {
                   narrative, and delivers a white-label PPTX + PDF — in under 5 minutes.
                 </p>
                 <div className="mt-8 flex flex-wrap gap-3">
-                  <Link
-                    href="/signup"
-                    className="inline-flex items-center gap-2 rounded-lg bg-indigo-700 px-6 py-3 text-base font-semibold text-white hover:bg-indigo-800 transition-colors shadow-sm"
-                  >
-                    Start My Free Trial <ArrowRight className="h-4 w-4" />
-                  </Link>
+                  <HeroCTA />
                   <a
                     href="#how-it-works"
                     className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-6 py-3 text-base font-medium text-slate-700 hover:bg-slate-50 transition-colors"

@@ -190,6 +190,14 @@ export default function PricingToggle() {
 
             <Link
               href="/signup"
+              onClick={() => {
+                if (typeof window !== 'undefined' && window.gtag) {
+                  window.gtag('event', 'select_plan', {
+                    plan_name: plan.name,
+                    billing_cycle: annual ? 'annual' : 'monthly',
+                  })
+                }
+              }}
               className={`block rounded-lg px-5 py-3 text-center text-sm font-semibold transition-colors ${
                 plan.popular
                   ? 'bg-white text-indigo-700 hover:bg-indigo-50'

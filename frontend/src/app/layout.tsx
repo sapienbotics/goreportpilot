@@ -4,6 +4,8 @@ import "./globals.css";
 import { cn } from "@/lib/utils";
 import { Toaster } from "@/components/ui/sonner";
 import { Providers } from "@/components/providers";
+import AnalyticsProvider from "@/components/AnalyticsProvider";
+import CookieConsent from "@/components/CookieConsent";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -55,6 +57,8 @@ export default function RootLayout({
           {children}
         </Providers>
         <Toaster />
+        <AnalyticsProvider />
+        <CookieConsent />
       </body>
     </html>
   );
