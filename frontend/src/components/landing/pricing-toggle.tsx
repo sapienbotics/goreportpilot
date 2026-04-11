@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Check } from 'lucide-react'
+import { detectCurrency, type Currency } from '@/lib/detect-currency'
 
 // ---------------------------------------------------------------------------
 // Plan data — mirrors backend services/plans.py pricing
@@ -20,93 +21,72 @@ interface PlanDef {
   popular: boolean
 }
 
+// Feature lists are cross-checked against backend/services/plans.py — the
+// plans module is the live source of truth for what each tier actually
+// enforces. Any drift here becomes a chargeback risk when a customer
+// upgrades expecting a feature that doesn't exist.
 const PLANS: PlanDef[] = [
   {
     name: 'Starter',
     monthlyINR: 999,
-    annualINR: 9599,
+    annualINR: 9590,
     monthlyUSD: 19,
     annualUSD: 182,
     description: 'For freelancers getting started with automation.',
     features: [
       'Up to 5 clients',
-      'Google Analytics + Meta Ads',
-      'AI narrative insights',
-      'PDF export',
-      'Email delivery',
+      'Google Analytics 4, Meta Ads, Google Ads, Search Console',
+      'CSV upload for any other data source',
+      'AI narrative — Professional tone',
+      'PDF export + email delivery',
+      '1 visual template (Modern Clean)',
+      '"Powered by GoReportPilot" badge on reports',
     ],
-    cta: 'Start Free Trial',
+    cta: 'Start My Free Trial',
     popular: false,
   },
   {
     name: 'Pro',
     monthlyINR: 1999,
-    annualINR: 19199,
+    annualINR: 19190,
     monthlyUSD: 39,
     annualUSD: 374,
     description: 'For growing agencies managing multiple clients.',
     features: [
       'Up to 15 clients',
-      'Google Ads integration',
-      'PowerPoint + PDF export',
-      'White-label branding',
-      'Scheduled reports',
-      'All 4 AI tones',
+      'Everything in Starter, plus:',
+      'PPTX + PDF export',
+      '6 visual templates',
+      'All 4 AI tones (Professional, Conversational, Executive, Data-Heavy)',
+      'Scheduled reports (weekly / biweekly / monthly)',
+      'White-label branding — no GoReportPilot badge',
+      'Multi-language reports (13 languages)',
     ],
-    cta: 'Start Free Trial',
+    cta: 'Start My Free Trial',
     popular: true,
   },
   {
     name: 'Agency',
     monthlyINR: 3499,
-    annualINR: 33599,
+    annualINR: 33590,
     monthlyUSD: 69,
     annualUSD: 662,
     description: 'For established agencies at scale.',
     features: [
       'Unlimited clients',
-      'All integrations',
-      'Custom report templates',
-      'Priority support',
-      'API access',
-      'Team members',
+      'Everything in Pro, plus:',
+      'Unlimited scheduled reports',
+      'Unlimited email delivery',
     ],
-    cta: 'Start Free Trial',
+    cta: 'Start My Free Trial',
     popular: false,
   },
 ]
 
-// ---------------------------------------------------------------------------
-// Currency detection helper
-// ---------------------------------------------------------------------------
-
-function detectCurrency(): 'INR' | 'USD' {
-  if (typeof navigator === 'undefined') return 'USD'
-  const lang = navigator.language || ''
-  try {
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''
-    if (
-      lang.startsWith('hi') ||
-      tz.includes('Calcutta') ||
-      tz.includes('Kolkata')
-    ) {
-      return 'INR'
-    }
-  } catch {
-    // Intl not available — fall through
-  }
-  return 'USD'
-}
-
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
-
 export default function PricingToggle() {
   const [annual, setAnnual] = useState(false)
-  const [currency, setCurrency] = useState<'INR' | 'USD'>('USD')
+  const [currency, setCurrency] = useState<Currency>('USD')
 
-  // Detect currency on mount (client-side only)
   useEffect(() => {
     setCurrency(detectCurrency())
   }, [])
@@ -129,7 +109,6 @@ export default function PricingToggle() {
 
   return (
     <div>
-      {/* Billing toggle */}
       <div className="flex items-center justify-center gap-3 mt-8 mb-4">
         <span className={`text-sm font-medium ${!annual ? 'text-slate-900' : 'text-slate-400'}`}>Monthly</span>
         <button
@@ -157,7 +136,6 @@ export default function PricingToggle() {
 
       <div className="mb-10" />
 
-      {/* Cards */}
       <div className="grid md:grid-cols-3 gap-6">
         {PLANS.map((plan) => (
           <div

@@ -6,11 +6,11 @@ import { ChevronDown } from 'lucide-react'
 const FAQS = [
   {
     q: 'What data sources do you support?',
-    a: 'Currently Google Analytics 4, Meta Ads (Facebook & Instagram), and Google Ads. We\'re adding Google Search Console, LinkedIn Ads, and TikTok Ads soon.',
+    a: 'Google Analytics 4, Meta Ads (Facebook & Instagram), Google Ads, and Google Search Console — all via secure OAuth. For any platform we don\'t directly integrate with (LinkedIn Ads, TikTok Ads, Shopify, HubSpot, etc.), you can upload a CSV with your metrics and we\'ll include them in the report with AI-generated narrative.',
   },
   {
     q: 'How does the AI narrative work?',
-    a: 'We send your client\'s performance data to GPT-4o with context about their goals and industry. The AI writes 3–4 paragraphs of narrative analysis — not generic summaries, but specific insights referencing actual numbers and trends.',
+    a: 'We send your client\'s performance data to GPT-4.1 with context about their goals and industry. The AI writes 3–4 paragraphs of narrative analysis — not generic summaries, but specific insights referencing actual numbers and trends.',
   },
   {
     q: 'Can I edit the AI-generated text?',
@@ -21,12 +21,28 @@ const FAQS = [
     a: 'Yes. OAuth tokens are encrypted with AES-256-GCM before storage. We use Supabase with Row-Level Security — your data is isolated from other users at the database level. We never share or sell data.',
   },
   {
-    q: 'What if I need more than 25 clients?',
-    a: 'Contact us at hello@goreportpilot.com and we\'ll set up a custom plan for your agency.',
+    q: 'What happens when I reach my client limit?',
+    a: 'Starter allows up to 5 clients, Pro up to 15. If you need more, upgrade to Agency for unlimited clients. Upgrading is instant — your existing reports, schedules, and connections stay exactly as they are. You can also downgrade anytime.',
   },
   {
     q: 'Can I cancel anytime?',
     a: 'Yes. No contracts, no cancellation fees. Your data is preserved for 30 days after cancellation in case you want to come back.',
+  },
+  {
+    q: 'Does it work for SEO clients?',
+    a: 'Yes. Connect Google Search Console to include organic search performance — queries, clicks, CTR, and average position — in your reports with AI-written SEO narrative.',
+  },
+  {
+    q: 'Can I schedule reports to auto-deliver?',
+    a: 'Yes, on Pro and Agency plans. Set weekly, biweekly, or monthly schedules with timezone-aware delivery. Reports auto-generate and email to your clients as PDF, PPTX, or both — you choose the format.',
+  },
+  {
+    q: 'What languages can reports be written in?',
+    a: 'GoReportPilot supports 13 languages for AI-generated narrative: English, Spanish, French, German, Portuguese, Italian, Dutch, Hindi, Japanese, Korean, Chinese (Simplified), Arabic, and Russian.',
+  },
+  {
+    q: 'Will my clients know I\'m using GoReportPilot?',
+    a: 'On Pro and Agency plans, white-label branding removes all GoReportPilot branding. Your logo, your colors, your agency name — clients see only your brand. On Starter, a small "Powered by GoReportPilot" badge appears on reports.',
   },
 ]
 

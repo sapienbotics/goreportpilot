@@ -17,25 +17,29 @@ const plusJakartaSans = Plus_Jakarta_Sans({
   display: "swap",
 });
 
+const SITE_TITLE = "GoReportPilot — AI Client Reporting for Marketing Agencies";
+const SITE_DESCRIPTION =
+  "Generate branded PowerPoint and PDF client reports in 5 minutes. AI writes narrative insights from GA4, Meta Ads, Google Ads, and Search Console. From $19/mo — 14-day free trial, no credit card required.";
+
 export const metadata: Metadata = {
-  title: "GoReportPilot — AI-Powered Client Reports",
-  description:
-    "Generate branded PowerPoint reports with AI narrative insights. Connect GA4, Meta Ads, Google Ads — reports ready in minutes.",
-  keywords: "marketing reports, client reporting, AI reports, agency reporting, Google Analytics reports, Meta Ads reports",
-  icons: {
-    icon: "/favicon.svg",
-  },
+  metadataBase: new URL("https://goreportpilot.com"),
+  title: SITE_TITLE,
+  description: SITE_DESCRIPTION,
+  keywords:
+    "AI client reporting tool, agency reporting software, PowerPoint client reports, automated marketing reports, white-label marketing reports, GA4 reporting tool, Meta Ads reporting, Google Ads reporting, SEO reporting tool, multi-language marketing reports",
+  alternates: { canonical: "/" },
+  icons: { icon: "/favicon.svg" },
   openGraph: {
-    title: "GoReportPilot — AI-Powered Client Reports",
-    description: "Generate branded PowerPoint reports with AI narrative insights. Connect GA4, Meta Ads, Google Ads — reports ready in minutes.",
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
     type: "website",
     url: "https://goreportpilot.com",
     siteName: "GoReportPilot",
   },
   twitter: {
     card: "summary_large_image",
-    title: "GoReportPilot — AI-Powered Client Reports",
-    description: "Generate branded PowerPoint reports with AI narrative insights. Connect GA4, Meta Ads, Google Ads — reports ready in minutes.",
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
   },
 };
 

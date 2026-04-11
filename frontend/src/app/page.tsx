@@ -13,16 +13,19 @@ import {
   Palette,
   Calendar,
   ArrowRight,
+  Globe2,
+  Upload,
+  BarChart3,
 } from 'lucide-react'
 import { Logo } from '@/components/ui/Logo'
 import MobileNav from '@/components/landing/mobile-nav'
 import PricingToggle from '@/components/landing/pricing-toggle'
 import FaqAccordion from '@/components/landing/faq-accordion'
+import CurrencyPrice from '@/components/landing/CurrencyPrice'
 
 export default function LandingPage() {
   return (
     <>
-      {/* Smooth scroll */}
       <style>{`html { scroll-behavior: smooth; }`}</style>
 
       {/* ─── NAVIGATION ─── */}
@@ -30,7 +33,6 @@ export default function LandingPage() {
         <div className="mx-auto max-w-7xl px-6 h-16 flex items-center justify-between">
           <Logo size="md" />
 
-          {/* Desktop links */}
           <div className="hidden md:flex items-center gap-8">
             <a href="#features" className="text-sm text-slate-600 hover:text-slate-900 transition-colors">
               Features
@@ -49,7 +51,6 @@ export default function LandingPage() {
             </Link>
           </div>
 
-          {/* Mobile hamburger */}
           <MobileNav />
         </div>
       </nav>
@@ -59,26 +60,27 @@ export default function LandingPage() {
         <section className="py-20 md:py-28 bg-white overflow-hidden">
           <div className="mx-auto max-w-7xl px-6">
             <div className="grid lg:grid-cols-2 gap-16 items-center">
-              {/* Copy */}
               <div>
+                <div className="text-xs font-semibold text-indigo-600 uppercase tracking-[0.15em] mb-3">
+                  Client Reporting Platform
+                </div>
                 <h1
                   className="text-4xl md:text-5xl font-bold text-slate-900 leading-tight"
                   style={{ fontFamily: 'var(--font-plus-jakarta-sans)' }}
                 >
-                  AI Writes Your Client Reports.{' '}
-                  <span className="text-indigo-700">You Review and Send.</span>
+                  Branded client reports,{' '}
+                  <span className="text-indigo-700">written by AI.</span>
                 </h1>
                 <p className="mt-6 text-lg text-slate-500 leading-relaxed">
-                  Stop spending 3 hours per client on manual reporting. ReportPilot pulls data from
-                  Google Analytics &amp; Meta Ads, writes narrative insights with AI, and exports
-                  branded PowerPoint &amp; PDF reports — in 5 minutes.
+                  GoReportPilot connects GA4, Meta Ads, Google Ads, and Search Console, writes the
+                  narrative, and delivers a white-label PPTX + PDF — in under 5 minutes.
                 </p>
                 <div className="mt-8 flex flex-wrap gap-3">
                   <Link
                     href="/signup"
                     className="inline-flex items-center gap-2 rounded-lg bg-indigo-700 px-6 py-3 text-base font-semibold text-white hover:bg-indigo-800 transition-colors shadow-sm"
                   >
-                    Start Free Trial <ArrowRight className="h-4 w-4" />
+                    Start My Free Trial <ArrowRight className="h-4 w-4" />
                   </Link>
                   <a
                     href="#how-it-works"
@@ -87,15 +89,35 @@ export default function LandingPage() {
                     See How It Works
                   </a>
                 </div>
-                <p className="mt-5 text-sm text-slate-400">
-                  Join 100+ agencies automating their client reports
+                <p className="mt-4 text-sm text-slate-500">
+                  Free 14 days · No credit card · From{' '}
+                  <CurrencyPrice plan="starter" />/mo · Cancel anytime
                 </p>
+
+                <div className="mt-6 flex flex-wrap items-center gap-2 sm:gap-3 opacity-80">
+                  <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mr-1">
+                    Works with
+                  </span>
+                  {[
+                    'Google Analytics',
+                    'Meta Ads',
+                    'Google Ads',
+                    'Search Console',
+                    'CSV Upload',
+                  ].map((label) => (
+                    <span
+                      key={label}
+                      className="px-3 py-1 rounded-full bg-slate-100 text-xs font-medium text-slate-600 border border-slate-200"
+                    >
+                      {label}
+                    </span>
+                  ))}
+                </div>
               </div>
 
               {/* Hero visual — CSS-only report mockup */}
               <div className="relative lg:pl-4">
                 <div className="rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden">
-                  {/* Report header bar */}
                   <div className="bg-indigo-700 px-6 py-4 flex items-center justify-between">
                     <div>
                       <p className="text-indigo-200 text-xs font-medium uppercase tracking-widest">
@@ -111,7 +133,6 @@ export default function LandingPage() {
                   </div>
 
                   <div className="p-5">
-                    {/* KPI cards */}
                     <div className="grid grid-cols-3 gap-3 mb-4">
                       {[
                         { label: 'Sessions', value: '24,891', change: '+18%', positive: true },
@@ -134,7 +155,6 @@ export default function LandingPage() {
                       ))}
                     </div>
 
-                    {/* Mini bar chart */}
                     <div className="rounded-lg border border-slate-100 bg-slate-50/50 p-3 mb-4">
                       <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide mb-2">
                         Sessions Over Time
@@ -154,7 +174,6 @@ export default function LandingPage() {
                       </div>
                     </div>
 
-                    {/* AI narrative block */}
                     <div className="rounded-lg border-l-4 border-indigo-500 bg-indigo-50 p-3">
                       <div className="flex items-center gap-1.5 mb-1.5">
                         <div className="flex h-4 w-4 items-center justify-center rounded-full bg-indigo-600">
@@ -173,7 +192,6 @@ export default function LandingPage() {
                   </div>
                 </div>
 
-                {/* Background decorations */}
                 <div className="absolute -z-10 -top-10 -right-10 h-72 w-72 rounded-full bg-indigo-50 blur-3xl opacity-70" />
                 <div className="absolute -z-10 -bottom-6 -left-6 h-40 w-40 rounded-full bg-emerald-50 blur-2xl opacity-60" />
               </div>
@@ -258,12 +276,12 @@ export default function LandingPage() {
                 {
                   n: '1',
                   title: 'Connect',
-                  text: 'Link your Google Analytics and Meta Ads accounts with one click. OAuth — no passwords shared.',
+                  text: 'Connect Google Analytics, Meta Ads, Google Ads, and Search Console — or upload CSVs for anything else. OAuth, no passwords shared.',
                 },
                 {
                   n: '2',
                   title: 'Pull',
-                  text: 'ReportPilot automatically fetches performance data for each client. Sessions, spend, clicks, conversions — all of it.',
+                  text: 'GoReportPilot automatically fetches performance data for each client. Sessions, spend, clicks, conversions — all of it.',
                 },
                 {
                   n: '3',
@@ -308,35 +326,67 @@ export default function LandingPage() {
               {[
                 {
                   Icon: Brain,
-                  title: 'AI Narrative Insights',
-                  text: "Not just charts. AI writes paragraphs explaining what happened, why it matters, and what to do next. Contextualized by your client's goals.",
+                  title: 'AI Writes the Commentary',
+                  body:
+                    "Stop spending hours writing what happened. GoReportPilot's AI analyzes every metric and writes multi-paragraph narrative your clients actually want to read — in 13 languages.",
                 },
                 {
                   Icon: FileText,
-                  title: 'PowerPoint & PDF Export',
-                  text: 'The format agencies actually present in. No competitor exports to PowerPoint. Download, tweak, present.',
+                  title: 'Present in PowerPoint',
+                  body:
+                    'Get a branded, editable PPTX deck your clients can open in PowerPoint — plus a PDF for quick sharing. Six visual templates to match any brand.',
                 },
                 {
                   Icon: BadgeDollarSign,
-                  title: 'Flat Pricing, No Surprises',
-                  text: '$39/month for 10 clients. No per-client overages. No hidden fees. Know exactly what you\'ll pay.',
+                  title: 'Fair, Flat Pricing',
+                  // Only this card embeds a nested client component — the rest
+                  // are plain strings. Keep as a fragment so CurrencyPrice can
+                  // switch $ ↔ ₹ at runtime.
+                  body: (
+                    <>
+                      Pay by plan, not by client count multiplied by report count. Starter starts
+                      at <CurrencyPrice plan="starter" />/mo for up to 5 clients. No hidden fees,
+                      no per-report charges.
+                    </>
+                  ),
                 },
                 {
                   Icon: Zap,
-                  title: '5-Minute Setup',
-                  text: 'Connect accounts via OAuth, AI generates your first report instantly. No templates to configure, no widgets to arrange.',
+                  title: 'Set Up in 5 Minutes',
+                  body:
+                    'Connect your Google and Meta accounts with one OAuth click. Upload CSVs for everything else. Your first report is ready before your coffee cools.',
                 },
                 {
                   Icon: Palette,
-                  title: 'White-Label Branding',
-                  text: 'Your logo, your colors, your name. Clients see your agency brand, not ours.',
+                  title: 'Your Brand, Not Ours',
+                  body:
+                    'Your logo, your colors, your agency name. On Pro and Agency plans, clients never see GoReportPilot — they see your brand.',
                 },
                 {
                   Icon: Calendar,
-                  title: 'Scheduled Delivery',
-                  text: 'Set it and forget it. Reports auto-generate and email to clients weekly or monthly.',
+                  title: 'Reports That Send Themselves',
+                  body:
+                    'Schedule weekly, biweekly, or monthly reports with timezone-aware delivery. Auto-generate and email to clients as PDF, PPTX, or both.',
                 },
-              ].map(({ Icon, title, text }) => (
+                {
+                  Icon: Globe2,
+                  title: 'Reports in 13 Languages',
+                  body:
+                    'Serve global clients without translation. AI writes narrative in English, Spanish, French, German, Hindi, Japanese, and 7 more — natively, not machine-translated.',
+                },
+                {
+                  Icon: Upload,
+                  title: 'Any Data Source via CSV',
+                  body:
+                    'LinkedIn Ads, TikTok, Shopify, HubSpot — upload a CSV with your metrics. GoReportPilot charts them, writes AI narrative, and includes them in your branded report.',
+                },
+                {
+                  Icon: BarChart3,
+                  title: 'Charts That Tell the Story',
+                  body:
+                    'AI-titled charts explain what happened — not just "Sessions Over Time" but "Sessions surged 23% as organic recovered." Sparklines on every KPI card. Color-blind-safe palette.',
+                },
+              ].map(({ Icon, title, body }) => (
                 <div
                   key={title}
                   className="rounded-xl bg-white border border-slate-100 p-6 shadow-sm hover:shadow-md transition-shadow"
@@ -350,7 +400,7 @@ export default function LandingPage() {
                   >
                     {title}
                   </h3>
-                  <p className="text-sm text-slate-500 leading-relaxed">{text}</p>
+                  <div className="text-sm text-slate-500 leading-relaxed">{body}</div>
                 </div>
               ))}
             </div>
@@ -389,12 +439,13 @@ export default function LandingPage() {
                 </thead>
                 <tbody>
                   {[
-                    ['Price (10 clients)', '$179–239/mo', '$159/mo', '$39/mo ✓'],
+                    ['Price (15 clients)', '$179–239/mo', '$139/mo', '$39/mo ✓'],
                     ['AI Narrative Insights', 'Add-on only', 'Add-on ($19/mo)', 'Included ✓'],
                     ['PowerPoint Export', '✗', '✗', 'Yes ✓'],
                     ['Flat Pricing', 'No (per-client)', 'No (per-dashboard)', 'Yes ✓'],
-                    ['White-Label', 'Higher tiers', 'Yes', 'All plans ✓'],
-                    ['Setup Time', '30–60 min', '15–30 min', '< 5 min ✓'],
+                    ['White-Label', 'Higher tiers', 'Yes', 'Pro+ ✓'],
+                    ['Multi-language Reports', '✗', '✗', '13 languages ✓'],
+                    ['CSV Upload (Any Source)', '✗', '✗', 'Yes ✓'],
                   ].map(([feature, aa, dt, rp], i) => (
                     <tr
                       key={feature}
@@ -493,8 +544,6 @@ export default function LandingPage() {
                 {[
                   { label: 'Features', href: '#features' },
                   { label: 'Pricing', href: '#pricing' },
-                  { label: 'Integrations', href: '#' },
-                  { label: 'Changelog', href: '#' },
                 ].map(({ label, href }) => (
                   <li key={label}>
                     <a
@@ -512,8 +561,6 @@ export default function LandingPage() {
               <p className="text-white font-semibold text-sm mb-4">Company</p>
               <ul className="space-y-2.5">
                 {[
-                  { label: 'About', href: '#' },
-                  { label: 'Blog', href: '#' },
                   { label: 'Contact Us', href: '/contact' },
                   { label: 'Privacy Policy', href: '/privacy' },
                   { label: 'Terms of Service', href: '/terms' },
