@@ -239,7 +239,7 @@ def select_kpis(data: dict, currency_symbol: str = "$") -> list[dict]:
         shows an indicator slot instead of rendering as a broken empty card.
         """
         if v is None:
-            return "\u25AC \u2014"
+            return "\u2014"
         if abs(v) < 1.0:
             sign = "+" if v >= 0 else ""
             return f"\u25AC {sign}{v:.1f}%"

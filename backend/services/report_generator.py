@@ -12,6 +12,8 @@ import tempfile
 from datetime import datetime
 from typing import Dict, Any
 
+from services.translations import t, translate_kpi_label
+
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
@@ -349,6 +351,7 @@ def _build_replacements(
     branding: dict | None,
     custom_section: dict | None,
     template: str = "full",
+    language: str = "en",
 ) -> dict[str, str]:
     """Build the {{placeholder}} → value replacement dictionary."""
     br = branding or {}
@@ -372,10 +375,10 @@ def _build_replacements(
 
     # Template-specific label — avoids "Performance Report" appearing twice on cover
     _template_labels = {
-        "summary": "Summary Report",
-        "brief":   "Executive Brief",
+        "summary": t(language, "summary_report"),
+        "brief":   t(language, "executive_brief"),
     }
-    report_type_label = _template_labels.get(template, "Monthly Performance Report")
+    report_type_label = _template_labels.get(template, t(language, "monthly_performance_report"))
 
     replacements = {
         "{{client_name}}":           client_info.get("name", "Client"),
@@ -384,7 +387,7 @@ def _build_replacements(
         # When no agency email is configured, substitute a "Confidential • Page N"
         # token so the next_steps footer renders properly.  _renumber_slide_footers
         # will replace "Page 99" with the actual sequential page number.
-        "{{agency_email}}":          br.get("agency_email") or "Confidential  \u2022  Page 99",
+        "{{agency_email}}":          br.get("agency_email") or f"{t(language, 'confidential')}  \u2022  {t(language, 'page')} 99",
         "{{report_type}}":           report_type_label,
         "{{report_date}}":           report_date,
         "{{executive_summary}}":     _narrative_to_text(narrative.get("executive_summary", "")),
@@ -399,15 +402,15 @@ def _build_replacements(
         "{{footer_text}}":           (
             f"{agency_name} \u2022 Powered by GoReportPilot \u2022 {report_date}"
             if br.get("powered_by_badge", True)
-            else f"{agency_name} \u2022 Confidential \u2022 {report_date}"
+            else f"{agency_name} \u2022 {t(language, 'confidential')} \u2022 {report_date}"
         ),
         "{{agency_logo}}":           "",  # Cleared — actual image embedded by _embed_logos()
         "{{client_logo}}":           "",  # Cleared — actual image embedded by _embed_logos()
     }
 
-    # KPI placeholders
+    # KPI placeholders — translate labels to target language
     for i, (label, value, change) in enumerate(kpis):
-        replacements[f"{{{{kpi_{i}_label}}}}"]  = label
+        replacements[f"{{{{kpi_{i}_label}}}}"]  = translate_kpi_label(label, language)
         replacements[f"{{{{kpi_{i}_value}}}}"]  = value
         replacements[f"{{{{kpi_{i}_change}}}}"] = change
 
@@ -588,22 +591,25 @@ def _replace_placeholders_in_slide(slide: Any, replacements: dict[str, str]) -> 
                     run.text = ""
 
 
-def _renumber_slide_footers(prs: Any) -> None:
+def _renumber_slide_footers(prs: Any, language: str = "en") -> None:
     """
     After slide deletion the footer 'Page N' values reflect the original template
     numbering. Walk every remaining slide and overwrite 'Page N' with the correct
-    sequential number.
+    sequential number.  Supports translated page labels.
     """
+    page_word = t(language, "page")
+    # Match both English "Page" and the translated word followed by digits
+    _page_re = re.compile(r"(?:Page|" + re.escape(page_word) + r")\s+\d+")
     for idx, slide in enumerate(prs.slides, 1):
         for shape in slide.shapes:
             if not shape.has_text_frame:
                 continue
             for para in shape.text_frame.paragraphs:
                 full_text = "".join(run.text for run in para.runs)
-                if re.search(r"Page\s+\d+", full_text):
+                if _page_re.search(full_text):
                     for run in para.runs:
-                        if re.search(r"Page\s+\d+", run.text):
-                            run.text = re.sub(r"Page\s+\d+", f"Page {idx}", run.text)
+                        if _page_re.search(run.text):
+                            run.text = _page_re.sub(f"{page_word} {idx}", run.text)
 
 
 def _remove_static_email_cta(prs: Any) -> None:
@@ -1487,6 +1493,7 @@ def generate_pptx_report(
     custom_section: dict | None = None,
     branding: dict | None = None,
     visual_template: str = "modern_clean",
+    language: str = "en",
 ) -> bytes:
     """
     Generate a report by populating a pre-designed PPTX template.
@@ -1524,7 +1531,7 @@ def generate_pptx_report(
     # Build the full replacement map, then split out the keys that get
     # rich formatting (paragraphs / bullet lists) so the generic pass
     # doesn't flatten them to a single unstyled run first.
-    replacements = _build_replacements(data, narrative, client_info, branding, custom_section, template)
+    replacements = _build_replacements(data, narrative, client_info, branding, custom_section, template, language)
     formatted_content: dict[str, str] = {}
     for key in _FORMATTED_KEYS:
         if key in replacements:
@@ -1823,7 +1830,7 @@ def generate_pptx_report(
     # ── Post-deletion clean-up ────────────────────────────────────────────────
     # Renumber footers AFTER all slide operations (deletion, duplication,
     # reordering) so "Page N" reflects the true final slide position.
-    _renumber_slide_footers(prs)
+    _renumber_slide_footers(prs, language)
     # Remove email-only CTA shapes ("Questions? Reply to this email …")
     _remove_static_email_cta(prs)
 
@@ -1938,6 +1945,7 @@ def generate_pdf_report(
         pptx_bytes = generate_pptx_report(
             data, narrative, charts, client_info,
             enabled_sections, template, custom_section, branding, visual_template,
+            language,
         )
         logger.info("PPTX generated (%d bytes) — attempting LibreOffice conversion", len(pptx_bytes))
     except Exception as _pptx_err:
@@ -2108,7 +2116,7 @@ def _generate_pdf_reportlab(
         canvas.setFont(_pdf_body, 8)
         canvas.setFillColor(_RL_SLATE_500)
         canvas.drawString(_lm, _page_h - 0.42 * inch, agency_name)
-        canvas.drawRightString(_page_w - _lm, _page_h - 0.42 * inch, f"Page {doc.page}")
+        canvas.drawRightString(_page_w - _lm, _page_h - 0.42 * inch, f"{t(language, 'page')} {doc.page}")
         _draw_pdf_footer(canvas, doc)
         canvas.restoreState()
 
@@ -2119,8 +2127,8 @@ def _generate_pdf_reportlab(
         canvas.setFont(_pdf_body, 8)
         canvas.setFillColor(_RL_SLATE_400)
         canvas.drawString(_lm, 0.34 * inch,
-                          f"Prepared by {agency_name}  \u2022  Confidential  \u2022  {report_date}")
-        canvas.drawRightString(_page_w - _lm, 0.34 * inch, f"Page {doc.page}")
+                          f"{t(language, 'prepared_by')} {agency_name}  \u2022  {t(language, 'confidential')}  \u2022  {report_date}")
+        canvas.drawRightString(_page_w - _lm, 0.34 * inch, f"{t(language, 'page')} {doc.page}")
 
     # ── Doc setup ─────────────────────────────────────────────────────────────
     buf = io.BytesIO()
@@ -2227,14 +2235,14 @@ def _generate_pdf_reportlab(
     if _section_enabled(enabled_sections, "executive_summary"):
         _exec = _to_lines(narrative.get("executive_summary", ""))
         if _exec:
-            _section_heading("Executive Summary")
+            _section_heading(t(language, "executive_summary"))
             for line in _exec:
                 story.append(Paragraph(line, body))
             story.append(Spacer(1, 0.15 * inch))
 
     # KPI Scorecard
     if _section_enabled(enabled_sections, "kpi_scorecard"):
-        _section_heading("Key Performance Indicators")
+        _section_heading(t(language, "key_performance_indicators"))
         col_w = (_page_w - 2 * _lm) / 3
         _neg_cpa = -cpa_chg if cpa_chg is not None else None
 
@@ -2243,12 +2251,12 @@ def _generate_pdf_reportlab(
                     Paragraph(_fmt_change(chg), _chg_style(chg))]
 
         kpi_data = [
-            [_kpi_cell("SESSIONS", f"{ga4.get('sessions',0):,}", s_chg),
-             _kpi_cell("USERS", f"{ga4.get('users',0):,}", u_chg),
-             _kpi_cell("CONVERSIONS", f"{ga4.get('conversions',0):,}", c_chg)],
-            [_kpi_cell("AD SPEND", f"{cur_sym}{meta.get('spend',0):,.0f}", sp_chg),
-             _kpi_cell("ROAS", f"{roas:.1f}x", roas_chg),
-             _kpi_cell("COST / CONV.", f"{cur_sym}{cpa:.2f}", _neg_cpa)],
+            [_kpi_cell(t(language, "sessions"), f"{ga4.get('sessions',0):,}", s_chg),
+             _kpi_cell(t(language, "users"), f"{ga4.get('users',0):,}", u_chg),
+             _kpi_cell(t(language, "conversions"), f"{ga4.get('conversions',0):,}", c_chg)],
+            [_kpi_cell(t(language, "ad_spend"), f"{cur_sym}{meta.get('spend',0):,.0f}", sp_chg),
+             _kpi_cell(t(language, "roas"), f"{roas:.1f}x", roas_chg),
+             _kpi_cell(t(language, "cost_per_conv"), f"{cur_sym}{cpa:.2f}", _neg_cpa)],
         ]
         kpi_table = Table(kpi_data, colWidths=[col_w] * 3, rowHeights=[1.05 * inch] * 2)
         kpi_table.setStyle(TableStyle([
@@ -2270,7 +2278,7 @@ def _generate_pdf_reportlab(
         t_chart = charts.get("traffic_sources")
         _web = _to_lines(narrative.get("website_performance", ""))
         if (s_chart and os.path.exists(s_chart)) or (t_chart and os.path.exists(t_chart)) or _web:
-            _section_heading("Website Performance")
+            _section_heading(t(language, "website_performance"))
             for c in [s_chart, t_chart]:
                 if c and os.path.exists(c):
                     img = RLImage(c, width=6.5 * inch, height=2.9 * inch)
@@ -2287,7 +2295,7 @@ def _generate_pdf_reportlab(
         cp = charts.get("campaigns")
         _ads = _to_lines(narrative.get("paid_advertising", ""))
         if (sc and os.path.exists(sc)) or (cp and os.path.exists(cp)) or _ads:
-            _section_heading("Paid Advertising \u2014 Meta Ads")
+            _section_heading(t(language, "paid_advertising_meta"))
             for c in [sc, cp]:
                 if c and os.path.exists(c):
                     img = RLImage(c, width=6.5 * inch, height=2.9 * inch)
@@ -2302,7 +2310,7 @@ def _generate_pdf_reportlab(
     if _section_enabled(enabled_sections, "key_wins"):
         _wins = _to_lines(narrative.get("key_wins", ""))
         if _wins:
-            _section_heading("Key Wins")
+            _section_heading(t(language, "key_wins"))
             win_s = ParagraphStyle("RPWin", parent=body, leftIndent=16, firstLineIndent=-16, spaceAfter=6)
             for line in _wins:
                 clean = line.lstrip("\u2022\u2713\u2714\u26A0-\u2013\u2014 ").strip()
@@ -2314,7 +2322,7 @@ def _generate_pdf_reportlab(
     if _section_enabled(enabled_sections, "concerns"):
         _concerns = _to_lines(narrative.get("concerns", ""))
         if _concerns:
-            _section_heading("Concerns & Recommendations")
+            _section_heading(t(language, "concerns"))
             con_s = ParagraphStyle("RPCon", parent=body, leftIndent=16, firstLineIndent=-16, spaceAfter=6)
             for line in _concerns:
                 clean = line.lstrip("\u2022\u2713\u2714\u26A0-\u2013\u2014 ").strip()
@@ -2326,7 +2334,7 @@ def _generate_pdf_reportlab(
     if _section_enabled(enabled_sections, "next_steps"):
         _steps = _to_lines(narrative.get("next_steps", ""))
         if _steps:
-            _section_heading("Next Steps")
+            _section_heading(t(language, "next_steps"))
             step_s = ParagraphStyle("RPStep", parent=body, leftIndent=20, firstLineIndent=-20, spaceAfter=8)
             bc = _br.get("brand_color", "#4338CA")
             for i, line in enumerate(_steps, 1):
