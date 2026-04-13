@@ -374,33 +374,6 @@ async def _generate_report_internal(
     with open(pptx_path, "wb") as f:
         f.write(pptx_bytes)
 
-    # 6a — Trial watermark: stamp every slide, then regenerate PDF from watermarked PPTX
-    if sub.get("status") == "trialing":
-        from pptx import Presentation as _Prs  # noqa: PLC0415
-        from services.report_generator import add_trial_watermark  # noqa: PLC0415
-        _prs_obj = _Prs(pptx_path)
-        add_trial_watermark(_prs_obj)
-        _prs_obj.save(pptx_path)
-        logger.info("Trial watermark applied to PPTX for report %s", report_id)
-
-        # Regenerate PDF from watermarked PPTX via LibreOffice so the watermark carries over
-        import shutil, subprocess as _sp  # noqa: PLC0415, E401
-        import tempfile as _tf  # noqa: PLC0415
-        _soffice = shutil.which("soffice") or shutil.which("libreoffice")
-        if _soffice and pdf_bytes is not None:
-            try:
-                with _tf.TemporaryDirectory() as _tmpdir:
-                    _sp.run(
-                        [_soffice, "--headless", "--convert-to", "pdf", "--outdir", _tmpdir, pptx_path],
-                        timeout=60, check=True, capture_output=True,
-                    )
-                    _tmp_pdf = os.path.join(_tmpdir, "report.pdf")
-                    if os.path.exists(_tmp_pdf):
-                        shutil.copy2(_tmp_pdf, pdf_path)
-                        logger.info("PDF regenerated from watermarked PPTX for report %s", report_id)
-            except Exception as _wm_exc:
-                logger.warning("Failed to regenerate watermarked PDF: %s (keeping original)", _wm_exc)
-
     if pdf_bytes is not None:
         if not os.path.exists(pdf_path):
             # PDF not yet written (non-trial path, or watermark regen skipped)
@@ -1275,35 +1248,13 @@ async def regenerate_report(
     with open(pptx_path, "wb") as f:
         f.write(pptx_bytes)
 
-    # Trial watermark for regenerated reports
+    # Subscription check for regenerated reports
     regen_sub = get_user_subscription(user_id)
     if regen_sub.get("status") in ("expired", "cancelled"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Your subscription has expired. Please upgrade to continue generating reports.",
         )
-    if regen_sub.get("status") == "trialing":
-        from pptx import Presentation as _Prs  # noqa: PLC0415
-        from services.report_generator import add_trial_watermark  # noqa: PLC0415
-        _prs_obj = _Prs(pptx_path)
-        add_trial_watermark(_prs_obj)
-        _prs_obj.save(pptx_path)
-
-        import shutil, subprocess as _sp  # noqa: PLC0415, E401
-        import tempfile as _tf  # noqa: PLC0415
-        _soffice = shutil.which("soffice") or shutil.which("libreoffice")
-        if _soffice and pdf_bytes is not None:
-            try:
-                with _tf.TemporaryDirectory() as _tmpdir:
-                    _sp.run(
-                        [_soffice, "--headless", "--convert-to", "pdf", "--outdir", _tmpdir, pptx_path],
-                        timeout=60, check=True, capture_output=True,
-                    )
-                    _tmp_pdf = os.path.join(_tmpdir, "report.pdf")
-                    if os.path.exists(_tmp_pdf):
-                        shutil.copy2(_tmp_pdf, pdf_path)
-            except Exception:
-                pass
 
     if pdf_bytes is not None:
         if not os.path.exists(pdf_path):

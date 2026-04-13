@@ -37,30 +37,6 @@ from reportlab.lib.utils import ImageReader
 logger = logging.getLogger(__name__)
 
 
-def add_trial_watermark(prs: "Presentation") -> None:
-    """Add diagonal 'TRIAL' watermark to every slide in a Presentation object.
-
-    Called from reports.py after PPTX generation for trial users.
-    The watermark is a semi-transparent gray text box rotated -30 degrees.
-    """
-    from pptx.util import Pt as _WmPt, Emu as _WmEmu
-
-    for slide in prs.slides:
-        txBox = slide.shapes.add_textbox(
-            _WmEmu(1500000), _WmEmu(2500000),
-            _WmEmu(7000000), _WmEmu(1200000),
-        )
-        txBox.rotation = -30.0
-        tf = txBox.text_frame
-        tf.word_wrap = True
-        p = tf.paragraphs[0]
-        p.text = "TRIAL \u2014 GoReportPilot.com"
-        p.font.size = _WmPt(40)
-        p.font.color.rgb = RGBColor(220, 220, 220)
-        p.font.bold = True
-        p.alignment = PP_ALIGN.CENTER
-
-
 # ── Register DejaVu Sans for PDF Unicode rendering (₹ € £ ¥ etc.) ───────────
 _PDF_BODY_FONT = "Helvetica"
 _PDF_BOLD_FONT = "Helvetica-Bold"
