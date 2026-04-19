@@ -85,11 +85,15 @@ PRESETS: dict[str, Optional[dict[str, Any]]] = {
 
 
 # Placeholder groups used for SUBSTITUTION of custom headline/subtitle.
-# Narrow on purpose — the custom headline overrides ONLY the client-name
-# slot (not the report-type slot), and the custom subtitle replaces the
-# report-date slot (so the reporting period stays visible on the cover).
+# v7 — logs confirm templates have no {{report_date}} token on the cover
+# (only {{client_name}}, {{report_period}}, {{report_type}}, {{agency_name}},
+# plus logo placeholders and labels). So the v2 choice to target
+# {{report_date}} meant custom subtitles were silently discarded. Revert
+# to {{report_period}} per the phase-3-fix-v2 note: "if client.cover_subtitle
+# is set, replace the period text; if not, keep the date". When the user
+# provides a subtitle, the reporting-period date is intentionally replaced.
 _HEADLINE_SUB_TOKENS = ("{{client_name}}",)
-_SUBTITLE_SUB_TOKENS = ("{{report_date}}",)
+_SUBTITLE_SUB_TOKENS = ("{{report_period}}",)
 
 # Placeholder groups used for COLORING text on the cover. Broader than
 # the substitution groups — every cover text shape should pick up the
@@ -149,18 +153,32 @@ def apply_cover_preset(
     #   5. Accent bar last — a small decorative overlay.
 
     if config:
+        # v7 — aggressive strip for EVERY non-default preset. The CSS
+        # preview renders 3 text roles + header band only; the PPTX was
+        # carrying the template's full chrome (PERFORMANCE REPORT label,
+        # Prepared by line, report_type, logo placeholder text, divider).
+        # For hero, the strip is done inside _insert_hero_image after the
+        # image is placed (and deletes the header band too).
+        is_hero = bool(config.get("use_hero_image")) and bool(hero_image_url)
+
+        if not is_hero:
+            # Non-hero preset — strip chrome but KEEP the header band so
+            # _apply_header_and_bg_colours can recolour it.
+            try:
+                _strip_cover_for_preset(prs, cover, keep_header_band=True)
+            except Exception as exc:
+                logger.debug("Cover preset: strip failed: %s", exc)
+
         try:
             _apply_header_and_bg_colours(prs, cover, config, brand_hex)
         except Exception as exc:
             logger.debug("Cover preset: colour apply failed: %s", exc)
 
-        if config.get("use_hero_image") and hero_image_url:
+        if is_hero:
             try:
                 _insert_hero_image(prs, cover, hero_image_url)
             except Exception as exc:
                 logger.debug("Cover preset: hero-image apply failed: %s", exc)
-            # Hero preset: boost the headline font so it reads as the
-            # dominant element over the image.
             try:
                 _ensure_hero_headline_size(cover, min_pt=36)
             except Exception as exc:
@@ -286,7 +304,7 @@ def _insert_hero_image(prs: Any, cover: Any, image_url: str) -> None:
         return
 
     _log_cover_shapes(cover, "Hero preset — BEFORE strip")
-    _strip_cover_for_hero(prs, cover)
+    _strip_cover_for_preset(prs, cover, keep_header_band=False)
     _log_cover_shapes(cover, "Hero preset — AFTER strip")
 
     pic = cover.shapes.add_picture(
@@ -357,30 +375,30 @@ def _log_cover_shapes(cover: Any, label: str) -> None:
         logger.warning("_log_cover_shapes failed: %s", exc)
 
 
-def _strip_cover_for_hero(prs: Any, cover: Any) -> int:
+def _strip_cover_for_preset(prs: Any, cover: Any, *, keep_header_band: bool) -> int:
     """
-    Aggressive whitelist strip for the hero preset. Keep only:
-      * Pictures (existing logos — will be deleted anyway if _embed_logos
-        re-places them; but we leave it to that function).
-      * A shape whose text contains {{client_name}} (the headline slot).
-      * A shape whose text contains {{report_period}} (the subtitle slot).
+    Aggressive whitelist strip applied to EVERY non-default preset.
+    Keep only:
+      * Pictures (existing logos or other art).
+      * The header band shape, if `keep_header_band` — non-hero presets
+        recolour it via _apply_header_and_bg_colours.
+      * A shape whose text contains {{client_name}} (headline slot).
+      * A shape whose text contains {{report_period}} (subtitle slot).
       * A shape whose text contains {{agency_name}} AND sits in the
         bottom half of the slide (the footer agency line — NOT the
         "Prepared by {{agency_name}}" line near the top).
 
     Everything else is removed from the cover's spTree:
-      * Coloured header band
+      * Coloured header band (only when keep_header_band=False)
       * "PERFORMANCE REPORT" label
       * "Prepared by ..." line
       * {{report_type}} / {{report_date}} text
       * {{agency_logo}} / {{client_logo}} placeholder text shapes —
-        _embed_logos no longer needs them (it uses explicit placement
-        when a position is set; it falls back to default coords
-        otherwise).
+        _embed_logos places logos from explicit coords or defaults so
+        these text placeholders are safe to delete.
       * Divider lines, accent stripes, any other decoration.
 
-    Returns the count of shapes deleted. Each deletion is logged so the
-    AFTER-strip dump shows exactly which shapes survived.
+    Returns the count of shapes deleted.
     """
     try:
         from pptx.enum.shapes import MSO_SHAPE_TYPE  # noqa: PLC0415
@@ -392,6 +410,9 @@ def _strip_cover_for_hero(prs: Any, cover: Any) -> int:
     slide_h = int(prs.slide_height)
     bottom_threshold = int(slide_h * 0.55)
 
+    # Resolve the header band shape once — reference-compare inside the loop.
+    header_band_shape = _find_header_band(cover, prs) if keep_header_band else None
+
     deleted = 0
     kept: list[str] = []
 
@@ -399,9 +420,14 @@ def _strip_cover_for_hero(prs: Any, cover: Any) -> int:
         st = getattr(shape, "shape_type", None)
         name = getattr(shape, "name", "?")
 
-        # Pictures always stay — they're existing logos or other art.
+        # Pictures always stay.
         if st == PICTURE:
             kept.append(f"{name} (picture)")
+            continue
+
+        # Keep the header band if asked.
+        if header_band_shape is not None and shape is header_band_shape:
+            kept.append(f"{name} (header band)")
             continue
 
         text = ""
@@ -429,22 +455,21 @@ def _strip_cover_for_hero(prs: Any, cover: Any) -> int:
             kept.append(f"{name} ({keep_reason})")
             continue
 
-        # Everything else goes away.
         try:
             el = shape._element
             if el.getparent() is sp_tree:
                 sp_tree.remove(el)
                 deleted += 1
                 logger.info(
-                    "Hero strip DELETE: name=%r type=%s top_in=%.2f text=%r",
+                    "Preset strip DELETE: name=%r type=%s top_in=%.2f text=%r",
                     name, st, top / 914400, text[:60].replace("\n", " "),
                 )
         except Exception as exc:
-            logger.debug("Hero strip failed for %r: %s", name, exc)
+            logger.debug("Preset strip failed for %r: %s", name, exc)
 
     logger.info(
-        "Hero strip complete — deleted=%d kept=%d; kept list: %s",
-        deleted, len(kept), kept,
+        "Preset strip complete (keep_header_band=%s) — deleted=%d kept=%d; kept: %s",
+        keep_header_band, deleted, len(kept), kept,
     )
     return deleted
 
