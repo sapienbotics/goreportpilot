@@ -232,6 +232,19 @@ async def _generate_report_internal(
             )
             ga4_data = None
 
+        # Persist snapshot for multi-period trend analysis (non-fatal).
+        if ga4_data is not None:
+            from services.snapshot_saver import save_snapshot  # noqa: PLC0415
+            save_snapshot(
+                supabase,
+                connection_id=ga4_conn["id"],
+                client_id=client_id,
+                platform="ga4",
+                period_start=period_start,
+                period_end=period_end,
+                metrics=ga4_data,
+            )
+
     # Check for an active Meta Ads connection for this client
     meta_conn_result = (
         supabase.table("connections")
@@ -265,6 +278,19 @@ async def _generate_report_internal(
                 client_id,
             )
             meta_data = None
+
+        # Persist snapshot for multi-period trend analysis (non-fatal).
+        if meta_data is not None:
+            from services.snapshot_saver import save_snapshot  # noqa: PLC0415
+            save_snapshot(
+                supabase,
+                connection_id=meta_conn["id"],
+                client_id=client_id,
+                platform="meta_ads",
+                period_start=period_start,
+                period_end=period_end,
+                metrics=meta_data,
+            )
 
     # Build raw_data from ONLY real/connected data — no mock data.
     raw_data: dict = {
@@ -1137,6 +1163,19 @@ async def regenerate_report(
         except Exception:
             logger.exception("GA4 pull failed during regenerate for client %s", client_id)
 
+        # Persist snapshot for multi-period trend analysis (non-fatal).
+        if ga4_data is not None:
+            from services.snapshot_saver import save_snapshot  # noqa: PLC0415
+            save_snapshot(
+                supabase,
+                connection_id=ga4_conn["id"],
+                client_id=client_id,
+                platform="ga4",
+                period_start=period_start,
+                period_end=period_end,
+                metrics=ga4_data,
+            )
+
     meta_conn_result = (
         supabase.table("connections")
         .select("id,account_id,currency,access_token_encrypted,refresh_token_encrypted,token_expires_at")
@@ -1164,6 +1203,19 @@ async def regenerate_report(
             )
         except Exception:
             logger.exception("Meta Ads pull failed during regenerate for client %s", client_id)
+
+        # Persist snapshot for multi-period trend analysis (non-fatal).
+        if meta_data is not None:
+            from services.snapshot_saver import save_snapshot  # noqa: PLC0415
+            save_snapshot(
+                supabase,
+                connection_id=meta_conn["id"],
+                client_id=client_id,
+                platform="meta_ads",
+                period_start=period_start,
+                period_end=period_end,
+                metrics=meta_data,
+            )
 
     raw_data: dict = {
         "client_name": client["name"],
