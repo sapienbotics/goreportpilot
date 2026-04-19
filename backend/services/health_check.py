@@ -223,7 +223,7 @@ async def _probe_platform(platform: str, conn: dict, supabase: Any) -> tuple[boo
         if platform == "google_ads":
             return await _probe_google_ads(conn)
         if platform == "search_console":
-            return await _probe_search_console(conn)
+            return await _probe_search_console(conn, supabase)
         # Unknown / CSV platforms skip probing and remain healthy by default.
         return True, None
     except Exception as exc:
@@ -314,12 +314,28 @@ async def _probe_google_ads(conn: dict) -> tuple[bool, Optional[str]]:
     return await asyncio.to_thread(_sync_probe)
 
 
-async def _probe_search_console(conn: dict) -> tuple[bool, Optional[str]]:
-    """sites.list — cheapest call to verify Search Console auth."""
+async def _probe_search_console(conn: dict, supabase: Any) -> tuple[bool, Optional[str]]:
+    """
+    sites.list — cheapest call to verify Search Console auth.
+
+    Google OAuth access tokens expire after 1 hour. The 6-hour probe cadence
+    means the stored token is frequently expired at probe time → 401.
+    Reuse the GA4 helper that refreshes + writes back to the DB so every
+    probe gets a valid token. Search Console uses the same Google OAuth
+    flow as GA4, so the refresh mechanics are identical.
+    """
+    from services.google_analytics import _get_valid_access_token  # noqa: PLC0415
     try:
-        access_token  = decrypt_token(conn["access_token_encrypted"])
+        token_expires_at = _parse_token_expiry(conn.get("token_expires_at"))
+        access_token = await _get_valid_access_token(
+            access_token_encrypted=conn["access_token_encrypted"],
+            refresh_token_encrypted=conn["refresh_token_encrypted"],
+            token_expires_at=token_expires_at,
+            supabase=supabase,
+            connection_id=conn["id"],
+        )
     except Exception as exc:
-        return False, f"SC token decrypt failed: {str(exc)[:200]}"
+        return False, f"SC token refresh failed: {str(exc)[:200]}"
 
     try:
         async with httpx.AsyncClient(timeout=PROBE_TIMEOUT_SECONDS) as client:
@@ -333,7 +349,7 @@ async def _probe_search_console(conn: dict) -> tuple[bool, Optional[str]]:
     if resp.status_code == 200:
         return True, None
     if resp.status_code in (401, 403):
-        return False, f"SC auth rejected ({resp.status_code})"
+        return False, f"SC auth rejected ({resp.status_code}): {resp.text[:200]}"
     return False, f"SC probe returned {resp.status_code}"
 
 
@@ -679,3 +695,65 @@ def _is_expiring_soon(token_expires_unix: Optional[float]) -> bool:
         return False
     now = time.time()
     return 0 < (token_expires_unix - now) <= EXPIRY_WARNING_DAYS * 86400
+
+
+# ---------------------------------------------------------------------------
+# Single-connection probe (public — called on reconnect + manual triggers)
+# ---------------------------------------------------------------------------
+
+
+async def probe_one_connection_now(supabase: Any, connection_id: str) -> dict:
+    """
+    Probe one connection right now, bypassing the 6-hour sweep cadence.
+
+    Used by:
+      * POST /api/connections (reconnect path) — give the user instant
+        ground truth instead of stale 'broken' from before the OAuth
+        round-trip.
+      * POST /api/connections/{id}/probe (manual trigger endpoint).
+
+    Reuses _probe_one_connection() — same status-transition + alert-email
+    logic as the batch sweep, keeping the two paths consistent.
+
+    Returns the per-probe stats dict (useful for callers that want to
+    know what transitioned). Non-fatal: all errors are logged.
+    """
+    stats: dict = {
+        "total":         0,
+        "healthy":       0,
+        "warning":       0,
+        "broken":        0,
+        "expiring_soon": 0,
+        "skipped":       0,
+        "alerts_sent":   0,
+    }
+
+    try:
+        conn_result = (
+            supabase.table("connections")
+            .select(
+                "id,client_id,platform,account_id,account_name,"
+                "access_token_encrypted,refresh_token_encrypted,"
+                "token_expires_at,health_status,alerts_sent,consecutive_failures,"
+                "clients(user_id,name,primary_contact_email)"
+            )
+            .eq("id", connection_id)
+            .single()
+            .execute()
+        )
+        conn = conn_result.data
+    except Exception as exc:
+        logger.error("probe_one_connection_now: load failed for %s: %s", connection_id, exc)
+        return stats
+
+    if not conn:
+        logger.warning("probe_one_connection_now: connection %s not found", connection_id)
+        return stats
+
+    # CSV platforms have no OAuth to probe — leave them alone.
+    if str(conn.get("platform", "")).startswith("csv_"):
+        return stats
+
+    stats["total"] = 1
+    await _probe_one_connection(conn, supabase, stats)
+    return stats

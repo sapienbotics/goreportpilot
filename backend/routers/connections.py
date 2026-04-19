@@ -114,9 +114,17 @@ async def create_connection(
     }
 
     if existing.data:
-        # Update in place rather than duplicating
+        # Update in place rather than duplicating.
+        # Reconnect implies fresh auth → reset Phase-2 health state so the
+        # UI doesn't keep showing stale 'broken'. The inline probe below
+        # immediately verifies the fresh token; if the probe fails, it'll
+        # flip health_status back to 'broken' with an up-to-date error.
         connection_id = existing.data[0]["id"]
-        insert_payload["id"] = connection_id
+        insert_payload["id"]                   = connection_id
+        insert_payload["health_status"]        = "healthy"
+        insert_payload["last_error_message"]   = None
+        insert_payload["alerts_sent"]          = {}
+        insert_payload["last_health_check_at"] = None
         result = (
             supabase.table("connections")
             .update(insert_payload)
@@ -130,6 +138,28 @@ async def create_connection(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to save connection.",
+        )
+
+    # Inline probe — ground-truth health immediately, no 6-hour wait.
+    # Non-fatal: probe errors are logged but don't block the OAuth response.
+    try:
+        from services.health_check import probe_one_connection_now  # noqa: PLC0415
+        await probe_one_connection_now(supabase, connection_id)
+        # Re-fetch so the response body reflects the probe's verdict
+        # (may have flipped back to 'broken' if the fresh token is still bad).
+        fresh = (
+            supabase.table("connections")
+            .select("*")
+            .eq("id", connection_id)
+            .single()
+            .execute()
+        )
+        if fresh.data:
+            result.data[0] = fresh.data
+    except Exception as exc:
+        logger.warning(
+            "Post-reconnect probe failed for connection %s (non-fatal): %s",
+            connection_id, exc,
         )
 
     return ConnectionResponse(**_map_row(result.data[0]))
@@ -223,6 +253,71 @@ async def delete_connection(
         )
 
     supabase.table("connections").delete().eq("id", connection_id).execute()
+
+
+# ---------------------------------------------------------------------------
+# POST /{connection_id}/probe  (Phase 2 bug-fix — manual health probe)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/{connection_id}/probe", response_model=ConnectionResponse)
+async def probe_connection(
+    connection_id: str,
+    user_id: str = Depends(get_current_user_id),
+) -> ConnectionResponse:
+    """
+    Run the health probe for a single connection right now, bypassing the
+    6-hour sweep cadence. Returns the refreshed row so the caller can
+    re-render with the latest health_status.
+    """
+    supabase = get_supabase_admin()
+
+    conn_result = (
+        supabase.table("connections")
+        .select("id,client_id")
+        .eq("id", connection_id)
+        .single()
+        .execute()
+    )
+    if not conn_result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Connection not found.",
+        )
+
+    client_check = (
+        supabase.table("clients")
+        .select("id")
+        .eq("id", conn_result.data["client_id"])
+        .eq("user_id", user_id)
+        .single()
+        .execute()
+    )
+    if not client_check.data:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorised to probe this connection.",
+        )
+
+    from services.health_check import probe_one_connection_now  # noqa: PLC0415
+    await probe_one_connection_now(supabase, connection_id)
+
+    fresh = (
+        supabase.table("connections")
+        .select(
+            "id,client_id,platform,account_id,account_name,currency,status,"
+            "health_status,last_error_message,last_health_check_at,"
+            "token_expires_at,created_at,updated_at"
+        )
+        .eq("id", connection_id)
+        .single()
+        .execute()
+    )
+    if not fresh.data:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Connection disappeared after probe.",
+        )
+    return ConnectionResponse(**_map_row(fresh.data))
 
 
 # ---------------------------------------------------------------------------
