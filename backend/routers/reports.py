@@ -148,6 +148,16 @@ async def preview_cover(
     client_pos      = body.client_logo_position or client.get("cover_client_logo_position") or "default"
     client_sz       = body.client_logo_size     or client.get("cover_client_logo_size")     or "default"
 
+    # Phase-3 fix v4 — trace logo placement through the preview flow.
+    # Step 2 of 4: show what the preview endpoint received vs what's stored.
+    logger.info(
+        "preview_cover[%s] body.agency=%r stored=%r → resolved agency_pos=%r | "
+        "body.client=%r stored=%r → resolved client_pos=%r",
+        client["id"],
+        body.agency_logo_position, client.get("cover_agency_logo_position"), agency_pos,
+        body.client_logo_position, client.get("cover_client_logo_position"), client_pos,
+    )
+
     # Fetch agency branding for accent colour + logo.
     profile_result = (
         supabase.table("profiles")
@@ -684,6 +694,16 @@ async def _generate_report_internal(
     branding["agency_logo_size"]       = client.get("cover_agency_logo_size")     or "default"
     branding["client_logo_position"]   = client.get("cover_client_logo_position") or "default"
     branding["client_logo_size"]       = client.get("cover_client_logo_size")     or "default"
+
+    # Phase-3 fix v4 — step 3 of 4: show what's landing in the branding
+    # dict that's about to be passed into generate_pptx_report.
+    logger.info(
+        "generate[%s] branding.agency_logo_position=%r size=%r | "
+        "client_logo_position=%r size=%r",
+        client_id,
+        branding.get("agency_logo_position"), branding.get("agency_logo_size"),
+        branding.get("client_logo_position"), branding.get("client_logo_size"),
+    )
 
     cover_customization = {
         "preset":         client.get("cover_design_preset") or "default",

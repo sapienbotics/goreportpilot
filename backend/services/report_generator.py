@@ -1012,21 +1012,33 @@ def _logo_corner_xy(
     """Map a named position to explicit (left, top) EMU on the cover slide."""
     m = _LOGO_MARGIN
     if position == "top-left":
-        return m, m
-    if position in ("top-right", "header"):
-        return slide_w - logo_w - m, m
-    if position == "top-center":
-        return (slide_w - logo_w) // 2, m
-    if position in ("footer", "footer-left", "bottom-left"):
-        return m, slide_h - logo_h - m
-    if position in ("footer-right", "bottom-right"):
-        return slide_w - logo_w - m, slide_h - logo_h - m
-    if position in ("footer-center", "bottom-center"):
-        return (slide_w - logo_w) // 2, slide_h - logo_h - m
-    if position == "center":
-        return (slide_w - logo_w) // 2, (slide_h - logo_h) // 2
-    # Unknown value — default to top-right to keep logos visible.
-    return slide_w - logo_w - m, m
+        result = (m, m)
+    elif position in ("top-right", "header"):
+        result = (slide_w - logo_w - m, m)
+    elif position == "top-center":
+        result = ((slide_w - logo_w) // 2, m)
+    elif position in ("footer", "footer-left", "bottom-left"):
+        result = (m, slide_h - logo_h - m)
+    elif position in ("footer-right", "bottom-right"):
+        result = (slide_w - logo_w - m, slide_h - logo_h - m)
+    elif position in ("footer-center", "bottom-center"):
+        result = ((slide_w - logo_w) // 2, slide_h - logo_h - m)
+    elif position == "center":
+        result = ((slide_w - logo_w) // 2, (slide_h - logo_h) // 2)
+    else:
+        # Unknown value — fall back to top-right so logos remain visible,
+        # but log the surprise so we notice unknown values in production.
+        logger.warning("_logo_corner_xy: unknown position %r → top-right fallback", position)
+        result = (slide_w - logo_w - m, m)
+
+    # Phase-3 fix v4 — step 4 of 4: log the exact mapping we used. If this
+    # disagrees with the expected branch, the position string arriving here
+    # doesn't match what the user picked.
+    logger.info(
+        "_logo_corner_xy position=%r logo_w=%d logo_h=%d → left=%d top=%d",
+        position, int(logo_w), int(logo_h), int(result[0]), int(result[1]),
+    )
+    return result
 
 
 def _embed_logos(prs: Any, branding: dict | None) -> None:

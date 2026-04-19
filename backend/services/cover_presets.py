@@ -258,78 +258,62 @@ def _insert_hero_image(prs: Any, cover: Any, image_url: str) -> None:
     """
     Insert a hero image full-bleed behind all existing shapes.
 
-    v3 fixes:
-      * Clear the template's header-band fill so the hero image shows
-        through the whole cover — previously the opaque header (e.g.
-        indigo) painted on top of the hero, producing a split look.
-      * Darken the image pixel-wise (brightness 0.40) in Python BEFORE
-        embedding. Some renderers (notably certain LibreOffice versions)
-        do not honour <a:alpha> on an overlay rectangle, so readable text
-        on the hero would bleed through. Darkening the pixels is
-        renderer-agnostic.
-      * No overlay rectangle — the pre-darkened image is the overlay.
+    v4 fixes (per user spec):
+      * DELETE the template's header-band shape entirely so the hero
+        image can fill the whole cover. "Clear fill" wasn't reliable
+        because some renderers still painted the cleared shape.
+      * Use the image AS-IS — no Pillow darkening. The user is
+        responsible for picking a hero that works as a background;
+        darkening their pixels isn't our job.
+      * No overlay rectangle.
     """
     from pptx.util import Emu  # noqa: PLC0415
-    from PIL import Image, ImageEnhance  # noqa: PLC0415
 
     img_bytes = _download_image(image_url)
     if not img_bytes:
         logger.debug("Cover preset: hero image could not be downloaded")
         return
 
-    # Darken pixels so custom headline/subtitle text always reads cleanly.
-    # 0.40 = 40% of original brightness ≈ the "60% dark overlay" effect.
-    try:
-        im = Image.open(io.BytesIO(img_bytes))
-        if im.mode not in ("RGB", "RGBA"):
-            im = im.convert("RGB")
-        darkened = ImageEnhance.Brightness(im).enhance(0.40)
-        out = io.BytesIO()
-        # Use JPEG for size; fall back to PNG if input had alpha.
-        if im.mode == "RGBA":
-            darkened.save(out, format="PNG")
-        else:
-            darkened.save(out, format="JPEG", quality=88)
-        out.seek(0)
-        hero_stream = out
-    except Exception as exc:
-        logger.debug("Hero darkening failed (%s) — using original image", exc)
-        hero_stream = io.BytesIO(img_bytes)
+    # DELETE the header band before inserting the picture so our new
+    # picture doesn't have to fight for z-order with an empty-but-present
+    # shape. Belt-and-suspenders: if delete fails, the subsequent picture
+    # still gets sent to the back and the template text shapes render on
+    # top — but the deletion is the real fix.
+    _delete_header_band(prs, cover)
 
     pic = cover.shapes.add_picture(
-        hero_stream, Emu(0), Emu(0),
+        io.BytesIO(img_bytes), Emu(0), Emu(0),
         width=prs.slide_width, height=prs.slide_height,
     )
-
-    # Clear the template's header-band fill so the hero image is visible
-    # through the top third of the slide. Without this step, the opaque
-    # header (indigo in modern_clean, navy in dark_executive, etc.) would
-    # sit in front of the hero and produce a visual split.
-    _clear_header_band(prs, cover)
 
     # Push the hero to the back of z-order so template text shapes still
     # render on top of it.
     _reorder_to_back(cover, pic)
 
 
-def _clear_header_band(prs: Any, cover: Any) -> None:
+def _delete_header_band(prs: Any, cover: Any) -> None:
     """
-    Set the header-band shape's fill to 'no fill' so the hero image
-    behind it is visible. Uses the same heuristic as
-    _find_header_band — topmost full-width non-picture non-text shape
-    in the top third. No-op if no such shape is found.
+    Remove the template's header-band shape from the cover's spTree
+    entirely. Uses the same heuristic as _find_header_band — topmost
+    full-width non-picture non-text shape in the top third. No-op if
+    nothing matches.
+
+    Physical removal (via sp_tree.remove) rather than just clearing the
+    fill, because empty shapes can still leave a faint border or shift
+    layout in some renderers.
     """
     band = _find_header_band(cover, prs)
     if band is None:
+        logger.debug("Hero preset: no header band found to delete")
         return
     try:
-        band.fill.background()
-        try:
-            band.line.fill.background()
-        except Exception:
-            pass
+        sp_tree = cover.shapes._spTree
+        el = band._element
+        if el.getparent() is sp_tree:
+            sp_tree.remove(el)
+            logger.info("Hero preset: deleted header-band shape from cover")
     except Exception as exc:
-        logger.debug("Hero preset: could not clear header band fill: %s", exc)
+        logger.debug("Hero preset: could not delete header band: %s", exc)
 
 
 def _reorder_to_back(slide: Any, *shapes: Any) -> None:

@@ -96,6 +96,17 @@ async def update_client(
 ) -> ClientResponse:
     """Partially update a client. Only the provided fields are changed."""
     updates = payload.model_dump(exclude_none=True)
+    # Phase-3 fix v4 — log cover-customisation fields as they arrive from
+    # the frontend so we can trace Bug 3 (top-center logo rendering at
+    # top-right) end-to-end.
+    logger.info(
+        "update_client[%s] cover_agency_logo_position=%r cover_client_logo_position=%r "
+        "cover_design_preset=%r",
+        client_id,
+        updates.get("cover_agency_logo_position"),
+        updates.get("cover_client_logo_position"),
+        updates.get("cover_design_preset"),
+    )
     if not updates:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
