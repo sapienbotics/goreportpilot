@@ -297,7 +297,7 @@ export default function ReportCustomizationTab({ client, onClientUpdate }: Props
                   />
                 </div>
                 <p className="text-[11px] text-slate-400 mt-1.5">
-                  Leave blank to inherit the agency's default brand colour.
+                  Leave blank to inherit the agency&apos;s default brand colour.
                 </p>
               </section>
 
