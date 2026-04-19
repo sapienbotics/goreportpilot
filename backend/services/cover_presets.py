@@ -559,22 +559,26 @@ def _substitute_cover_text(
     subtitle: Optional[str],
 ) -> None:
     """
-    Replace {{client_name}} with `headline` and {{report_date}} with
-    `subtitle` on the cover slide only. Token-level replacement preserves
-    the run's formatting (font, size, alignment).
+    Apply custom headline/subtitle overrides on the cover slide.
 
-    Narrow token sets on purpose — v2 fix:
-      * headline touches {{client_name}} ONLY. {{report_type}} keeps its
-        real label ("Monthly Report", etc.). Previously the headline also
-        overwrote the type slot, producing duplicate "New Report" text.
-      * subtitle touches {{report_date}} ONLY. {{report_period}} keeps
-        its real date range so the cover still shows WHEN the report
-        covers. The date-of-generation is the soft slot that the subtitle
-        overrides.
+    * Headline REPLACES {{client_name}} — full substitution. The user's
+      custom title takes over the primary slot.
 
-    Subsequent generator passes will see NO {{client_name}} /
-    {{report_date}} tokens on slide 0 so the cover shows the overrides;
-    on other slides those tokens survive and substitute normally.
+    * Subtitle APPENDS to {{report_period}} — the period token stays in
+      place so the real date range still shows after the generator's
+      substitution pass runs. Example:
+          Original run text:  "{{report_period}}"
+          After subtitle 'Test Sub' applied here:
+                              "{{report_period}} — Test Sub"
+          After generator substitutes {{report_period}} with "April 2026":
+                              "April 2026 — Test Sub"
+
+      This matches the v7 feedback: "report time and all are missing
+      now" — which was caused by subtitle REPLACING the period rather
+      than appending. No subtitle → period shows as-is.
+
+    Token-level operations preserve the run's font/size/colour so
+    recoloured or resized runs carry their formatting forward.
     """
     if not headline and not subtitle:
         return
@@ -585,15 +589,18 @@ def _substitute_cover_text(
         for para in shape.text_frame.paragraphs:
             for run in para.runs:
                 txt = run.text or ""
+                # Headline: replace {{client_name}} with custom text.
                 if headline:
                     for token in _HEADLINE_SUB_TOKENS:
                         if token in txt:
                             run.text = txt.replace(token, headline)
                             txt = run.text or ""
+                # Subtitle: append after {{report_period}} so the real
+                # period is preserved.
                 if subtitle:
                     for token in _SUBTITLE_SUB_TOKENS:
                         if token in txt:
-                            run.text = txt.replace(token, subtitle)
+                            run.text = txt.replace(token, f"{token} — {subtitle}")
                             txt = run.text or ""
 
 
