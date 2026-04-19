@@ -159,6 +159,12 @@ def apply_cover_preset(
                 _insert_hero_image(prs, cover, hero_image_url)
             except Exception as exc:
                 logger.debug("Cover preset: hero-image apply failed: %s", exc)
+            # Hero preset: boost the headline font so it reads as the
+            # dominant element over the image.
+            try:
+                _ensure_hero_headline_size(cover, min_pt=36)
+            except Exception as exc:
+                logger.debug("Cover preset: headline size boost failed: %s", exc)
 
         try:
             _recolour_cover_text(
@@ -173,7 +179,9 @@ def apply_cover_preset(
     # 'default' preset).
     _substitute_cover_text(cover, headline=headline, subtitle=subtitle)
 
-    if config and accent_hex:
+    # Accent bar renders for every preset EXCEPT hero — the hero's
+    # full-bleed image gets cluttered by a stripe bisecting it.
+    if config and accent_hex and preset != "hero":
         try:
             _draw_accent_bar(prs, cover, accent_hex)
         except Exception as exc:
@@ -258,16 +266,17 @@ def _insert_hero_image(prs: Any, cover: Any, image_url: str) -> None:
     """
     Insert a hero image full-bleed behind all existing shapes.
 
-    v5 fixes (per user spec):
-      * Generalise header-band removal to STRIP ALL decorative shapes —
-        the user's template has multiple shapes forming the purple top
-        area, not just one. Now we delete every non-picture non-text
-        shape on the cover before inserting the hero.
-      * Dump BEFORE and AFTER shape lists to the log so we can see
-        exactly what the template started with and what remains after
-        the strip.
-      * Log the hero pic's actual left/top/width/height so we can
-        confirm it's placed full-slide and not clipped.
+    v6 fixes (per user spec + screenshot evidence):
+      * Strip is now a WHITELIST. Only three roles survive: the title
+        ({{client_name}}), the subtitle ({{report_period}}), and the
+        footer agency line ({{agency_name}} in the bottom half). Plus
+        pictures. Everything else on the cover — "PERFORMANCE REPORT"
+        label, "Prepared by" line, report-type text, divider shapes,
+        logo placeholder text — gets deleted.
+      * Hero headline font boosted to 36pt minimum so it reads at the
+        scale the CSS mockup shows.
+      * Accent bar skipped for hero preset (no green stripe bisecting
+        the cover).
     """
     from pptx.util import Emu  # noqa: PLC0415
 
@@ -276,18 +285,8 @@ def _insert_hero_image(prs: Any, cover: Any, image_url: str) -> None:
         logger.debug("Cover preset: hero image could not be downloaded")
         return
 
-    # BEFORE: log everything on the cover so we know what we're starting with.
     _log_cover_shapes(cover, "Hero preset — BEFORE strip")
-
-    # Strip ALL decorative shapes (anything that isn't a picture and
-    # doesn't carry text content). This removes header bands, accent
-    # stripes, background rectangles — everything that would otherwise
-    # sit on top of the hero.
-    _strip_cover_decorations(cover)
-
-    # AFTER: log what remains. Anything listed here still renders on top
-    # of the hero. If something visual (a coloured rectangle, say) is
-    # still present after this line, it was wrongly kept — tell us.
+    _strip_cover_for_hero(prs, cover)
     _log_cover_shapes(cover, "Hero preset — AFTER strip")
 
     pic = cover.shapes.add_picture(
@@ -303,8 +302,8 @@ def _insert_hero_image(prs: Any, cover: Any, image_url: str) -> None:
         prs.slide_width / 914400, prs.slide_height / 914400,
     )
 
-    # Push the hero to the back of z-order so template text shapes still
-    # render on top of it.
+    # Hero goes to the back of z-order so the surviving text shapes
+    # still render on top of it.
     _reorder_to_back(cover, pic)
     logger.info("Hero pic moved to back of spTree")
 
@@ -358,56 +357,120 @@ def _log_cover_shapes(cover: Any, label: str) -> None:
         logger.warning("_log_cover_shapes failed: %s", exc)
 
 
-def _strip_cover_decorations(cover: Any) -> int:
+def _strip_cover_for_hero(prs: Any, cover: Any) -> int:
     """
-    Delete every shape on the cover that is NOT a picture and does NOT
-    carry actual text content. Keeps:
-      * Pictures (existing logos, anything we'll fill later).
-      * Shapes with non-empty text (titles, subtitles, text-bearing
-        agency/client logo placeholders like the "{{agency_logo}}" token).
-      * Placeholders regardless of text (title / content placeholders
-        that may still be empty).
-    Removes:
-      * Decorative rectangles, lines, freeform shapes, empty auto-shapes.
-    Returns count of shapes deleted. Each deletion is logged at INFO so
-    you can see exactly what went away.
+    Aggressive whitelist strip for the hero preset. Keep only:
+      * Pictures (existing logos — will be deleted anyway if _embed_logos
+        re-places them; but we leave it to that function).
+      * A shape whose text contains {{client_name}} (the headline slot).
+      * A shape whose text contains {{report_period}} (the subtitle slot).
+      * A shape whose text contains {{agency_name}} AND sits in the
+        bottom half of the slide (the footer agency line — NOT the
+        "Prepared by {{agency_name}}" line near the top).
+
+    Everything else is removed from the cover's spTree:
+      * Coloured header band
+      * "PERFORMANCE REPORT" label
+      * "Prepared by ..." line
+      * {{report_type}} / {{report_date}} text
+      * {{agency_logo}} / {{client_logo}} placeholder text shapes —
+        _embed_logos no longer needs them (it uses explicit placement
+        when a position is set; it falls back to default coords
+        otherwise).
+      * Divider lines, accent stripes, any other decoration.
+
+    Returns the count of shapes deleted. Each deletion is logged so the
+    AFTER-strip dump shows exactly which shapes survived.
     """
     try:
         from pptx.enum.shapes import MSO_SHAPE_TYPE  # noqa: PLC0415
-        KEEP_TYPES = {MSO_SHAPE_TYPE.PICTURE, MSO_SHAPE_TYPE.PLACEHOLDER}
+        PICTURE = MSO_SHAPE_TYPE.PICTURE
     except Exception:
-        # Fallback to raw ints if the enum import ever breaks.
-        KEEP_TYPES = {13, 14}
+        PICTURE = 13
 
     sp_tree = cover.shapes._spTree
+    slide_h = int(prs.slide_height)
+    bottom_threshold = int(slide_h * 0.55)
+
     deleted = 0
+    kept: list[str] = []
+
     for shape in list(cover.shapes):
         st = getattr(shape, "shape_type", None)
         name = getattr(shape, "name", "?")
-        # Keep pictures + placeholders unconditionally.
-        if st in KEEP_TYPES:
+
+        # Pictures always stay — they're existing logos or other art.
+        if st == PICTURE:
+            kept.append(f"{name} (picture)")
             continue
-        # Keep anything with actual text content.
+
+        text = ""
         try:
             if getattr(shape, "has_text_frame", False):
-                if (shape.text_frame.text or "").strip():
-                    continue
+                text = (shape.text_frame.text or "")
         except Exception:
-            # If we can't read text, err on the side of keeping the shape.
+            text = ""
+
+        top = 0
+        try:
+            top = int(shape.top or 0)
+        except Exception:
+            pass
+
+        keep_reason: Optional[str] = None
+        if "{{client_name}}" in text:
+            keep_reason = "client_name"
+        elif "{{report_period}}" in text:
+            keep_reason = "report_period"
+        elif "{{agency_name}}" in text and top >= bottom_threshold:
+            keep_reason = "footer agency_name"
+
+        if keep_reason:
+            kept.append(f"{name} ({keep_reason})")
             continue
-        # Everything else is decorative — delete.
+
+        # Everything else goes away.
         try:
             el = shape._element
             if el.getparent() is sp_tree:
                 sp_tree.remove(el)
                 deleted += 1
                 logger.info(
-                    "Stripped decoration: idx-name=%r type=%s", name, st,
+                    "Hero strip DELETE: name=%r type=%s top_in=%.2f text=%r",
+                    name, st, top / 914400, text[:60].replace("\n", " "),
                 )
         except Exception as exc:
-            logger.debug("Strip failed for shape %r: %s", name, exc)
-    logger.info("Hero decoration strip complete: %d shapes removed", deleted)
+            logger.debug("Hero strip failed for %r: %s", name, exc)
+
+    logger.info(
+        "Hero strip complete — deleted=%d kept=%d; kept list: %s",
+        deleted, len(kept), kept,
+    )
     return deleted
+
+
+def _ensure_hero_headline_size(cover: Any, min_pt: int = 36) -> None:
+    """
+    Ensure the {{client_name}} headline on the cover renders at ≥ `min_pt`
+    points for the hero preset — hero templates often have a smaller
+    title because they rely on negative space, but against a hero image
+    we want the title to dominate. Runs already ≥ min_pt are left alone.
+    """
+    from pptx.util import Pt  # noqa: PLC0415
+    for shape in cover.shapes:
+        if not getattr(shape, "has_text_frame", False):
+            continue
+        if "{{client_name}}" not in (shape.text_frame.text or ""):
+            continue
+        for para in shape.text_frame.paragraphs:
+            for run in para.runs:
+                try:
+                    cur = run.font.size
+                    if cur is None or cur.pt < min_pt:
+                        run.font.size = Pt(min_pt)
+                except Exception:
+                    continue
+        return  # only one title shape
 
 
 def _reorder_to_back(slide: Any, *shapes: Any) -> None:
