@@ -988,6 +988,24 @@ def _logo_max_box(size: str, *, kind: str) -> tuple[int, int]:
     return box.get(size, box["default"])
 
 
+def _clamp_logo_for_position(position: str, max_w: int, max_h: int, *, kind: str) -> tuple[int, int]:
+    """
+    Shrink the max bounding box for logos placed in footer / bottom slots.
+
+    Why: a "medium" client logo defaults to 2" tall. Dropping a 2"-tall
+    logo at the bottom of a 7.5" slide means its top edge sits at 5.2" —
+    looking visually mid-slide, not "footer". Clamp to a small footer
+    band so the logo reads as a footer element no matter what size the
+    user selected.
+    """
+    pos = (position or "").lower()
+    if pos.startswith("footer") or pos.startswith("bottom"):
+        if kind == "agency":
+            return min(max_w, Inches(2.5)), min(max_h, Inches(0.6))
+        return min(max_w, Inches(3.0)), min(max_h, Inches(0.8))
+    return max_w, max_h
+
+
 def _logo_corner_xy(
     *, position: str, slide_w: int, slide_h: int, logo_w: int, logo_h: int,
 ) -> tuple[int, int]:
@@ -1062,6 +1080,8 @@ def _embed_logos(prs: Any, branding: dict | None) -> None:
 
             # Size selector overrides default max box.
             max_w, max_h = _logo_max_box(agency_size, kind="agency")
+            # Clamp for footer slots so tall logos don't extend into the body.
+            max_w, max_h = _clamp_logo_for_position(agency_pos, max_w, max_h, kind="agency")
 
             if agency_pos != "default":
                 # User-picked placement — derive corner coordinates explicitly.
@@ -1110,6 +1130,7 @@ def _embed_logos(prs: Any, branding: dict | None) -> None:
             img_w_px, img_h_px = _measure_image(client_img)
 
             max_w, max_h = _logo_max_box(client_size, kind="client")
+            max_w, max_h = _clamp_logo_for_position(client_pos, max_w, max_h, kind="client")
 
             if client_pos != "default":
                 fit_w, fit_h = _fit_image_to_box(img_w_px, img_h_px, max_w, max_h)

@@ -84,14 +84,23 @@ PRESETS: dict[str, Optional[dict[str, Any]]] = {
 }
 
 
-# Placeholder groups — used for identifying which existing template shape
-# plays which role on the cover. Matching is substring-based so a shape
-# containing any of these tokens anywhere in its text is considered a
-# match. This is robust across all 6 visual templates because each
-# template uses these exact tokens in its cover.
-_HEADLINE_PLACEHOLDERS = ("{{client_name}}", "{{report_type}}")
-_SUBTITLE_PLACEHOLDERS = ("{{report_period}}", "{{report_date}}")
-_AGENCY_TEXT_PLACEHOLDERS = ("{{agency_name}}", "{{agency_email}}")
+# Placeholder groups used for SUBSTITUTION of custom headline/subtitle.
+# Narrow on purpose — the custom headline overrides ONLY the client-name
+# slot (not the report-type slot), and the custom subtitle replaces the
+# report-date slot (so the reporting period stays visible on the cover).
+_HEADLINE_SUB_TOKENS = ("{{client_name}}",)
+_SUBTITLE_SUB_TOKENS = ("{{report_date}}",)
+
+# Placeholder groups used for COLORING text on the cover. Broader than
+# the substitution groups — every cover text shape should pick up the
+# preset palette, even slots we don't overwrite.
+#   HEADLINE_COLOR tokens → get `headline_color` from the preset config.
+#   SUBTITLE_COLOR tokens → get `subtitle_color`.
+_HEADLINE_COLOR_TOKENS = ("{{client_name}}", "{{report_type}}")
+_SUBTITLE_COLOR_TOKENS = (
+    "{{report_period}}", "{{report_date}}",
+    "{{agency_name}}", "{{agency_email}}",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -125,50 +134,46 @@ def apply_cover_preset(
 
     brand_hex = _normalise_hex(brand_color) or "4338CA"
     accent_hex = _normalise_hex(accent_color)
+    config = PRESETS.get(preset or "default")
 
-    # Always process text overrides — they work even on the 'default' preset
-    # (the user may want to change the headline without changing visuals).
+    # Order matters:
+    #   1. Header/page colours first — pure shape-fill work, unrelated to text.
+    #   2. Hero image + overlay — add net-new shapes at the back of z-order.
+    #   3. RECOLOUR before SUBSTITUTE. Recolour uses placeholder tokens to
+    #      identify shape roles; substitute replaces those tokens with
+    #      custom text. Doing recolour second would mean the {{client_name}}
+    #      token is already gone by the time recolour tries to find it.
+    #   4. Substitute headline/subtitle text (narrow token set — only
+    #      {{client_name}} and {{report_date}}, preserving {{report_type}}
+    #      and {{report_period}} so they get their real values).
+    #   5. Accent bar last — a small decorative overlay.
+
+    if config:
+        try:
+            _apply_header_and_bg_colours(prs, cover, config, brand_hex)
+        except Exception as exc:
+            logger.debug("Cover preset: colour apply failed: %s", exc)
+
+        if config.get("use_hero_image") and hero_image_url:
+            try:
+                _insert_hero_image(prs, cover, hero_image_url)
+            except Exception as exc:
+                logger.debug("Cover preset: hero-image apply failed: %s", exc)
+
+        try:
+            _recolour_cover_text(
+                cover,
+                headline_hex=config.get("headline_color"),
+                subtitle_hex=config.get("subtitle_color"),
+            )
+        except Exception as exc:
+            logger.debug("Cover preset: text recolour failed: %s", exc)
+
+    # Text substitution always runs (honours user overrides even on the
+    # 'default' preset).
     _substitute_cover_text(cover, headline=headline, subtitle=subtitle)
 
-    if not preset or preset == "default":
-        # No visual changes on default — return after text substitution.
-        return
-
-    config = PRESETS.get(preset)
-    if not config:
-        logger.warning("Cover preset: unknown preset '%s'", preset)
-        return
-
-    # 1) Header band + page background colours (in-place, modifies existing
-    #    template shapes — does NOT add new rectangles).
-    try:
-        _apply_header_and_bg_colours(prs, cover, config, brand_hex)
-    except Exception as exc:
-        logger.debug("Cover preset: colour apply failed: %s", exc)
-
-    # 2) Hero image — only preset that adds net-new shapes. Inserted at the
-    #    back of the z-order with a 40% dark overlay between it and text.
-    if config.get("use_hero_image") and hero_image_url:
-        try:
-            _insert_hero_image(prs, cover, hero_image_url)
-        except Exception as exc:
-            logger.debug("Cover preset: hero-image apply failed: %s", exc)
-
-    # 3) Recolour existing text runs (headline / subtitle / agency text)
-    #    to match the preset. Colour is applied to the runs containing the
-    #    placeholder tokens — when the generator's pass substitutes the
-    #    tokens with real values, the colour is preserved.
-    try:
-        _recolour_cover_text(
-            cover,
-            headline_hex=config.get("headline_color"),
-            subtitle_hex=config.get("subtitle_color"),
-        )
-    except Exception as exc:
-        logger.debug("Cover preset: text recolour failed: %s", exc)
-
-    # 4) Optional accent bar at the bottom of the header band.
-    if accent_hex:
+    if config and accent_hex:
         try:
             _draw_accent_bar(prs, cover, accent_hex)
         except Exception as exc:
@@ -272,7 +277,9 @@ def _insert_hero_image(prs: Any, cover: Any, image_url: str) -> None:
         width=prs.slide_width, height=prs.slide_height,
     )
 
-    # Overlay rectangle (black, 40% opacity) above the image but below text.
+    # Overlay rectangle (black, 60% opacity). Dark enough that underlying
+    # image details read as texture, not distracting content — but not so
+    # dark that colour is lost. Previous 40% was too transparent; v2 fix.
     overlay = cover.shapes.add_shape(
         1,  # MSO_SHAPE.RECTANGLE
         Emu(0), Emu(0),
@@ -281,7 +288,7 @@ def _insert_hero_image(prs: Any, cover: Any, image_url: str) -> None:
     try:
         overlay.fill.solid()
         overlay.fill.fore_color.rgb = RGBColor(0, 0, 0)
-        _set_shape_fill_alpha(overlay, 40)
+        _set_shape_fill_alpha(overlay, 60)
         overlay.line.fill.background()
     except Exception as exc:
         logger.debug("Cover: overlay fill failed: %s", exc)
@@ -353,15 +360,22 @@ def _substitute_cover_text(
     subtitle: Optional[str],
 ) -> None:
     """
-    Replace {{client_name}} with `headline` and {{report_period}} with
+    Replace {{client_name}} with `headline` and {{report_date}} with
     `subtitle` on the cover slide only. Token-level replacement preserves
-    the run's formatting (font, size, alignment). Subsequent generator
-    passes will see NO {{client_name}} token on slide 0, so the cover
-    shows the override; on other slides the token survives and gets
-    substituted normally with the real client name.
+    the run's formatting (font, size, alignment).
 
-    If headline/subtitle are None, tokens are left intact for the normal
-    substitution to handle.
+    Narrow token sets on purpose — v2 fix:
+      * headline touches {{client_name}} ONLY. {{report_type}} keeps its
+        real label ("Monthly Report", etc.). Previously the headline also
+        overwrote the type slot, producing duplicate "New Report" text.
+      * subtitle touches {{report_date}} ONLY. {{report_period}} keeps
+        its real date range so the cover still shows WHEN the report
+        covers. The date-of-generation is the soft slot that the subtitle
+        overrides.
+
+    Subsequent generator passes will see NO {{client_name}} /
+    {{report_date}} tokens on slide 0 so the cover shows the overrides;
+    on other slides those tokens survive and substitute normally.
     """
     if not headline and not subtitle:
         return
@@ -373,12 +387,12 @@ def _substitute_cover_text(
             for run in para.runs:
                 txt = run.text or ""
                 if headline:
-                    for token in _HEADLINE_PLACEHOLDERS:
+                    for token in _HEADLINE_SUB_TOKENS:
                         if token in txt:
                             run.text = txt.replace(token, headline)
                             txt = run.text or ""
                 if subtitle:
-                    for token in _SUBTITLE_PLACEHOLDERS:
+                    for token in _SUBTITLE_SUB_TOKENS:
                         if token in txt:
                             run.text = txt.replace(token, subtitle)
                             txt = run.text or ""
@@ -423,13 +437,12 @@ def _recolour_cover_text(
         if "agency_logo" in frame_text.lower() or "client_logo" in frame_text.lower():
             continue
         # Determine which colour applies based on the tokens present.
+        # Uses the broader *_COLOR_TOKENS groups so every cover text
+        # shape gets recoloured, even slots that aren't substituted.
         target_rgb = None
-        if head_rgb and any(t in frame_text for t in _HEADLINE_PLACEHOLDERS):
+        if head_rgb and any(t in frame_text for t in _HEADLINE_COLOR_TOKENS):
             target_rgb = head_rgb
-        elif sub_rgb and (
-            any(t in frame_text for t in _SUBTITLE_PLACEHOLDERS) or
-            any(t in frame_text for t in _AGENCY_TEXT_PLACEHOLDERS)
-        ):
+        elif sub_rgb and any(t in frame_text for t in _SUBTITLE_COLOR_TOKENS):
             target_rgb = sub_rgb
         elif head_rgb:
             # Fallback: any remaining cover text gets the headline colour so
@@ -462,10 +475,14 @@ def _draw_accent_bar(prs: Any, cover: Any, accent_hex: str) -> None:
     from pptx.dml.color import RGBColor  # noqa: PLC0415
     from pptx.util import Emu            # noqa: PLC0415
 
+    from pptx.util import Inches  # noqa: PLC0415
+
     rgb = _hex_to_rgb(accent_hex)
     slide_w = prs.slide_width
     slide_h = prs.slide_height
-    bar_h   = Emu(54_000)   # ~0.06"
+    # v2 fix: 0.06" was ~4px, effectively invisible. 0.10" reads as a
+    # deliberate design element while still staying out of title area.
+    bar_h   = Inches(0.10)
     bar_top = int(slide_h * 0.33) - int(bar_h)
     bar     = cover.shapes.add_shape(1, Emu(0), Emu(bar_top), slide_w, bar_h)
     try:
