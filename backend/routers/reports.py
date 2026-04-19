@@ -292,6 +292,119 @@ async def _generate_report_internal(
                 metrics=meta_data,
             )
 
+    # Check for an active Google Ads connection for this client
+    gads_conn_result = (
+        supabase.table("connections")
+        .select("id,account_id,access_token_encrypted,refresh_token_encrypted,token_expires_at")
+        .eq("client_id", client_id)
+        .eq("platform", "google_ads")
+        .eq("status", "active")
+        .limit(1)
+        .execute()
+    )
+
+    google_ads_data = None
+    if gads_conn_result.data:
+        gads_conn = gads_conn_result.data[0]
+        try:
+            from services.google_ads import pull_google_ads_data  # noqa: PLC0415
+            gads_exp_ts: float | None = None
+            gads_raw_exp = gads_conn.get("token_expires_at")
+            if gads_raw_exp:
+                try:
+                    from datetime import timezone as _tz  # noqa: PLC0415
+                    dt = datetime.fromisoformat(str(gads_raw_exp).replace("Z", "+00:00"))
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=_tz.utc)
+                    gads_exp_ts = dt.timestamp()
+                except Exception:
+                    pass
+            # pull_google_ads_data is synchronous — run off the event loop.
+            gads_result = await asyncio.to_thread(
+                pull_google_ads_data,
+                access_token_encrypted=gads_conn["access_token_encrypted"],
+                refresh_token_encrypted=gads_conn["refresh_token_encrypted"],
+                customer_id=gads_conn["account_id"],
+                period_start=period_start,
+                period_end=period_end,
+                token_expires_at=gads_exp_ts,
+            )
+            # Service returns {} on failure — normalise to None for the guard.
+            google_ads_data = gads_result if gads_result else None
+            if google_ads_data:
+                logger.info("Using real Google Ads data for client %s", client_id)
+        except Exception:
+            logger.exception("Real Google Ads pull failed for client %s", client_id)
+            google_ads_data = None
+
+        # Persist snapshot for multi-period trend analysis (non-fatal).
+        if google_ads_data is not None:
+            from services.snapshot_saver import save_snapshot  # noqa: PLC0415
+            save_snapshot(
+                supabase,
+                connection_id=gads_conn["id"],
+                client_id=client_id,
+                platform="google_ads",
+                period_start=period_start,
+                period_end=period_end,
+                metrics=google_ads_data,
+            )
+
+    # Check for an active Search Console connection for this client
+    sc_conn_result = (
+        supabase.table("connections")
+        .select("id,account_id,access_token_encrypted,refresh_token_encrypted,token_expires_at")
+        .eq("client_id", client_id)
+        .eq("platform", "search_console")
+        .eq("status", "active")
+        .limit(1)
+        .execute()
+    )
+
+    search_console_data = None
+    if sc_conn_result.data:
+        sc_conn = sc_conn_result.data[0]
+        try:
+            from services.search_console import pull_search_console_data  # noqa: PLC0415
+            sc_exp_ts: float | None = None
+            sc_raw_exp = sc_conn.get("token_expires_at")
+            if sc_raw_exp:
+                try:
+                    from datetime import timezone as _tz  # noqa: PLC0415
+                    dt = datetime.fromisoformat(str(sc_raw_exp).replace("Z", "+00:00"))
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=_tz.utc)
+                    sc_exp_ts = dt.timestamp()
+                except Exception:
+                    pass
+            sc_result = await pull_search_console_data(
+                access_token_encrypted=sc_conn["access_token_encrypted"],
+                refresh_token_encrypted=sc_conn["refresh_token_encrypted"],
+                site_url=sc_conn["account_id"],
+                period_start=period_start,
+                period_end=period_end,
+                token_expires_at=sc_exp_ts,
+            )
+            search_console_data = sc_result if sc_result else None
+            if search_console_data:
+                logger.info("Using real Search Console data for client %s", client_id)
+        except Exception:
+            logger.exception("Real Search Console pull failed for client %s", client_id)
+            search_console_data = None
+
+        # Persist snapshot for multi-period trend analysis (non-fatal).
+        if search_console_data is not None:
+            from services.snapshot_saver import save_snapshot  # noqa: PLC0415
+            save_snapshot(
+                supabase,
+                connection_id=sc_conn["id"],
+                client_id=client_id,
+                platform="search_console",
+                period_start=period_start,
+                period_end=period_end,
+                metrics=search_console_data,
+            )
+
     # Build raw_data from ONLY real/connected data — no mock data.
     raw_data: dict = {
         "client_name": client["name"],
@@ -303,13 +416,23 @@ async def _generate_report_internal(
     if meta_data is not None:
         raw_data["meta_ads"] = meta_data
         raw_data["meta_ads"]["currency"] = meta_currency
+    if google_ads_data is not None:
+        raw_data["google_ads"] = google_ads_data
+    if search_console_data is not None:
+        raw_data["search_console"] = search_console_data
 
     # Inject ad-hoc CSV sources supplied at generation time
     if csv_sources:
         raw_data["csv_sources"] = csv_sources
 
     # Require at least one data source
-    has_data = ga4_data is not None or meta_data is not None or bool(csv_sources)
+    has_data = (
+        ga4_data is not None
+        or meta_data is not None
+        or google_ads_data is not None
+        or search_console_data is not None
+        or bool(csv_sources)
+    )
     if not has_data:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -1217,6 +1340,111 @@ async def regenerate_report(
                 metrics=meta_data,
             )
 
+    # Google Ads connection
+    gads_conn_result = (
+        supabase.table("connections")
+        .select("id,account_id,access_token_encrypted,refresh_token_encrypted,token_expires_at")
+        .eq("client_id", client_id)
+        .eq("platform", "google_ads")
+        .eq("status", "active")
+        .limit(1)
+        .execute()
+    )
+
+    google_ads_data = None
+    if gads_conn_result.data:
+        gads_conn = gads_conn_result.data[0]
+        try:
+            from services.google_ads import pull_google_ads_data  # noqa: PLC0415
+            gads_exp_ts: float | None = None
+            gads_raw_exp = gads_conn.get("token_expires_at")
+            if gads_raw_exp:
+                try:
+                    from datetime import timezone as _tz  # noqa: PLC0415
+                    dt = datetime.fromisoformat(str(gads_raw_exp).replace("Z", "+00:00"))
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=_tz.utc)
+                    gads_exp_ts = dt.timestamp()
+                except Exception:
+                    pass
+            gads_result = await asyncio.to_thread(
+                pull_google_ads_data,
+                access_token_encrypted=gads_conn["access_token_encrypted"],
+                refresh_token_encrypted=gads_conn["refresh_token_encrypted"],
+                customer_id=gads_conn["account_id"],
+                period_start=period_start,
+                period_end=period_end,
+                token_expires_at=gads_exp_ts,
+            )
+            google_ads_data = gads_result if gads_result else None
+        except Exception:
+            logger.exception("Google Ads pull failed during regenerate for client %s", client_id)
+
+        # Persist snapshot for multi-period trend analysis (non-fatal).
+        if google_ads_data is not None:
+            from services.snapshot_saver import save_snapshot  # noqa: PLC0415
+            save_snapshot(
+                supabase,
+                connection_id=gads_conn["id"],
+                client_id=client_id,
+                platform="google_ads",
+                period_start=period_start,
+                period_end=period_end,
+                metrics=google_ads_data,
+            )
+
+    # Search Console connection
+    sc_conn_result = (
+        supabase.table("connections")
+        .select("id,account_id,access_token_encrypted,refresh_token_encrypted,token_expires_at")
+        .eq("client_id", client_id)
+        .eq("platform", "search_console")
+        .eq("status", "active")
+        .limit(1)
+        .execute()
+    )
+
+    search_console_data = None
+    if sc_conn_result.data:
+        sc_conn = sc_conn_result.data[0]
+        try:
+            from services.search_console import pull_search_console_data  # noqa: PLC0415
+            sc_exp_ts: float | None = None
+            sc_raw_exp = sc_conn.get("token_expires_at")
+            if sc_raw_exp:
+                try:
+                    from datetime import timezone as _tz  # noqa: PLC0415
+                    dt = datetime.fromisoformat(str(sc_raw_exp).replace("Z", "+00:00"))
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=_tz.utc)
+                    sc_exp_ts = dt.timestamp()
+                except Exception:
+                    pass
+            sc_result = await pull_search_console_data(
+                access_token_encrypted=sc_conn["access_token_encrypted"],
+                refresh_token_encrypted=sc_conn["refresh_token_encrypted"],
+                site_url=sc_conn["account_id"],
+                period_start=period_start,
+                period_end=period_end,
+                token_expires_at=sc_exp_ts,
+            )
+            search_console_data = sc_result if sc_result else None
+        except Exception:
+            logger.exception("Search Console pull failed during regenerate for client %s", client_id)
+
+        # Persist snapshot for multi-period trend analysis (non-fatal).
+        if search_console_data is not None:
+            from services.snapshot_saver import save_snapshot  # noqa: PLC0415
+            save_snapshot(
+                supabase,
+                connection_id=sc_conn["id"],
+                client_id=client_id,
+                platform="search_console",
+                period_start=period_start,
+                period_end=period_end,
+                metrics=search_console_data,
+            )
+
     raw_data: dict = {
         "client_name": client["name"],
         "period_start": period_start,
@@ -1227,8 +1455,17 @@ async def regenerate_report(
     if meta_data is not None:
         raw_data["meta_ads"] = meta_data
         raw_data["meta_ads"]["currency"] = meta_currency
+    if google_ads_data is not None:
+        raw_data["google_ads"] = google_ads_data
+    if search_console_data is not None:
+        raw_data["search_console"] = search_console_data
 
-    has_data = ga4_data is not None or meta_data is not None
+    has_data = (
+        ga4_data is not None
+        or meta_data is not None
+        or google_ads_data is not None
+        or search_console_data is not None
+    )
     if not has_data:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

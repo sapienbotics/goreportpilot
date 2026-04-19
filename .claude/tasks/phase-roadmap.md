@@ -17,7 +17,7 @@
 ---
 
 ## Phase 1 — Snapshot-Saving Infrastructure (1 day)
-**Status:** ✅ complete — awaiting user verification
+**Status:** 🟢 verified by user 2026-04-19
 
 **Purpose:** Start accumulating historical data so future MoM/YoY trend detection (deferred Phase 7) has data to work with in 3 months.
 
@@ -41,6 +41,27 @@
 - MODIFIED: `backend/routers/reports.py` (+48 lines, 4 hook blocks)
 - NEW: `.claude/tasks/phase-1-snapshot-audit.md`
 - NEW: `.claude/tasks/phase-1-completion.md`
+
+---
+
+## Phase 1b — Path A: Wire Google Ads + Search Console (remediation)
+**Status:** ✅ complete — awaiting user verification
+
+**Purpose:** Remediate the dead-code finding from Phase 1 audit §3 — `pull_google_ads_data` and `pull_search_console_data` were defined but never invoked anywhere. Both now wired into production pull orchestration with matching snapshot hooks.
+
+**Tasks:**
+- ✅ Verify downstream pipeline (ai_narrative, chart_generator, report_generator, demo_data) already handles both platforms
+- ✅ Wire Google Ads pull into `_generate_report_internal` (sync via `asyncio.to_thread`)
+- ✅ Wire Search Console pull into `_generate_report_internal`
+- ✅ Mirror both into `regenerate_report`
+- ✅ Update `raw_data` assembly + `has_data` check (both functions)
+- ✅ Add 4 new snapshot hooks (total 8 across both platforms × both functions)
+- ✅ Syntax-verified via `ast.parse`
+- ⏳ End-to-end test with all-4-connections client — awaits user run (5-test plan in phase-1b-completion.md §5)
+
+**Files changed:**
+- MODIFIED: `backend/routers/reports.py` (+236 lines)
+- NEW: `.claude/tasks/phase-1b-completion.md`
 
 ---
 
