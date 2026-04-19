@@ -164,7 +164,11 @@ async def list_client_connections(
 
     result = (
         supabase.table("connections")
-        .select("id,client_id,platform,account_id,account_name,currency,status,token_expires_at,created_at,updated_at")
+        .select(
+            "id,client_id,platform,account_id,account_name,currency,status,"
+            "health_status,last_error_message,last_health_check_at,"
+            "token_expires_at,created_at,updated_at"
+        )
         .eq("client_id", client_id)
         .order("created_at", desc=False)
         .execute()
@@ -228,14 +232,17 @@ async def delete_connection(
 def _map_row(row: dict) -> dict:
     """Map DB column names to ConnectionResponse fields."""
     return {
-        "id":               row["id"],
-        "client_id":        row["client_id"],
-        "platform":         row["platform"],
-        "account_id":       row["account_id"],
-        "account_name":     row["account_name"],
-        "currency":         row.get("currency", "USD"),
-        "status":           row["status"],
-        "token_expires_at": row.get("token_expires_at"),
-        "created_at":       row["created_at"],
-        "updated_at":       row["updated_at"],
+        "id":                   row["id"],
+        "client_id":            row["client_id"],
+        "platform":             row["platform"],
+        "account_id":           row["account_id"],
+        "account_name":         row["account_name"],
+        "currency":             row.get("currency", "USD"),
+        "status":               row["status"],
+        "health_status":        row.get("health_status") or "healthy",
+        "last_error_message":   row.get("last_error_message"),
+        "last_health_check_at": row.get("last_health_check_at"),
+        "token_expires_at":     row.get("token_expires_at"),
+        "created_at":           row["created_at"],
+        "updated_at":           row["updated_at"],
     }

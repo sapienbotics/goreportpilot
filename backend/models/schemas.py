@@ -280,8 +280,12 @@ class ConnectionResponse(BaseModel):
     platform: str
     account_id: str
     account_name: str
-    status: str             # "active" | "expired" | "error"
+    status: str             # "active" | "expired" | "error" (OAuth callback state)
     currency: str = "USD"
+    # Phase 2 — live probe state, independent of `status`
+    health_status: str = "healthy"  # "healthy" | "warning" | "broken" | "expiring_soon"
+    last_error_message: str | None = None
+    last_health_check_at: datetime | None = None
     token_expires_at: datetime | None = None
     created_at: datetime
     updated_at: datetime

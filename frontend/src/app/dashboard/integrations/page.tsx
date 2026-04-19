@@ -9,7 +9,8 @@ import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import {
   BarChart2, TrendingUp, Megaphone, Search,
-  CheckCircle, AlertTriangle, ExternalLink, Loader2,
+  CheckCircle, AlertTriangle, AlertCircle, Clock,
+  ExternalLink, Loader2,
   Link2, Unlink, RefreshCw, ChevronDown,
 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
@@ -308,8 +309,20 @@ export default function IntegrationsPage() {
             const conn = selectedClientId ? findConnection(connections, platform) : undefined
             const isConnecting   = connecting[platform.id]
             const isDisconnecting = conn ? disconnecting[conn.id] : false
-            const isConnected    = !!conn && conn.status === 'active'
-            const needsReconnect = !!conn && (conn.status === 'expired' || conn.status === 'error')
+
+            // Prefer Phase 2 health_status (live probe state) over the legacy
+            // `status` column (OAuth callback state). When health_status is
+            // unset (pre-migration rows), fall back to legacy status.
+            const healthStatus = conn?.health_status ?? 'healthy'
+            const legacyStatus = conn?.status ?? 'active'
+            const needsReconnect = !!conn && (
+              healthStatus === 'broken' ||
+              healthStatus === 'expiring_soon' ||
+              legacyStatus === 'expired' ||
+              legacyStatus === 'error'
+            )
+            const hasWarning = !!conn && healthStatus === 'warning'
+            const isConnected = !!conn  // Disconnect + badge always shown when a row exists.
 
             const isHighlighted = highlightedPlatform === platform.id
             return (
@@ -334,18 +347,33 @@ export default function IntegrationsPage() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <h2 className="text-base font-semibold text-slate-800">{platform.name}</h2>
 
-                        {/* Connection status badge */}
+                        {/* Connection status badge — health_status takes priority */}
                         {connectionsLoading && selectedClientId ? (
                           <span className="h-5 w-16 rounded-full bg-slate-100 animate-pulse inline-block" />
-                        ) : isConnected ? (
-                          <span className="text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full flex items-center gap-1">
-                            <CheckCircle className="h-3 w-3" /> Connected
+                        ) : !conn ? null : healthStatus === 'broken' ? (
+                          <span className="text-xs font-medium text-rose-700 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <AlertCircle className="h-3 w-3" /> Broken
+                          </span>
+                        ) : healthStatus === 'expiring_soon' ? (
+                          <span className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <Clock className="h-3 w-3" /> Expiring soon
+                          </span>
+                        ) : hasWarning ? (
+                          <span
+                            className="text-xs font-medium text-yellow-800 bg-yellow-50 border border-yellow-100 px-2 py-0.5 rounded-full flex items-center gap-1"
+                            title={conn?.last_error_message || 'Recent pull returned zero data after two non-zero periods. Check tracking/setup.'}
+                          >
+                            <AlertTriangle className="h-3 w-3" /> Warning
                           </span>
                         ) : needsReconnect ? (
                           <span className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full flex items-center gap-1">
                             <AlertTriangle className="h-3 w-3" /> Needs reconnect
                           </span>
-                        ) : null}
+                        ) : (
+                          <span className="text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <CheckCircle className="h-3 w-3" /> Connected
+                          </span>
+                        )}
                       </div>
 
                       <p className="mt-1 text-sm text-slate-500">{platform.description}</p>

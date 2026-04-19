@@ -78,7 +78,11 @@ export interface Connection {
   account_id: string
   account_name: string
   currency: string  // Ad account billing currency, e.g. "INR", "USD"
-  status: 'active' | 'expired' | 'error'
+  status: 'active' | 'expired' | 'error'          // OAuth callback state
+  // Phase 2 — live probe state, independent of status
+  health_status?: 'healthy' | 'warning' | 'broken' | 'expiring_soon'
+  last_error_message?: string | null
+  last_health_check_at?: string | null
   token_expires_at?: string
   created_at: string
   updated_at: string
