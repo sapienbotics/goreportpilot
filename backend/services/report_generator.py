@@ -1066,10 +1066,17 @@ def _embed_logos(prs: Any, branding: dict | None) -> None:
 
     # Optional Phase-3 per-client overrides. 'default' preserves the
     # original placeholder-based behaviour.
-    agency_pos  = (br.get("agency_logo_position") or "default").lower()
-    agency_size = (br.get("agency_logo_size")     or "default").lower()
-    client_pos  = (br.get("client_logo_position") or "default").lower()
-    client_size = (br.get("client_logo_size")     or "default").lower()
+    agency_pos  = (br.get("agency_logo_position") or "default").strip().lower()
+    agency_size = (br.get("agency_logo_size")     or "default").strip().lower()
+    client_pos  = (br.get("client_logo_position") or "default").strip().lower()
+    client_size = (br.get("client_logo_size")     or "default").strip().lower()
+
+    # Phase-3 fix v3 — log resolved placement so we can diagnose
+    # any flow-through issue from the client row / API payload.
+    logger.info(
+        "_embed_logos: agency_pos=%r size=%r  client_pos=%r size=%r",
+        agency_pos, agency_size, client_pos, client_size,
+    )
 
     # ── Agency logo ──────────────────────────────────────────────────────
     agency_img = _download_image(br.get("agency_logo_url", ""))
@@ -1089,6 +1096,10 @@ def _embed_logos(prs: Any, branding: dict | None) -> None:
                 pic_left, pic_top = _logo_corner_xy(
                     position=agency_pos, slide_w=sw, slide_h=prs.slide_height,
                     logo_w=fit_w, logo_h=fit_h,
+                )
+                logger.info(
+                    "agency logo explicit placement: pos=%s → left=%d top=%d (EMU)",
+                    agency_pos, int(pic_left), int(pic_top),
                 )
                 # We're placing by explicit coords — clear the placeholder if present.
                 if agency_logo_shape:
@@ -1137,6 +1148,10 @@ def _embed_logos(prs: Any, branding: dict | None) -> None:
                 pic_left, pic_top = _logo_corner_xy(
                     position=client_pos, slide_w=sw, slide_h=prs.slide_height,
                     logo_w=fit_w, logo_h=fit_h,
+                )
+                logger.info(
+                    "client logo explicit placement: pos=%s → left=%d top=%d (EMU)",
+                    client_pos, int(pic_left), int(pic_top),
                 )
                 if client_logo_shape:
                     _delete_shape(cover, client_logo_shape)

@@ -256,63 +256,96 @@ def _find_header_band(cover: Any, prs: Any) -> Optional[Any]:
 
 def _insert_hero_image(prs: Any, cover: Any, image_url: str) -> None:
     """
-    Insert a hero image full-bleed behind all existing shapes + a 40%
-    dark overlay between the image and the text shapes.
+    Insert a hero image full-bleed behind all existing shapes.
 
-    Uses robust z-order manipulation: finds the end of the group-property
-    children (nvGrpSpPr, grpSpPr) and inserts the pic + overlay there, so
-    they render behind every original template shape regardless of how
-    many group-property nodes the template has.
+    v3 fixes:
+      * Clear the template's header-band fill so the hero image shows
+        through the whole cover — previously the opaque header (e.g.
+        indigo) painted on top of the hero, producing a split look.
+      * Darken the image pixel-wise (brightness 0.40) in Python BEFORE
+        embedding. Some renderers (notably certain LibreOffice versions)
+        do not honour <a:alpha> on an overlay rectangle, so readable text
+        on the hero would bleed through. Darkening the pixels is
+        renderer-agnostic.
+      * No overlay rectangle — the pre-darkened image is the overlay.
     """
-    from pptx.dml.color import RGBColor  # noqa: PLC0415
-    from pptx.util import Emu            # noqa: PLC0415
+    from pptx.util import Emu  # noqa: PLC0415
+    from PIL import Image, ImageEnhance  # noqa: PLC0415
 
     img_bytes = _download_image(image_url)
     if not img_bytes:
         logger.debug("Cover preset: hero image could not be downloaded")
         return
 
+    # Darken pixels so custom headline/subtitle text always reads cleanly.
+    # 0.40 = 40% of original brightness ≈ the "60% dark overlay" effect.
+    try:
+        im = Image.open(io.BytesIO(img_bytes))
+        if im.mode not in ("RGB", "RGBA"):
+            im = im.convert("RGB")
+        darkened = ImageEnhance.Brightness(im).enhance(0.40)
+        out = io.BytesIO()
+        # Use JPEG for size; fall back to PNG if input had alpha.
+        if im.mode == "RGBA":
+            darkened.save(out, format="PNG")
+        else:
+            darkened.save(out, format="JPEG", quality=88)
+        out.seek(0)
+        hero_stream = out
+    except Exception as exc:
+        logger.debug("Hero darkening failed (%s) — using original image", exc)
+        hero_stream = io.BytesIO(img_bytes)
+
     pic = cover.shapes.add_picture(
-        io.BytesIO(img_bytes), 0, 0,
+        hero_stream, Emu(0), Emu(0),
         width=prs.slide_width, height=prs.slide_height,
     )
 
-    # Overlay rectangle (black, 60% opacity). Dark enough that underlying
-    # image details read as texture, not distracting content — but not so
-    # dark that colour is lost. Previous 40% was too transparent; v2 fix.
-    overlay = cover.shapes.add_shape(
-        1,  # MSO_SHAPE.RECTANGLE
-        Emu(0), Emu(0),
-        prs.slide_width, prs.slide_height,
-    )
+    # Clear the template's header-band fill so the hero image is visible
+    # through the top third of the slide. Without this step, the opaque
+    # header (indigo in modern_clean, navy in dark_executive, etc.) would
+    # sit in front of the hero and produce a visual split.
+    _clear_header_band(prs, cover)
+
+    # Push the hero to the back of z-order so template text shapes still
+    # render on top of it.
+    _reorder_to_back(cover, pic)
+
+
+def _clear_header_band(prs: Any, cover: Any) -> None:
+    """
+    Set the header-band shape's fill to 'no fill' so the hero image
+    behind it is visible. Uses the same heuristic as
+    _find_header_band — topmost full-width non-picture non-text shape
+    in the top third. No-op if no such shape is found.
+    """
+    band = _find_header_band(cover, prs)
+    if band is None:
+        return
     try:
-        overlay.fill.solid()
-        overlay.fill.fore_color.rgb = RGBColor(0, 0, 0)
-        _set_shape_fill_alpha(overlay, 60)
-        overlay.line.fill.background()
+        band.fill.background()
+        try:
+            band.line.fill.background()
+        except Exception:
+            pass
     except Exception as exc:
-        logger.debug("Cover: overlay fill failed: %s", exc)
-
-    # Z-order: pic must render BEHIND everything (including overlay); overlay
-    # must render above pic but BELOW the text shapes. We do this by moving
-    # both newly-added elements to the very start of spTree (right after
-    # group-property children), pic first, then overlay.
-    _reorder_to_back(cover, pic, overlay)
+        logger.debug("Hero preset: could not clear header band fill: %s", exc)
 
 
-def _reorder_to_back(slide: Any, pic_shape: Any, overlay_shape: Any) -> None:
+def _reorder_to_back(slide: Any, *shapes: Any) -> None:
     """
-    Move `pic_shape` and `overlay_shape` to the start of spTree (right
-    after group-property children), with pic BEFORE overlay. Net effect:
-    pic is the deepest-back visible shape, overlay sits just above it,
-    and all other template shapes remain on top.
+    Move one or more shapes to the start of spTree (right after the
+    group-property children). Order is preserved — the first shape passed
+    ends up deepest at back, the next sits right above it, and so on.
+    All other template shapes remain on top.
     """
+    if not shapes:
+        return
     sp_tree = slide.shapes._spTree
-    pic_el = pic_shape._element
-    ovr_el = overlay_shape._element
 
-    # Remove both from wherever they currently sit.
-    for el in (pic_el, ovr_el):
+    # Remove each element from wherever it currently sits.
+    elements = [s._element for s in shapes]
+    for el in elements:
         if el.getparent() is sp_tree:
             sp_tree.remove(el)
 
@@ -325,8 +358,8 @@ def _reorder_to_back(slide: Any, pic_shape: Any, overlay_shape: Any) -> None:
         else:
             break
 
-    sp_tree.insert(insert_at,     pic_el)
-    sp_tree.insert(insert_at + 1, ovr_el)
+    for offset, el in enumerate(elements):
+        sp_tree.insert(insert_at + offset, el)
 
 
 def _set_shape_fill_alpha(shape: Any, alpha_percent: int) -> None:
