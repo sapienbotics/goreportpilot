@@ -80,6 +80,11 @@ export default function IntegrationsPage() {
   const searchParams = useSearchParams()
   const oauthError   = searchParams.get('error')
 
+  // Deep-link targets from ConnectionHealthWidget Reconnect action:
+  // `?client=<id>&platform=<ga4|meta_ads|google_ads|search_console>`
+  const targetClientParam   = searchParams.get('client')
+  const targetPlatformParam = searchParams.get('platform')
+
   const [clients,              setClients]              = useState<Client[]>([])
   const [clientsLoading,       setClientsLoading]       = useState(true)
   const [selectedClientId,     setSelectedClientId]     = useState<string>('')
@@ -87,16 +92,26 @@ export default function IntegrationsPage() {
   const [connectionsLoading,   setConnectionsLoading]   = useState(false)
   const [connecting,           setConnecting]           = useState<Record<string, boolean>>({})
   const [disconnecting,        setDisconnecting]        = useState<Record<string, boolean>>({})
+  const [highlightedPlatform,  setHighlightedPlatform]  = useState<string | null>(null)
 
   // Load clients on mount
   useEffect(() => {
     clientsApi.list()
       .then(({ clients: data }) => {
         setClients(data)
-        if (data.length === 1) setSelectedClientId(data[0].id)
+        // Deep-link takes priority: if the URL points at a specific client,
+        // honour it (assuming the id matches a client the user owns).
+        if (targetClientParam && data.some((c) => c.id === targetClientParam)) {
+          setSelectedClientId(targetClientParam)
+        } else if (data.length === 1) {
+          setSelectedClientId(data[0].id)
+        }
       })
       .catch(() => {/* non-fatal */})
       .finally(() => setClientsLoading(false))
+    // Only on mount — subsequent ?client changes (within the page) are driven
+    // by the user's explicit dropdown interaction.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Load connections whenever selected client changes
@@ -116,6 +131,23 @@ export default function IntegrationsPage() {
   useEffect(() => {
     loadConnections(selectedClientId)
   }, [selectedClientId, loadConnections])
+
+  // After deep-link client selection + connections finish loading, scroll the
+  // target platform card into view and briefly highlight it. Fires once per
+  // ?platform= query value; re-navigating with a fresh query re-triggers.
+  useEffect(() => {
+    if (!targetPlatformParam) return
+    if (connectionsLoading) return
+    if (selectedClientId !== targetClientParam) return
+
+    const el = document.getElementById(`platform-card-${targetPlatformParam}`)
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      setHighlightedPlatform(targetPlatformParam)
+      const t = setTimeout(() => setHighlightedPlatform(null), 2500)
+      return () => clearTimeout(t)
+    }
+  }, [targetPlatformParam, targetClientParam, selectedClientId, connectionsLoading, connections])
 
   // ── OAuth connect handlers ─────────────────────────────────────────────────
 
@@ -245,8 +277,17 @@ export default function IntegrationsPage() {
             const isConnected    = !!conn && conn.status === 'active'
             const needsReconnect = !!conn && (conn.status === 'expired' || conn.status === 'error')
 
+            const isHighlighted = highlightedPlatform === platform.id
             return (
-              <Card key={platform.id}>
+              <Card
+                key={platform.id}
+                id={`platform-card-${platform.id}`}
+                className={
+                  isHighlighted
+                    ? 'ring-2 ring-indigo-400 ring-offset-2 transition-all duration-500'
+                    : 'transition-all duration-500'
+                }
+              >
                 <CardContent className="pt-5">
                   <div className="flex items-start gap-4">
                     {/* Platform icon */}

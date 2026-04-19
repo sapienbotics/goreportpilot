@@ -207,7 +207,7 @@ export default function ConnectionHealthWidget({ className, title = 'Connection 
                         </p>
                       </div>
                       <Link
-                        href="/dashboard/integrations"
+                        href={`/dashboard/integrations?client=${issue.client_id}&platform=${issue.platform}`}
                         className="inline-flex items-center gap-1 rounded-md bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100 shrink-0"
                       >
                         Reconnect
