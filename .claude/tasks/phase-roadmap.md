@@ -96,15 +96,29 @@
 ---
 
 ## Phase 3 — Custom Cover Page Editor (2 days)
-**Status:** ⏭ not yet started
+**Status:** ✅ complete — awaiting user verification
 
-**Tasks outline:**
-- Migration `014_cover_customization.sql` (adds `cover_design_preset`, `cover_headline`, `cover_subtitle`, `cover_hero_image_url` to clients)
-- 5 cover-slide variants in `backend/templates/cover_variants/` (minimal, bold, corporate, hero, gradient)
-- In-place shape modification in `report_generator.py` slide[0]
-- Hero image upload via existing Supabase Storage `logos` bucket → `cover_heroes/` subfolder, 2MB cap
-- `POST /api/reports/preview-cover` → 1280×720 PNG
-- Frontend: new "Cover Page" tab in client settings, preset selector, live preview
+**Tasks:**
+- ✅ Migration `014_cover_customization.sql` — adds 4 cover_* columns + CHECK on preset
+- ✅ `services/cover_presets.py` (~330 lines) — 5 preset style configs + `apply_cover_preset()` in-place modifier (NOT 5 PPTX files — deviation documented)
+- ✅ Hook in `report_generator.py` after `_embed_logos`
+- ✅ Hero image upload at `POST /{client_id}/cover-hero` → Supabase `logos` bucket `cover_heroes/` subfolder, 2MB
+- ✅ `POST /api/reports/preview-cover` — returns PPTX bytes (PNG conversion deferred as documented follow-up)
+- ✅ `CoverPageTab.tsx` — preset selector, headline/subtitle, hero uploader, CSS live mockup, PPTX download
+- ✅ Client detail page: new 'cover' tab with ImageIcon
+- ✅ Python `ast.parse` + `npx tsc --noEmit` both clean
+- ⏳ User must verify: run migration 014, run 10-test plan in `phase-3-completion.md` §5
+
+**Deviations from master prompt (documented in completion doc §6):**
+1. No 5 PPTX variant files — Python style configs instead (refined plan §6 recommendation)
+2. Preview endpoint returns PPTX, not 1280×720 PNG — CSS live mockup in tab covers instant preview; PPTX for pixel-perfect
+
+**Files changed:**
+- NEW: `supabase/migrations/014_cover_customization.sql`
+- NEW: `backend/services/cover_presets.py`
+- NEW: `frontend/src/components/clients/tabs/CoverPageTab.tsx`
+- NEW: `.claude/tasks/phase-3-completion.md`
+- MODIFIED: `backend/services/report_generator.py`, `backend/routers/clients.py`, `backend/routers/reports.py`, `backend/models/schemas.py`, `backend/main.py`, `frontend/src/app/dashboard/clients/[clientId]/page.tsx`, `frontend/src/types/index.ts`, `frontend/src/lib/api.ts`
 
 ---
 

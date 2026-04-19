@@ -9,7 +9,7 @@ import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import { toast } from 'sonner'
 import {
   LayoutDashboard, Link2, FileText, Clock, Settings,
-  Building2,
+  Building2, Image as ImageIcon,
 } from 'lucide-react'
 import { clientsApi, reportsApi, connectionsApi, authApi, scheduledReportsApi, uploadClientLogo, customSectionApi } from '@/lib/api'
 import type { ScheduledReport, ScheduledReportPayload } from '@/lib/api'
@@ -25,6 +25,7 @@ import IntegrationsTab  from '@/components/clients/tabs/IntegrationsTab'
 import ReportsTab       from '@/components/clients/tabs/ReportsTab'
 import SchedulesTab     from '@/components/clients/tabs/SchedulesTab'
 import SettingsTab      from '@/components/clients/tabs/SettingsTab'
+import CoverPageTab     from '@/components/clients/tabs/CoverPageTab'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -32,13 +33,14 @@ interface Props {
   params: { clientId: string }
 }
 
-type TabId = 'overview' | 'integrations' | 'reports' | 'schedules' | 'settings'
+type TabId = 'overview' | 'integrations' | 'reports' | 'schedules' | 'cover' | 'settings'
 
 const TABS: { id: TabId; label: string; icon: React.FC<{ className?: string }> }[] = [
   { id: 'overview',      label: 'Overview',      icon: LayoutDashboard },
   { id: 'integrations',  label: 'Integrations',  icon: Link2 },
   { id: 'reports',       label: 'Reports',       icon: FileText },
   { id: 'schedules',     label: 'Schedules',     icon: Clock },
+  { id: 'cover',         label: 'Cover page',    icon: ImageIcon },
   { id: 'settings',      label: 'Settings',      icon: Settings },
 ]
 
@@ -512,6 +514,16 @@ export default function ClientDetailPage({ params }: Props) {
           savingSched={savingSched}
           schedSaved={schedSaved}
           handleSaveSchedule={handleSaveSchedule}
+        />
+      )}
+
+      {activeTab === 'cover' && (
+        <CoverPageTab
+          client={client}
+          onClientUpdate={(updated) => {
+            setClient(updated)
+            setEditValues(updated)
+          }}
         />
       )}
 

@@ -1494,6 +1494,7 @@ def generate_pptx_report(
     branding: dict | None = None,
     visual_template: str = "modern_clean",
     language: str = "en",
+    cover_customization: dict | None = None,
 ) -> bytes:
     """
     Generate a report by populating a pre-designed PPTX template.
@@ -1680,6 +1681,23 @@ def generate_pptx_report(
 
     # ── Logos ─────────────────────────────────────────────────────────────────
     _embed_logos(prs, branding)
+
+    # ── Cover preset (Phase 3) ───────────────────────────────────────────────
+    # Applied AFTER logos so preset colour overrides don't fight the logo
+    # placement. No-op when preset is 'default' or None.
+    if cover_customization:
+        try:
+            from services.cover_presets import apply_cover_preset  # noqa: PLC0415
+            apply_cover_preset(
+                prs,
+                preset=cover_customization.get("preset") or "default",
+                headline=cover_customization.get("headline"),
+                subtitle=cover_customization.get("subtitle"),
+                hero_image_url=cover_customization.get("hero_image_url"),
+                brand_color=(branding or {}).get("brand_color"),
+            )
+        except Exception as exc:
+            logger.warning("Cover preset application failed: %s", exc)
 
     # ── Custom section image ─────────────────────────────────────────────────
     if not use_legacy:

@@ -42,6 +42,11 @@ class ClientUpdate(BaseModel):
     is_active: bool | None = None
     report_config: dict | None = None  # Per-client report customisation (sections, KPIs, template)
     report_language: str | None = None  # BCP-47 language code, e.g. "en", "fr", "de"
+    # Cover-page customisation (Phase 3)
+    cover_design_preset: str | None = None
+    cover_headline: str | None = None
+    cover_subtitle: str | None = None
+    cover_hero_image_url: str | None = None
 
     @field_validator("ai_tone")
     @classmethod
@@ -51,6 +56,16 @@ class ClientUpdate(BaseModel):
         allowed = {"professional", "friendly", "technical", "executive"}
         if v not in allowed:
             raise ValueError(f"ai_tone must be one of {allowed}")
+        return v
+
+    @field_validator("cover_design_preset")
+    @classmethod
+    def validate_cover_preset(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        allowed = {"default", "minimal", "bold", "corporate", "hero", "gradient"}
+        if v not in allowed:
+            raise ValueError(f"cover_design_preset must be one of {allowed}")
         return v
 
 
@@ -68,6 +83,11 @@ class ClientResponse(BaseModel):
     is_active: bool
     report_config: dict | None = None  # Per-client section toggles, KPI selection, template
     report_language: str | None = None  # BCP-47 language code, e.g. "en", "fr", "de"
+    # Cover-page customisation (Phase 3)
+    cover_design_preset: str | None = None
+    cover_headline: str | None = None
+    cover_subtitle: str | None = None
+    cover_hero_image_url: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -82,6 +102,26 @@ class ClientListResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # Report schemas
 # ---------------------------------------------------------------------------
+
+class CoverPreviewRequest(BaseModel):
+    """Phase 3 — generate a single-slide PPTX preview of a cover design."""
+    client_id: str
+    preset: str | None = None          # overrides stored client.cover_design_preset
+    headline: str | None = None        # overrides stored client.cover_headline
+    subtitle: str | None = None        # overrides stored client.cover_subtitle
+    hero_image_url: str | None = None  # overrides stored client.cover_hero_image_url
+    visual_template: str | None = None # overrides stored visual template
+
+    @field_validator("preset")
+    @classmethod
+    def validate_preset(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        allowed = {"default", "minimal", "bold", "corporate", "hero", "gradient"}
+        if v not in allowed:
+            raise ValueError(f"preset must be one of {allowed}")
+        return v
+
 
 class ReportGenerateRequest(BaseModel):
     client_id: str

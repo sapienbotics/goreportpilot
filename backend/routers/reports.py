@@ -15,6 +15,7 @@ from middleware.auth import get_current_user_id
 from middleware.plan_enforcement import get_user_subscription, can_use_feature
 from services.plans import get_plan
 from models.schemas import (
+    CoverPreviewRequest,
     ReportGenerateRequest,
     ReportListItem,
     ReportListResponse,
@@ -91,6 +92,116 @@ def _map_db_row(row: dict, client_name: str | None = None) -> dict:
 # Gitignored; move to Supabase Storage in a later phase.
 _HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # backend/
 REPORTS_BASE_DIR = os.path.join(_HERE, "generated_reports")
+
+
+# ---------------------------------------------------------------------------
+# POST /api/reports/preview-cover  (Phase 3)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/preview-cover")
+async def preview_cover(
+    body: CoverPreviewRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    """
+    Generate a single-slide PPTX preview of a cover design.
+
+    The frontend calls this with either stored client settings (when the
+    user just wants to see their saved config) or ad-hoc overrides
+    (`preset`, `headline`, `subtitle`, `hero_image_url`) while they're
+    editing. Returns the PPTX bytes as a downloadable file.
+
+    NOTE: Returns PPTX, not PNG. Master-prompt spec calls for a 1280×720
+    PNG via LibreOffice — that rendering step is scheduled as a follow-up
+    so the live-editing UX ships this phase without waiting on the PNG
+    conversion toolchain. Document: phase-3-completion.md §6.
+    """
+    from fastapi.responses import Response  # noqa: PLC0415
+
+    supabase = get_supabase_admin()
+
+    client_result = (
+        supabase.table("clients")
+        .select("*")
+        .eq("id", body.client_id)
+        .eq("user_id", user_id)
+        .eq("is_active", True)
+        .single()
+        .execute()
+    )
+    if not client_result.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
+    client = client_result.data
+
+    # Resolve preset + override fields — explicit overrides > stored values.
+    preset          = body.preset          or client.get("cover_design_preset") or "default"
+    headline        = body.headline        if body.headline        is not None else client.get("cover_headline")
+    subtitle        = body.subtitle        if body.subtitle        is not None else client.get("cover_subtitle")
+    hero_image_url  = body.hero_image_url  if body.hero_image_url  is not None else client.get("cover_hero_image_url")
+    visual_template = body.visual_template or "modern_clean"
+
+    # Fetch agency branding for accent colour + logo.
+    profile_result = (
+        supabase.table("profiles")
+        .select("agency_name,agency_logo_url,brand_color")
+        .eq("id", user_id)
+        .maybe_single()
+        .execute()
+    )
+    _profile = profile_result.data or {}
+    branding = {
+        "agency_name":      (_profile.get("agency_name") or "Your Agency").strip() or "Your Agency",
+        "agency_logo_url":  _profile.get("agency_logo_url") or "",
+        "brand_color":      _profile.get("brand_color") or "#4338CA",
+        "client_logo_url":  client.get("logo_url") or "",
+        "powered_by_badge": False,
+    }
+
+    # Build a single-slide PPTX: load the visual template, delete every
+    # slide except slide[0], apply logos + preset.
+    def _render_preview() -> bytes:
+        import io as _io  # noqa: PLC0415
+        from pptx import Presentation  # noqa: PLC0415
+        from services.report_generator import (  # noqa: PLC0415
+            VISUAL_TEMPLATES,
+            _embed_logos,
+        )
+        from services.cover_presets import apply_cover_preset  # noqa: PLC0415
+
+        tpl_path = VISUAL_TEMPLATES.get(visual_template, VISUAL_TEMPLATES["modern_clean"])
+        prs = Presentation(tpl_path)
+
+        # Keep ONLY slide[0]; delete everything else.
+        for idx in range(len(prs.slides) - 1, 0, -1):
+            rId = prs.slides._sldIdLst[idx].rId
+            prs.part.drop_rel(rId)
+            del prs.slides._sldIdLst[idx]
+
+        # Apply logos + preset.
+        _embed_logos(prs, branding)
+        apply_cover_preset(
+            prs,
+            preset=preset,
+            headline=headline,
+            subtitle=subtitle,
+            hero_image_url=hero_image_url,
+            brand_color=branding["brand_color"],
+        )
+
+        buf = _io.BytesIO()
+        prs.save(buf)
+        return buf.getvalue()
+
+    pptx_bytes = await asyncio.to_thread(_render_preview)
+
+    return Response(
+        content=pptx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        headers={
+            "Content-Disposition": 'attachment; filename="cover-preview.pptx"',
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -521,6 +632,15 @@ async def _generate_report_internal(
         "agency_name": branding["agency_name"],
     }
 
+    # Cover-page customisation (Phase 3). Safe to omit — generate_pptx_report
+    # skips the preset step when cover_customization is None or preset='default'.
+    cover_customization = {
+        "preset":         client.get("cover_design_preset") or "default",
+        "headline":       client.get("cover_headline"),
+        "subtitle":       client.get("cover_subtitle"),
+        "hero_image_url": client.get("cover_hero_image_url"),
+    }
+
     # 6 — Build report files (sync, run in thread pool)
     from services.report_generator import generate_pdf_report, generate_pptx_report  # noqa: PLC0415
     pptx_bytes, pdf_bytes = await asyncio.gather(
@@ -532,6 +652,7 @@ async def _generate_report_internal(
             branding,
             visual_template,
             _report_language,
+            cover_customization,
         ),
         asyncio.to_thread(
             generate_pdf_report, raw_data, narrative, charts, client_info,
@@ -1563,6 +1684,15 @@ async def regenerate_report(
 
     client_info = {"name": client["name"], "agency_name": branding["agency_name"]}
 
+    # Cover-page customisation (Phase 3). Picked up from the current
+    # client row so regenerations always reflect the latest preset choice.
+    cover_customization = {
+        "preset":         client.get("cover_design_preset") or "default",
+        "headline":       client.get("cover_headline"),
+        "subtitle":       client.get("cover_subtitle"),
+        "hero_image_url": client.get("cover_hero_image_url"),
+    }
+
     # 6 — PPTX + PDF
     from services.report_generator import generate_pdf_report, generate_pptx_report  # noqa: PLC0415
     pptx_bytes, pdf_bytes = await asyncio.gather(
@@ -1573,6 +1703,7 @@ async def regenerate_report(
             cfg_custom if cfg_custom.get("title") else None,
             branding, "modern_clean",
             _report_language2,
+            cover_customization,
         ),
         asyncio.to_thread(
             generate_pdf_report, raw_data, narrative, charts, client_info,

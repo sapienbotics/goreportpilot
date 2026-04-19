@@ -65,6 +65,11 @@ export interface ClientUpdatePayload extends Partial<ClientCreatePayload> {
   report_language?: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   report_config?: any  // ReportConfig — use any to avoid circular import
+  // Cover-page customisation (Phase 3)
+  cover_design_preset?: 'default' | 'minimal' | 'bold' | 'corporate' | 'hero' | 'gradient'
+  cover_headline?: string | null
+  cover_subtitle?: string | null
+  cover_hero_image_url?: string | null
 }
 
 export const clientsApi = {
@@ -408,6 +413,44 @@ export async function uploadClientLogo(clientId: string, file: File): Promise<{ 
   )
   if (!res.ok) throw new Error(await res.text())
   return res.json()
+}
+
+// Phase 3 — cover hero image upload (2MB limit enforced server-side)
+export async function uploadCoverHero(clientId: string, file: File): Promise<{ url: string }> {
+  const formData = new FormData()
+  formData.append('image', file)
+  const supabase = (await import('@supabase/ssr')).createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  )
+  const { data: { session } } = await supabase.auth.getSession()
+  const res = await fetch(
+    `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/clients/${clientId}/cover-hero`,
+    {
+      method: 'POST',
+      headers: session?.access_token
+        ? { Authorization: `Bearer ${session.access_token}` }
+        : {},
+      body: formData,
+    },
+  )
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+// Phase 3 — download a single-slide PPTX preview of a cover design.
+export async function previewCover(payload: {
+  client_id: string
+  preset?: string
+  headline?: string | null
+  subtitle?: string | null
+  hero_image_url?: string | null
+  visual_template?: string
+}): Promise<Blob> {
+  const res = await api.post('/api/reports/preview-cover', payload, {
+    responseType: 'blob',
+  })
+  return res.data
 }
 
 // ---------------------------------------------------------------------------

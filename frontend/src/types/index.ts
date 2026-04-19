@@ -60,9 +60,16 @@ export interface Client {
   is_active: boolean
   report_config?: ReportConfig | null
   report_language?: string | null  // 'en' | 'es' | 'fr' | etc.
+  // Cover-page customisation (Phase 3)
+  cover_design_preset?: CoverPreset | null
+  cover_headline?: string | null
+  cover_subtitle?: string | null
+  cover_hero_image_url?: string | null
   created_at: string
   updated_at: string
 }
+
+export type CoverPreset = 'default' | 'minimal' | 'bold' | 'corporate' | 'hero' | 'gradient'
 
 export interface Connection {
   id: string

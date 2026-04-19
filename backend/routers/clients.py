@@ -283,3 +283,81 @@ async def upload_custom_section_image(
 
     logger.info("Custom section image uploaded for client %s: %s", client_id, public_url)
     return {"url": public_url}
+
+
+# ---------------------------------------------------------------------------
+# POST /{client_id}/cover-hero  (Phase 3)
+# ---------------------------------------------------------------------------
+
+_COVER_HEROES_DIR = os.path.join(_BACKEND_DIR, "static", "cover_heroes")
+
+@router.post("/{client_id}/cover-hero")
+async def upload_cover_hero(
+    client_id: str,
+    image: UploadFile = File(...),
+    user_id: str = Depends(get_current_user_id),
+) -> dict:
+    """
+    Upload a hero image for the client's cover page (Phase 3).
+
+    Written to Supabase Storage `logos` bucket under
+    `{user_id}/cover_heroes/{client_id}/{filename}`. Updates
+    `clients.cover_hero_image_url` with the returned public URL.
+
+    Max 2MB. Accepted: PNG, JPEG, WEBP.
+    """
+    supabase = get_supabase_admin()
+    check = (
+        supabase.table("clients")
+        .select("id")
+        .eq("id", client_id)
+        .eq("user_id", user_id)
+        .eq("is_active", True)
+        .single()
+        .execute()
+    )
+    if not check.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
+
+    if image.content_type not in {"image/png", "image/jpeg", "image/jpg", "image/webp"}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Unsupported file type. Allowed: PNG, JPEG, WEBP",
+        )
+
+    contents = await image.read()
+    if len(contents) > _MAX_SIZE_BYTES:  # 2 MB per master prompt
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Image too large. Maximum 2MB.",
+        )
+
+    ext = (image.filename or "hero").rsplit(".", 1)[-1].lower()
+    if ext not in ("png", "jpg", "jpeg", "webp"):
+        ext = "png"
+
+    filename = f"{uuid.uuid4().hex[:12]}.{ext}"
+    storage_path = f"{user_id}/cover_heroes/{client_id}/{filename}"
+    try:
+        supabase.storage.from_("logos").upload(
+            storage_path,
+            contents,
+            {"content-type": f"image/{ext}", "upsert": "true"},
+        )
+        public_url = supabase.storage.from_("logos").get_public_url(storage_path)
+    except Exception as exc:
+        logger.error("Supabase Storage upload failed for cover hero: %s", exc)
+        save_dir = os.path.join(_COVER_HEROES_DIR, client_id)
+        os.makedirs(save_dir, exist_ok=True)
+        save_path = os.path.join(save_dir, filename)
+        with open(save_path, "wb") as f:
+            f.write(contents)
+        public_url = f"{app_settings.BACKEND_URL}/static/cover_heroes/{client_id}/{filename}"
+
+    supabase.table("clients").update({
+        "cover_hero_image_url": public_url,
+        "updated_at":           datetime.utcnow().isoformat(),
+    }).eq("id", client_id).eq("user_id", user_id).execute()
+
+    logger.info("Cover hero uploaded for client %s: %s", client_id, public_url)
+    return {"url": public_url}

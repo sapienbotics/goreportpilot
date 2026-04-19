@@ -146,6 +146,8 @@ from routers.shared import reports_router as shared_reports_router, public_route
 
 # Create custom_sections static dir if not exists
 os.makedirs(os.path.join(_STATIC_DIR, "custom_sections"), exist_ok=True)
+# Create cover_heroes static dir (Phase 3 fallback when Supabase Storage fails)
+os.makedirs(os.path.join(_STATIC_DIR, "cover_heroes"), exist_ok=True)
 
 app.include_router(clients.router,            prefix="/api/clients",            tags=["clients"])
 app.include_router(reports.router,            prefix="/api/reports",            tags=["reports"])
