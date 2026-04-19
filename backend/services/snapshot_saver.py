@@ -98,3 +98,19 @@ def save_snapshot(
             "save_snapshot failed (non-fatal) platform=%s connection=%s period=%s..%s err=%s",
             platform, connection_id, period_start, period_end, exc,
         )
+        return
+
+    # Post-save: flag suspicious zero-data pulls (Phase 2).
+    # Runs after the snapshot has been written so the "prior snapshots" query
+    # reflects strictly earlier pulls (ordering by period_start desc + skipping
+    # the most-recent row inside check_suspicious_zero_data).
+    try:
+        from services.health_check import check_suspicious_zero_data  # noqa: PLC0415
+        check_suspicious_zero_data(
+            supabase=supabase,
+            connection_id=connection_id,
+            platform=platform,
+            current_metrics=metrics or {},
+        )
+    except Exception as exc:
+        logger.debug("suspicious-zero check skipped (non-fatal): %s", exc)

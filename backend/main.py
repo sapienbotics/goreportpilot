@@ -31,11 +31,22 @@ os.makedirs(os.path.join(_LOGOS_DIR, "clients"),  exist_ok=True)
 # ── Background scheduler loop ─────────────────────────────────────────────────
 
 async def _scheduler_loop() -> None:
-    """Check for due scheduled reports every 15 minutes."""
+    """
+    Background loop — runs every 15 minutes.
+
+    Each tick:
+      * runs due scheduled reports
+      * runs connection-health probes (internally short-circuits to a
+        6-hour cadence so we don't probe every 15 min)
+    """
     while True:
         try:
-            from services.scheduler import check_and_run_scheduled_reports  # noqa: PLC0415
+            from services.scheduler import (  # noqa: PLC0415
+                check_and_run_scheduled_reports,
+                check_and_run_health_checks,
+            )
             await check_and_run_scheduled_reports()
+            await check_and_run_health_checks()
         except Exception as exc:
             logger.error("Scheduler loop error: %s", exc)
         await asyncio.sleep(900)  # run every 15 minutes

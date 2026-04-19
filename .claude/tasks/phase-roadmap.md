@@ -65,20 +65,33 @@
 
 ---
 
-## Phase 2 — Connection Health Monitor (3 days)
-**Status:** ⏭ not yet started
+## Phase 1b — Path A: Wire Google Ads + Search Console (remediation)
+**Status:** 🟢 verified by user 2026-04-19
 
-**Tasks outline:**
-- Migration `013_connection_health.sql` (adds `last_health_check_at`, `health_status`, index)
-- New `services/health_check.py` with `check_all_connections_health()`
-- Per-platform cheap probes (GA4 properties.list, Meta me?fields=id, etc.)
-- Batch + jitter (50 at a time, 30s sleeps)
-- "Suspicious zero data" detection
-- Plug into `scheduler.py` at 6h cadence via modulo on hourly tick
-- Pre-generation gate in `_generate_report_internal` + `regenerate_report` (HTTP 422 on broken)
-- Three email templates (broken, expiring, suspicious-zero) via `translations.py`
-- Endpoint `GET /api/dashboard/connection-health`
-- Frontend `ConnectionHealthWidget.tsx`
+---
+
+## Phase 2 — Connection Health Monitor (3 days)
+**Status:** ✅ complete — awaiting user verification
+
+**Tasks:**
+- ✅ Migration `013_connection_health.sql` — adds `last_health_check_at`, `health_status`, `alerts_sent`, CHECK constraint, index
+- ✅ New `services/health_check.py` (~418 lines) — 4 platform probes + batching + status transitions + alert emails
+- ✅ 6h cadence via `_last_health_check_ts` timer in `scheduler.py` (NOT modulo on hourly — main loop is 15 min)
+- ✅ "Suspicious zero data" detection in `snapshot_saver` post-save hook
+- ✅ Pre-generation gate in `_generate_report_internal` + `regenerate_report` (HTTP 422 on broken/expiring_soon)
+- ✅ Three alert emails via inline HTML builder + Resend (English-only; i18n is a documented follow-up)
+- ✅ `GET /api/dashboard/connection-health` endpoint
+- ✅ `connection-health-widget.tsx` (Phase 2 frontend) + dropped into dashboard home + integrations page
+- ✅ Pruned orphaned imports in dashboard/page.tsx
+- ✅ TypeScript + Python syntax clean
+- ⏳ User must verify: run migration 013, then run 8-test plan in `phase-2-completion.md` §5
+
+**Files changed:**
+- NEW: `supabase/migrations/013_connection_health.sql`
+- NEW: `backend/services/health_check.py`
+- NEW: `frontend/src/components/dashboard/connection-health-widget.tsx`
+- NEW: `.claude/tasks/phase-2-completion.md`
+- MODIFIED: `backend/services/scheduler.py`, `backend/services/snapshot_saver.py`, `backend/main.py`, `backend/routers/reports.py`, `backend/routers/dashboard.py`, `frontend/src/app/dashboard/page.tsx`, `frontend/src/app/dashboard/integrations/page.tsx`
 
 ---
 

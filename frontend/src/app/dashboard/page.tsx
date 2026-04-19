@@ -4,10 +4,11 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Users, FileText, Clock, Send, Plus, AlertCircle, CheckCircle2, Activity } from 'lucide-react'
+import { Users, FileText, Clock, Send, Plus, Activity } from 'lucide-react'
 import api from '@/lib/api'
 import { Skeleton } from '@/components/ui/skeleton'
 import OnboardingChecklist from '@/components/dashboard/onboarding-checklist'
+import ConnectionHealthWidget from '@/components/dashboard/connection-health-widget'
 
 interface OnboardingStatus {
   has_client: boolean
@@ -34,13 +35,6 @@ interface DashboardStats {
     time: string
   }[]
   onboarding: OnboardingStatus
-}
-
-const PLATFORM_LABELS: Record<string, string> = {
-  ga4: 'Google Analytics',
-  meta_ads: 'Meta Ads',
-  google_ads: 'Google Ads',
-  search_console: 'Search Console',
 }
 
 function MetricCard({
@@ -211,52 +205,8 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Connection health */}
-        <div className="bg-white rounded-xl border border-slate-200 p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold text-slate-700">Connection Health</h2>
-            <Link href="/dashboard/integrations" className="text-xs text-indigo-600 hover:underline">
-              Manage →
-            </Link>
-          </div>
-          {loading ? (
-            <div className="space-y-3">
-              {[1, 2].map((i) => <Skeleton key={i} className="h-10 w-full" />)}
-            </div>
-          ) : !stats || Object.keys(stats.connection_health).length === 0 ? (
-            <div className="py-4 text-center">
-              <p className="text-sm text-slate-400 mb-2">No platform connections yet.</p>
-              <Link href="/dashboard/integrations" className="text-xs text-indigo-600 hover:underline">
-                View integrations →
-              </Link>
-            </div>
-          ) : (
-            <div className="divide-y divide-slate-50">
-              {Object.entries(stats.connection_health).map(([platform, h]) => (
-                <Link
-                  key={platform}
-                  href="/dashboard/integrations"
-                  className="flex items-center justify-between py-2.5 first:pt-0 last:pb-0 hover:bg-slate-50 -mx-2 px-2 rounded transition-colors"
-                >
-                  <div className="flex items-center gap-2">
-                    {h.issues > 0 ? (
-                      <AlertCircle className="h-4 w-4 text-amber-500 shrink-0" />
-                    ) : (
-                      <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
-                    )}
-                    <span className="text-sm text-slate-700">
-                      {PLATFORM_LABELS[platform] ?? platform}
-                      <span className="text-slate-400 ml-1">({h.connected})</span>
-                    </span>
-                  </div>
-                  <span className={`text-xs font-medium ${h.issues > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
-                    {h.issues > 0 ? `${h.issues} issue${h.issues > 1 ? 's' : ''} — Fix →` : 'All healthy'}
-                  </span>
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
+        {/* Connection health widget — Phase 2: live probe status + alert actions */}
+        <ConnectionHealthWidget />
       </div>
 
       {/* Recent activity */}

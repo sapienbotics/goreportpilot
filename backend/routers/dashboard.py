@@ -51,6 +51,121 @@ async def get_dashboard_stats(user_id: str = Depends(get_current_user_id)) -> di
         )
 
 
+# ---------------------------------------------------------------------------
+# Connection health widget endpoint (Phase 2)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/connection-health")
+async def get_connection_health(user_id: str = Depends(get_current_user_id)) -> dict:
+    """
+    Return a connection-health summary for the authenticated user's dashboard.
+
+    Shape:
+        {
+          "summary":     {"total": N, "healthy": N, "warning": N,
+                          "broken": N, "expiring_soon": N},
+          "by_platform": {<platform>: {...same keys..., "connected": N}},
+          "issues":      [ top-3 problem connections with reconnect context ]
+        }
+    """
+    try:
+        supabase = get_supabase_admin()
+
+        # Fetch client IDs owned by this user.
+        client_resp = (
+            supabase.table("clients")
+            .select("id,name")
+            .eq("user_id", user_id)
+            .eq("is_active", True)
+            .execute()
+        )
+        clients = client_resp.data or []
+        if not clients:
+            return {
+                "summary":     _zero_summary(),
+                "by_platform": {},
+                "issues":      [],
+            }
+
+        client_ids  = [c["id"] for c in clients]
+        client_name = {c["id"]: c["name"] for c in clients}
+
+        # Fetch connections with health fields.
+        conn_resp = (
+            supabase.table("connections")
+            .select(
+                "id,client_id,platform,account_name,health_status,"
+                "last_health_check_at,last_error_message,token_expires_at"
+            )
+            .in_("client_id", client_ids)
+            .execute()
+        )
+        conns = conn_resp.data or []
+
+        summary     = _zero_summary()
+        by_platform: dict[str, dict] = {}
+        issues:     list[dict]       = []
+
+        _STATUS_ORDER = {"broken": 0, "expiring_soon": 1, "warning": 2, "healthy": 3}
+
+        for conn in conns:
+            platform = conn.get("platform") or "unknown"
+            status_value = conn.get("health_status") or "healthy"
+
+            summary["total"] += 1
+            if status_value in summary:
+                summary[status_value] += 1
+            else:
+                summary["healthy"] += 1
+
+            bucket = by_platform.setdefault(
+                platform,
+                {"connected": 0, "healthy": 0, "warning": 0,
+                 "broken": 0, "expiring_soon": 0},
+            )
+            bucket["connected"] += 1
+            if status_value in bucket:
+                bucket[status_value] += 1
+            else:
+                bucket["healthy"] += 1
+
+            if status_value in ("broken", "expiring_soon", "warning"):
+                issues.append({
+                    "connection_id":        conn["id"],
+                    "client_id":            conn["client_id"],
+                    "client_name":          client_name.get(conn["client_id"], "Unknown"),
+                    "platform":             platform,
+                    "account_name":         conn.get("account_name") or "",
+                    "health_status":        status_value,
+                    "last_error_message":   conn.get("last_error_message"),
+                    "last_health_check_at": conn.get("last_health_check_at"),
+                    "token_expires_at":     conn.get("token_expires_at"),
+                })
+
+        # Sort issues by severity, keep top 3 for the widget.
+        issues.sort(key=lambda r: (
+            _STATUS_ORDER.get(r["health_status"], 9),
+            r["client_name"].lower(),
+        ))
+
+        return {
+            "summary":     summary,
+            "by_platform": by_platform,
+            "issues":      issues[:3],
+        }
+    except Exception as exc:
+        logger.error("connection-health error for user %s: %s", user_id, exc)
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Failed to load connection health. Please try again."},
+        )
+
+
+def _zero_summary() -> dict:
+    return {"total": 0, "healthy": 0, "warning": 0, "broken": 0, "expiring_soon": 0}
+
+
 async def _build_dashboard_stats(user_id: str) -> dict:
     """Internal helper — builds the full stats dict."""
     supabase = get_supabase_admin()

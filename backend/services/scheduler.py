@@ -5,9 +5,21 @@ Checks every hour; uses next_run_at stored in the DB to decide what to run.
 """
 import logging
 import os
+import time
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Connection health cadence (Phase 2)
+# ---------------------------------------------------------------------------
+# Health probes run AT MOST once every HEALTH_CHECK_INTERVAL_SECONDS across
+# the whole process. The main scheduler loop (every 15 min) calls
+# check_and_run_health_checks() each tick; this module-level timestamp
+# short-circuits until the interval has elapsed.
+
+HEALTH_CHECK_INTERVAL_SECONDS = 6 * 3600   # 6 hours
+_last_health_check_ts: float = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -217,3 +229,35 @@ async def _send_scheduled_report(
         )
     except Exception as exc:
         logger.error("Scheduler: email send failed for report %s: %s", row["id"], exc)
+
+
+# ---------------------------------------------------------------------------
+# Connection health monitor (Phase 2)
+# ---------------------------------------------------------------------------
+
+
+async def check_and_run_health_checks() -> None:
+    """
+    Run a sweep of connection health probes.
+
+    Short-circuits if fewer than HEALTH_CHECK_INTERVAL_SECONDS seconds have
+    elapsed since the last successful sweep. Safe to call every scheduler
+    tick — the cadence lives here, not at the caller.
+    """
+    global _last_health_check_ts  # noqa: PLW0603
+
+    now = time.monotonic()
+    if (now - _last_health_check_ts) < HEALTH_CHECK_INTERVAL_SECONDS:
+        remaining = int(HEALTH_CHECK_INTERVAL_SECONDS - (now - _last_health_check_ts))
+        logger.debug("Health check skipped — %d seconds until next sweep", remaining)
+        return
+
+    try:
+        from services.health_check import check_all_connections_health  # noqa: PLC0415
+        from services.supabase_client import get_supabase_admin         # noqa: PLC0415
+        supabase = get_supabase_admin()
+        await check_all_connections_health(supabase)
+        _last_health_check_ts = now
+    except Exception as exc:
+        logger.error("Health check sweep failed: %s", exc)
+        # Do NOT advance _last_health_check_ts on failure so we retry next tick.

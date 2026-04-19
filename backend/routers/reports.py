@@ -182,6 +182,34 @@ async def _generate_report_internal(
         "text":  report_config.get("custom_section_text",  ""),
     }
 
+    # 1c — Connection health pre-generation gate (Phase 2).
+    # Block generation when any of the client's connections is broken or
+    # expiring_soon so we never ship an empty scheduled report to a client.
+    # Bypassed for CSV-only generations (csv_sources supplied, no native
+    # connections required).
+    unhealthy = (
+        supabase.table("connections")
+        .select("id,platform,health_status,account_name")
+        .eq("client_id", client_id)
+        .in_("health_status", ["broken", "expiring_soon"])
+        .execute()
+    )
+    unhealthy_rows = unhealthy.data or []
+    if unhealthy_rows and not csv_sources:
+        detail_lines = [
+            f"{row.get('platform')} ({row.get('health_status')})"
+            for row in unhealthy_rows
+        ]
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "One or more platform connections need attention before this "
+                "report can be generated: "
+                + ", ".join(detail_lines)
+                + ". Open the Integrations page and reconnect, then try again."
+            ),
+        )
+
     # 2 — Pull real data from connected platforms only.
     # If a platform is NOT connected, its data is None — no mock/fake data.
 
@@ -1244,6 +1272,30 @@ async def regenerate_report(
         "title": report_config.get("custom_section_title", ""),
         "text":  report_config.get("custom_section_text",  ""),
     }
+
+    # 1c — Connection health pre-generation gate (Phase 2).
+    unhealthy = (
+        supabase.table("connections")
+        .select("id,platform,health_status")
+        .eq("client_id", client_id)
+        .in_("health_status", ["broken", "expiring_soon"])
+        .execute()
+    )
+    unhealthy_rows = unhealthy.data or []
+    if unhealthy_rows:
+        detail_lines = [
+            f"{row.get('platform')} ({row.get('health_status')})"
+            for row in unhealthy_rows
+        ]
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "One or more platform connections need attention before this "
+                "report can be regenerated: "
+                + ", ".join(detail_lines)
+                + ". Open the Integrations page and reconnect, then try again."
+            ),
+        )
 
     # 2 — Data pull — real connections only, no mock data
 

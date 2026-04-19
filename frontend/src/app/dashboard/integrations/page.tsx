@@ -15,6 +15,7 @@ import {
 import { Card, CardContent } from '@/components/ui/card'
 import { clientsApi, connectionsApi, authApi } from '@/lib/api'
 import type { Client, Connection } from '@/types'
+import ConnectionHealthWidget from '@/components/dashboard/connection-health-widget'
 
 // ── Platform definitions ──────────────────────────────────────────────────────
 
@@ -182,6 +183,9 @@ export default function IntegrationsPage() {
           </p>
         </div>
       )}
+
+      {/* Connection health widget (Phase 2) */}
+      <ConnectionHealthWidget title="Connection health (all clients)" />
 
       {/* Client selector */}
       <div className="flex items-center gap-3">
