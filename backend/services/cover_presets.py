@@ -258,14 +258,16 @@ def _insert_hero_image(prs: Any, cover: Any, image_url: str) -> None:
     """
     Insert a hero image full-bleed behind all existing shapes.
 
-    v4 fixes (per user spec):
-      * DELETE the template's header-band shape entirely so the hero
-        image can fill the whole cover. "Clear fill" wasn't reliable
-        because some renderers still painted the cleared shape.
-      * Use the image AS-IS — no Pillow darkening. The user is
-        responsible for picking a hero that works as a background;
-        darkening their pixels isn't our job.
-      * No overlay rectangle.
+    v5 fixes (per user spec):
+      * Generalise header-band removal to STRIP ALL decorative shapes —
+        the user's template has multiple shapes forming the purple top
+        area, not just one. Now we delete every non-picture non-text
+        shape on the cover before inserting the hero.
+      * Dump BEFORE and AFTER shape lists to the log so we can see
+        exactly what the template started with and what remains after
+        the strip.
+      * Log the hero pic's actual left/top/width/height so we can
+        confirm it's placed full-slide and not clipped.
     """
     from pptx.util import Emu  # noqa: PLC0415
 
@@ -274,46 +276,138 @@ def _insert_hero_image(prs: Any, cover: Any, image_url: str) -> None:
         logger.debug("Cover preset: hero image could not be downloaded")
         return
 
-    # DELETE the header band before inserting the picture so our new
-    # picture doesn't have to fight for z-order with an empty-but-present
-    # shape. Belt-and-suspenders: if delete fails, the subsequent picture
-    # still gets sent to the back and the template text shapes render on
-    # top — but the deletion is the real fix.
-    _delete_header_band(prs, cover)
+    # BEFORE: log everything on the cover so we know what we're starting with.
+    _log_cover_shapes(cover, "Hero preset — BEFORE strip")
+
+    # Strip ALL decorative shapes (anything that isn't a picture and
+    # doesn't carry text content). This removes header bands, accent
+    # stripes, background rectangles — everything that would otherwise
+    # sit on top of the hero.
+    _strip_cover_decorations(cover)
+
+    # AFTER: log what remains. Anything listed here still renders on top
+    # of the hero. If something visual (a coloured rectangle, say) is
+    # still present after this line, it was wrongly kept — tell us.
+    _log_cover_shapes(cover, "Hero preset — AFTER strip")
 
     pic = cover.shapes.add_picture(
         io.BytesIO(img_bytes), Emu(0), Emu(0),
         width=prs.slide_width, height=prs.slide_height,
     )
+    logger.info(
+        "Hero pic inserted: left=%d top=%d width=%d height=%d "
+        "(slide is %dx%d EMU = %.2fx%.2f inches)",
+        int(pic.left or 0), int(pic.top or 0),
+        int(pic.width or 0), int(pic.height or 0),
+        int(prs.slide_width), int(prs.slide_height),
+        prs.slide_width / 914400, prs.slide_height / 914400,
+    )
 
     # Push the hero to the back of z-order so template text shapes still
     # render on top of it.
     _reorder_to_back(cover, pic)
+    logger.info("Hero pic moved to back of spTree")
 
 
-def _delete_header_band(prs: Any, cover: Any) -> None:
+def _log_cover_shapes(cover: Any, label: str) -> None:
     """
-    Remove the template's header-band shape from the cover's spTree
-    entirely. Uses the same heuristic as _find_header_band — topmost
-    full-width non-picture non-text shape in the top third. No-op if
-    nothing matches.
+    Dump every shape on the cover slide to the log, one line per shape.
+    Phase-3 hero-preset diagnostic — shows what decoration survives the
+    strip pass so we can iteratively zero in on stray template chrome.
 
-    Physical removal (via sp_tree.remove) rather than just clearing the
-    fill, because empty shapes can still leave a faint border or shift
-    layout in some renderers.
+    Output line format (per shape):
+      [idx] name='Name' type=<int> pos=(L,T)" size=(WxH)" fill=<type>
+             has_text=<bool> text='first 60 chars'
     """
-    band = _find_header_band(cover, prs)
-    if band is None:
-        logger.debug("Hero preset: no header band found to delete")
-        return
     try:
-        sp_tree = cover.shapes._spTree
-        el = band._element
-        if el.getparent() is sp_tree:
-            sp_tree.remove(el)
-            logger.info("Hero preset: deleted header-band shape from cover")
+        lines = []
+        for idx, shape in enumerate(cover.shapes):
+            name = getattr(shape, "name", "?")
+            st = getattr(shape, "shape_type", "?")
+            try:
+                l_in = (int(shape.left or 0))  / 914400 if shape.left  is not None else 0.0
+                t_in = (int(shape.top or 0))   / 914400 if shape.top   is not None else 0.0
+                w_in = (int(shape.width or 0)) / 914400 if shape.width is not None else 0.0
+                h_in = (int(shape.height or 0))/ 914400 if shape.height is not None else 0.0
+            except Exception:
+                l_in = t_in = w_in = h_in = 0.0
+
+            # Fill type — 1=solid, 2=picture, 3=gradient, etc. str() is safest.
+            fill_desc = "?"
+            try:
+                fill_desc = str(shape.fill.type)
+            except Exception:
+                pass
+
+            has_tf = False
+            text_preview = ""
+            try:
+                if getattr(shape, "has_text_frame", False):
+                    has_tf = True
+                    text_preview = (shape.text_frame.text or "")[:60].replace("\n", " ")
+            except Exception:
+                pass
+
+            lines.append(
+                f"  [{idx}] name={name!r} type={st} "
+                f"pos=({l_in:.2f},{t_in:.2f})\" size=({w_in:.2f}x{h_in:.2f})\" "
+                f"fill={fill_desc} has_text={has_tf} text={text_preview!r}"
+            )
+        logger.info("%s — %d shapes:\n%s", label, len(lines), "\n".join(lines))
     except Exception as exc:
-        logger.debug("Hero preset: could not delete header band: %s", exc)
+        logger.warning("_log_cover_shapes failed: %s", exc)
+
+
+def _strip_cover_decorations(cover: Any) -> int:
+    """
+    Delete every shape on the cover that is NOT a picture and does NOT
+    carry actual text content. Keeps:
+      * Pictures (existing logos, anything we'll fill later).
+      * Shapes with non-empty text (titles, subtitles, text-bearing
+        agency/client logo placeholders like the "{{agency_logo}}" token).
+      * Placeholders regardless of text (title / content placeholders
+        that may still be empty).
+    Removes:
+      * Decorative rectangles, lines, freeform shapes, empty auto-shapes.
+    Returns count of shapes deleted. Each deletion is logged at INFO so
+    you can see exactly what went away.
+    """
+    try:
+        from pptx.enum.shapes import MSO_SHAPE_TYPE  # noqa: PLC0415
+        KEEP_TYPES = {MSO_SHAPE_TYPE.PICTURE, MSO_SHAPE_TYPE.PLACEHOLDER}
+    except Exception:
+        # Fallback to raw ints if the enum import ever breaks.
+        KEEP_TYPES = {13, 14}
+
+    sp_tree = cover.shapes._spTree
+    deleted = 0
+    for shape in list(cover.shapes):
+        st = getattr(shape, "shape_type", None)
+        name = getattr(shape, "name", "?")
+        # Keep pictures + placeholders unconditionally.
+        if st in KEEP_TYPES:
+            continue
+        # Keep anything with actual text content.
+        try:
+            if getattr(shape, "has_text_frame", False):
+                if (shape.text_frame.text or "").strip():
+                    continue
+        except Exception:
+            # If we can't read text, err on the side of keeping the shape.
+            continue
+        # Everything else is decorative — delete.
+        try:
+            el = shape._element
+            if el.getparent() is sp_tree:
+                sp_tree.remove(el)
+                deleted += 1
+                logger.info(
+                    "Stripped decoration: idx-name=%r type=%s", name, st,
+                )
+        except Exception as exc:
+            logger.debug("Strip failed for shape %r: %s", name, exc)
+    logger.info("Hero decoration strip complete: %d shapes removed", deleted)
+    return deleted
 
 
 def _reorder_to_back(slide: Any, *shapes: Any) -> None:
