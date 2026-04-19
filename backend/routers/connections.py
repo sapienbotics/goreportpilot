@@ -88,13 +88,17 @@ async def create_connection(
     access_token_encrypted  = encrypt_token(raw_access)  if raw_access  else ""
     refresh_token_encrypted = encrypt_token(raw_refresh) if raw_refresh else ""
 
-    # Check for an existing connection for the same client + platform + account
+    # Dedup on (client_id, platform) only — NOT (client_id, platform, account_id).
+    # Each client has exactly one OAuth-connected integration per platform;
+    # if the user picks a different property on reconnect, that overwrites the
+    # existing row rather than creating a duplicate. Including account_id in
+    # the dedup key caused the widget to show "Videogenie · GA4" twice when
+    # the second reconnect captured a slightly different property id.
     existing = (
         supabase.table("connections")
         .select("id")
         .eq("client_id", body.client_id)
         .eq("platform", platform)
-        .eq("account_id", body.account_id)
         .execute()
     )
     connection_id = str(uuid.uuid4())
@@ -125,6 +129,23 @@ async def create_connection(
         insert_payload["last_error_message"]   = None
         insert_payload["alerts_sent"]          = {}
         insert_payload["last_health_check_at"] = None
+
+        # Defensive: if the DB already holds duplicates from before the dedup
+        # fix, remove the extras and keep only the one we're about to update.
+        # Migration 015 handles history-level cleanup + a partial unique index
+        # so this can't recur, but we still belt-and-suspenders here for any
+        # row that slipped in between migrations running.
+        if len(existing.data) > 1:
+            extra_ids = [r["id"] for r in existing.data[1:]]
+            try:
+                supabase.table("connections").delete().in_("id", extra_ids).execute()
+                logger.info(
+                    "Removed %d duplicate connection row(s) for client=%s platform=%s",
+                    len(extra_ids), body.client_id, platform,
+                )
+            except Exception as exc:
+                logger.warning("Duplicate cleanup failed (non-fatal): %s", exc)
+
         result = (
             supabase.table("connections")
             .update(insert_payload)

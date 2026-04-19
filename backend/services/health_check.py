@@ -133,7 +133,7 @@ async def _probe_one_connection(conn: dict, supabase: Any, stats: dict) -> None:
 
     try:
         token_expires_unix = _parse_token_expiry(conn.get("token_expires_at"))
-        expires_soon = _is_expiring_soon(token_expires_unix)
+        expires_soon = _is_expiring_soon(platform, token_expires_unix)
 
         # Run the platform probe.
         probe_ok, error_msg = await _probe_platform(platform, conn, supabase)
@@ -690,7 +690,25 @@ def _parse_token_expiry(raw: Optional[str]) -> Optional[float]:
         return None
 
 
-def _is_expiring_soon(token_expires_unix: Optional[float]) -> bool:
+def _is_expiring_soon(platform: str, token_expires_unix: Optional[float]) -> bool:
+    """
+    Decide whether a connection should be flagged 'expiring_soon'.
+
+    For Google platforms (GA4, Google Ads, Search Console), token_expires_at
+    stores the ACCESS token's 1-hour lifetime, NOT the refresh_token's life.
+    Access tokens are auto-refreshed on every probe via the refresh_token,
+    so their expiry is a non-event. Flagging Google connections as
+    'expiring_soon' whenever the 7-day threshold was crossed meant every
+    Google connection flipped to 'expiring_soon' the moment it was
+    reconnected (expires in 1h < 7 days = true). That's the bug this fix
+    addresses.
+
+    Only Meta's access_token is the long-lived credential (~60-day life).
+    Warning the user 7 days before expiry is useful there because Meta
+    CANNOT be auto-refreshed the way Google can.
+    """
+    if platform != "meta_ads":
+        return False
     if not token_expires_unix:
         return False
     now = time.time()
