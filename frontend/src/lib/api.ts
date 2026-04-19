@@ -70,6 +70,13 @@ export interface ClientUpdatePayload extends Partial<ClientCreatePayload> {
   cover_headline?: string | null
   cover_subtitle?: string | null
   cover_hero_image_url?: string | null
+  // Phase 3 fix (Part B) — per-client brand + logo placement
+  cover_brand_primary_color?: string | null
+  cover_brand_accent_color?: string | null
+  cover_agency_logo_position?: string | null
+  cover_agency_logo_size?: string | null
+  cover_client_logo_position?: string | null
+  cover_client_logo_size?: string | null
 }
 
 export const clientsApi = {
@@ -446,6 +453,12 @@ export async function previewCover(payload: {
   subtitle?: string | null
   hero_image_url?: string | null
   visual_template?: string
+  primary_color?: string | null
+  accent_color?: string | null
+  agency_logo_position?: string | null
+  agency_logo_size?: string | null
+  client_logo_position?: string | null
+  client_logo_size?: string | null
 }): Promise<Blob> {
   const res = await api.post('/api/reports/preview-cover', payload, {
     responseType: 'blob',

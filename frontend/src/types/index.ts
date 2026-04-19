@@ -65,11 +65,28 @@ export interface Client {
   cover_headline?: string | null
   cover_subtitle?: string | null
   cover_hero_image_url?: string | null
+  // Phase 3 fix (Part B) — per-client brand + logo placement
+  cover_brand_primary_color?: string | null
+  cover_brand_accent_color?: string | null
+  cover_agency_logo_position?: LogoPosition | null
+  cover_agency_logo_size?: LogoSize | null
+  cover_client_logo_position?: LogoPosition | null
+  cover_client_logo_size?: LogoSize | null
   created_at: string
   updated_at: string
 }
 
 export type CoverPreset = 'default' | 'minimal' | 'bold' | 'corporate' | 'hero' | 'gradient'
+export type LogoPosition =
+  | 'default'
+  | 'top-left'
+  | 'top-right'
+  | 'top-center'
+  | 'footer-left'
+  | 'footer-right'
+  | 'footer-center'
+  | 'center'
+export type LogoSize = 'default' | 'small' | 'medium' | 'large'
 
 export interface Connection {
   id: string

@@ -47,6 +47,13 @@ class ClientUpdate(BaseModel):
     cover_headline: str | None = None
     cover_subtitle: str | None = None
     cover_hero_image_url: str | None = None
+    # Phase 3 fix (Part B) — per-client brand + logo placement
+    cover_brand_primary_color: str | None = None
+    cover_brand_accent_color: str | None = None
+    cover_agency_logo_position: str | None = None
+    cover_agency_logo_size: str | None = None
+    cover_client_logo_position: str | None = None
+    cover_client_logo_size: str | None = None
 
     @field_validator("ai_tone")
     @classmethod
@@ -66,6 +73,29 @@ class ClientUpdate(BaseModel):
         allowed = {"default", "minimal", "bold", "corporate", "hero", "gradient"}
         if v not in allowed:
             raise ValueError(f"cover_design_preset must be one of {allowed}")
+        return v
+
+    @field_validator("cover_agency_logo_position", "cover_client_logo_position")
+    @classmethod
+    def validate_logo_position(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        allowed = {
+            "default", "top-left", "top-right", "top-center",
+            "footer-left", "footer-right", "footer-center", "center",
+        }
+        if v not in allowed:
+            raise ValueError(f"logo position must be one of {allowed}")
+        return v
+
+    @field_validator("cover_agency_logo_size", "cover_client_logo_size")
+    @classmethod
+    def validate_logo_size(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        allowed = {"default", "small", "medium", "large"}
+        if v not in allowed:
+            raise ValueError(f"logo size must be one of {allowed}")
         return v
 
 
@@ -88,6 +118,13 @@ class ClientResponse(BaseModel):
     cover_headline: str | None = None
     cover_subtitle: str | None = None
     cover_hero_image_url: str | None = None
+    # Phase 3 fix (Part B) — per-client brand + logo placement
+    cover_brand_primary_color: str | None = None
+    cover_brand_accent_color: str | None = None
+    cover_agency_logo_position: str | None = None
+    cover_agency_logo_size: str | None = None
+    cover_client_logo_position: str | None = None
+    cover_client_logo_size: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -111,6 +148,13 @@ class CoverPreviewRequest(BaseModel):
     subtitle: str | None = None        # overrides stored client.cover_subtitle
     hero_image_url: str | None = None  # overrides stored client.cover_hero_image_url
     visual_template: str | None = None # overrides stored visual template
+    # Phase 3 fix (Part B) — per-request overrides for live-preview UX
+    primary_color: str | None = None
+    accent_color: str | None = None
+    agency_logo_position: str | None = None
+    agency_logo_size: str | None = None
+    client_logo_position: str | None = None
+    client_logo_size: str | None = None
 
     @field_validator("preset")
     @classmethod

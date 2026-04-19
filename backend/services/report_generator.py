@@ -962,6 +962,55 @@ def _measure_image(image_stream: "io.BytesIO") -> tuple[int, int]:
         return 0, 0
 
 
+# Phase-3 logo placement helpers ---------------------------------------------
+_LOGO_MARGIN = Inches(0.3)
+
+
+def _logo_max_box(size: str, *, kind: str) -> tuple[int, int]:
+    """Return (max_w, max_h) EMU for a given size preset and logo kind."""
+    size = (size or "default").lower()
+    # Agency logos sit in the header band — relatively narrow.
+    # Client logos can be larger because they're prominent on the cover.
+    if kind == "agency":
+        box = {
+            "small":   (Inches(1.5), Inches(0.5)),
+            "medium":  (Inches(2.5), Inches(0.8)),   # default
+            "large":   (Inches(3.5), Inches(1.2)),
+            "default": (Inches(2.5), Inches(0.8)),
+        }
+    else:
+        box = {
+            "small":   (Inches(1.5), Inches(1.0)),
+            "medium":  (Inches(3.0), Inches(2.0)),   # default
+            "large":   (Inches(4.5), Inches(3.0)),
+            "default": (Inches(3.0), Inches(2.0)),
+        }
+    return box.get(size, box["default"])
+
+
+def _logo_corner_xy(
+    *, position: str, slide_w: int, slide_h: int, logo_w: int, logo_h: int,
+) -> tuple[int, int]:
+    """Map a named position to explicit (left, top) EMU on the cover slide."""
+    m = _LOGO_MARGIN
+    if position == "top-left":
+        return m, m
+    if position in ("top-right", "header"):
+        return slide_w - logo_w - m, m
+    if position == "top-center":
+        return (slide_w - logo_w) // 2, m
+    if position in ("footer", "footer-left", "bottom-left"):
+        return m, slide_h - logo_h - m
+    if position in ("footer-right", "bottom-right"):
+        return slide_w - logo_w - m, slide_h - logo_h - m
+    if position in ("footer-center", "bottom-center"):
+        return (slide_w - logo_w) // 2, slide_h - logo_h - m
+    if position == "center":
+        return (slide_w - logo_w) // 2, (slide_h - logo_h) // 2
+    # Unknown value — default to top-right to keep logos visible.
+    return slide_w - logo_w - m, m
+
+
 def _embed_logos(prs: Any, branding: dict | None) -> None:
     """Embed agency and client logos on the cover slide.
 
@@ -997,6 +1046,13 @@ def _embed_logos(prs: Any, branding: dict | None) -> None:
 
     br = branding or {}
 
+    # Optional Phase-3 per-client overrides. 'default' preserves the
+    # original placeholder-based behaviour.
+    agency_pos  = (br.get("agency_logo_position") or "default").lower()
+    agency_size = (br.get("agency_logo_size")     or "default").lower()
+    client_pos  = (br.get("client_logo_position") or "default").lower()
+    client_size = (br.get("client_logo_size")     or "default").lower()
+
     # ── Agency logo ──────────────────────────────────────────────────────
     agency_img = _download_image(br.get("agency_logo_url", ""))
     if agency_img:
@@ -1004,27 +1060,32 @@ def _embed_logos(prs: Any, branding: dict | None) -> None:
             # Measure native pixel dimensions so we can preserve aspect ratio.
             img_w_px, img_h_px = _measure_image(agency_img)
 
-            # Determine the max box: placeholder bounds if present, else the
-            # standard cover-header box. Clamp the placeholder width so a
-            # wide placeholder still can't push the logo off-slide.
-            if agency_logo_shape:
-                max_w = min(int(agency_logo_shape.width or _AGENCY_MAX_W), _AGENCY_MAX_W)
-                max_h = min(int(agency_logo_shape.height or _AGENCY_MAX_H), _AGENCY_MAX_H)
-                base_top = int(agency_logo_shape.top)
+            # Size selector overrides default max box.
+            max_w, max_h = _logo_max_box(agency_size, kind="agency")
+
+            if agency_pos != "default":
+                # User-picked placement — derive corner coordinates explicitly.
+                fit_w, fit_h = _fit_image_to_box(img_w_px, img_h_px, max_w, max_h)
+                pic_left, pic_top = _logo_corner_xy(
+                    position=agency_pos, slide_w=sw, slide_h=prs.slide_height,
+                    logo_w=fit_w, logo_h=fit_h,
+                )
+                # We're placing by explicit coords — clear the placeholder if present.
+                if agency_logo_shape:
+                    _delete_shape(cover, agency_logo_shape)
+                    agency_logo_shape = None
             else:
-                max_w = _AGENCY_MAX_W
-                max_h = _AGENCY_MAX_H
-                base_top = Inches(0.3)
+                # Legacy placeholder-based placement.
+                if agency_logo_shape:
+                    max_w = min(int(agency_logo_shape.width or max_w), max_w)
+                    max_h = min(int(agency_logo_shape.height or max_h), max_h)
+                    base_top = int(agency_logo_shape.top)
+                else:
+                    base_top = Inches(0.3)
 
-            # Convert px → EMU proportionally using the max box ratio; if
-            # measurement failed, `_fit_image_to_box` returns the max box.
-            fit_w, fit_h = _fit_image_to_box(img_w_px, img_h_px, max_w, max_h)
-
-            # Right-align within the header band: left edge = slide_width -
-            # logo_width - right_margin. This guarantees the logo stays
-            # fully inside the slide regardless of its aspect ratio.
-            pic_left = sw - fit_w - _RIGHT_MARGIN
-            pic_top = base_top
+                fit_w, fit_h = _fit_image_to_box(img_w_px, img_h_px, max_w, max_h)
+                pic_left = sw - fit_w - _RIGHT_MARGIN
+                pic_top = base_top
 
             # Logo renders directly on the indigo header with no background
             # pad — agencies are expected to upload a logo that works on
@@ -1048,22 +1109,32 @@ def _embed_logos(prs: Any, branding: dict | None) -> None:
         try:
             img_w_px, img_h_px = _measure_image(client_img)
 
-            if client_logo_shape:
-                max_w = min(int(client_logo_shape.width or _CLIENT_MAX_W), _CLIENT_MAX_W)
-                max_h = min(int(client_logo_shape.height or _CLIENT_MAX_H), _CLIENT_MAX_H)
-                base_top = int(client_logo_shape.top)
-                center_x = int(client_logo_shape.left) + max_w // 2
+            max_w, max_h = _logo_max_box(client_size, kind="client")
+
+            if client_pos != "default":
+                fit_w, fit_h = _fit_image_to_box(img_w_px, img_h_px, max_w, max_h)
+                pic_left, pic_top = _logo_corner_xy(
+                    position=client_pos, slide_w=sw, slide_h=prs.slide_height,
+                    logo_w=fit_w, logo_h=fit_h,
+                )
+                if client_logo_shape:
+                    _delete_shape(cover, client_logo_shape)
+                    client_logo_shape = None
             else:
-                max_w = _CLIENT_MAX_W
-                max_h = _CLIENT_MAX_H
-                base_top = Inches(5.5)
-                center_x = sw // 2
+                if client_logo_shape:
+                    max_w = min(int(client_logo_shape.width or max_w), max_w)
+                    max_h = min(int(client_logo_shape.height or max_h), max_h)
+                    base_top = int(client_logo_shape.top)
+                    center_x = int(client_logo_shape.left) + max_w // 2
+                else:
+                    base_top = Inches(5.5)
+                    center_x = sw // 2
 
-            fit_w, fit_h = _fit_image_to_box(img_w_px, img_h_px, max_w, max_h)
+                fit_w, fit_h = _fit_image_to_box(img_w_px, img_h_px, max_w, max_h)
 
-            # Horizontally centered around the placeholder (or slide center).
-            pic_left = center_x - fit_w // 2
-            pic_top = base_top
+                # Horizontally centered around the placeholder (or slide center).
+                pic_left = center_x - fit_w // 2
+                pic_top = base_top
 
             # Client logos typically sit on the light body area; skip the pad
             # there. They only need contrast help when the slide background
@@ -1560,6 +1631,25 @@ def generate_pptx_report(
     except Exception as exc:
         logger.warning("KPI sparkline embedding skipped: %s", exc)
 
+    # ── Cover preset (Phase 3) — MUST run BEFORE placeholder substitution
+    # so apply_cover_preset can identify shapes by their placeholder tokens
+    # ({{client_name}}, {{report_period}}, etc.). Recolouring here persists
+    # through the later text-replacement pass.
+    if cover_customization:
+        try:
+            from services.cover_presets import apply_cover_preset  # noqa: PLC0415
+            apply_cover_preset(
+                prs,
+                preset=cover_customization.get("preset") or "default",
+                headline=cover_customization.get("headline"),
+                subtitle=cover_customization.get("subtitle"),
+                hero_image_url=cover_customization.get("hero_image_url"),
+                brand_color=(branding or {}).get("brand_color"),
+                accent_color=cover_customization.get("accent_color"),
+            )
+        except Exception as exc:
+            logger.warning("Cover preset application failed: %s", exc)
+
     # ── Generic pass: single-value placeholders (names, KPIs, dates, logos) ─
     for slide in prs.slides:
         _replace_placeholders_in_slide(slide, replacements)
@@ -1680,24 +1770,11 @@ def generate_pptx_report(
     _colorize_kpi_changes(prs, data)
 
     # ── Logos ─────────────────────────────────────────────────────────────────
+    # NOTE: cover preset was already applied earlier in the pipeline (before
+    # text substitution) so it could identify shapes by placeholder tokens.
+    # Logos are embedded LAST so optional placement/size overrides don't
+    # fight the preset's header recolour.
     _embed_logos(prs, branding)
-
-    # ── Cover preset (Phase 3) ───────────────────────────────────────────────
-    # Applied AFTER logos so preset colour overrides don't fight the logo
-    # placement. No-op when preset is 'default' or None.
-    if cover_customization:
-        try:
-            from services.cover_presets import apply_cover_preset  # noqa: PLC0415
-            apply_cover_preset(
-                prs,
-                preset=cover_customization.get("preset") or "default",
-                headline=cover_customization.get("headline"),
-                subtitle=cover_customization.get("subtitle"),
-                hero_image_url=cover_customization.get("hero_image_url"),
-                brand_color=(branding or {}).get("brand_color"),
-            )
-        except Exception as exc:
-            logger.warning("Cover preset application failed: %s", exc)
 
     # ── Custom section image ─────────────────────────────────────────────────
     if not use_legacy:

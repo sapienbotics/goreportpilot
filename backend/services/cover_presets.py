@@ -1,28 +1,25 @@
 """
-Cover Page Presets — Phase 3.
+Cover Page Presets — Phase 3 (rewritten for bug-fixes).
 
-Five preset visual styles that can be applied on top of any of the six
-visual templates (modern_clean, dark_executive, colorful_agency,
-bold_geometric, minimal_elegant, gradient_modern). Applied as in-place
-modifications to the generated slide[0] so we never need to maintain
-30 × (6 templates × 5 presets) separate PPTX files.
+Five preset visual styles applied as IN-PLACE modifications to the
+template's existing cover slide. We NEVER add new shapes on top of the
+template — all colour + text changes target the template's pre-designed
+shapes. Only the `hero` preset adds two net-new elements (the hero
+picture + a semi-dark overlay), carefully z-ordered behind the text.
 
-Preset keys:
-  * default    — no changes (use the visual template's cover as-is)
-  * minimal    — white background, thin accent line, black title
-  * bold       — full-bleed brand-color background, large white title
-  * corporate  — dark navy header, white title, brand accent bar
-  * hero       — hero image as full-bleed background with semi-dark overlay
-  * gradient   — solid brand-color header band (gradient approximation)
+Shape identification uses placeholder TEXT content ({{client_name}},
+{{report_period}}, {{report_type}}, {{agency_name}}, {{agency_email}}).
+Because of this, `apply_cover_preset()` MUST run BEFORE the generator's
+text-replacement pass — otherwise the tokens have already been
+substituted and cannot be used as identifiers.
 
-Each preset exposes optional headline / subtitle overrides so the agency
-can personalise the title line per client without editing a PPTX file.
-
-Design decision (per Phase 1-2 refined plan §6): we do NOT ship 5 separate
-PPTX variant files. Managing them requires building them visually in
-PowerPoint, and swapping slides between python-pptx presentations is
-brittle (relationship refs, layout inheritance). Pure Python style
-configs produce the same visible outcome with far less maintenance cost.
+Presets:
+  * default    — no-op; use the template's native cover.
+  * minimal    — white bg, dark type, thin accent bar.
+  * bold       — full-bleed brand colour with large white title.
+  * corporate  — dark-navy header band, white title, brand accent.
+  * hero       — full-bleed hero image with 40% dark overlay.
+  * gradient   — solid brand-colour header over dark body.
 """
 from __future__ import annotations
 
@@ -31,6 +28,7 @@ import logging
 from typing import Any, Optional
 
 import httpx
+from lxml import etree
 
 logger = logging.getLogger(__name__)
 
@@ -38,76 +36,62 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Preset style configs
 # ---------------------------------------------------------------------------
-#
-# Per-preset fields:
-#   header_fill       — hex (no '#') for the top cover band. None = leave as-is.
-#                       The special string "brand" resolves to branding's brand_color.
-#   page_bg           — hex for the full slide background, or None.
-#   headline_color    — hex for the main title text.
-#   subtitle_color    — hex for the subtitle text.
-#   title_font_pt     — max desired title font size in points.
-#   use_hero_image    — when True AND a cover_hero_image_url is available,
-#                       the image is inserted full-bleed behind all shapes.
-#   overlay_fill      — only when use_hero_image is True; applied as a
-#                       full-bleed rectangle over the hero image for text
-#                       legibility. None skips the overlay.
 
 PRESETS: dict[str, Optional[dict[str, Any]]] = {
-    "default": None,  # no-op — preserve the visual template's native cover.
+    "default": None,
 
     "minimal": {
         "header_fill":    "FFFFFF",
         "page_bg":        "FFFFFF",
         "headline_color": "0F172A",
         "subtitle_color": "64748B",
-        "title_font_pt":  44,
         "use_hero_image": False,
-        "overlay_fill":   None,
     },
 
     "bold": {
-        "header_fill":    "brand",    # full-bleed brand color
+        "header_fill":    "brand",
         "page_bg":        "brand",
         "headline_color": "FFFFFF",
         "subtitle_color": "F1F5F9",
-        "title_font_pt":  56,
         "use_hero_image": False,
-        "overlay_fill":   None,
     },
 
     "corporate": {
-        "header_fill":    "1E293B",   # slate-900
+        "header_fill":    "1E293B",
         "page_bg":        "FFFFFF",
         "headline_color": "FFFFFF",
         "subtitle_color": "CBD5E1",
-        "title_font_pt":  40,
         "use_hero_image": False,
-        "overlay_fill":   None,
     },
 
     "hero": {
-        "header_fill":    None,       # hero image takes over the background
+        # Hero image replaces visible header/body — colours are only used
+        # for text recolouring so titles stay readable on the image.
+        "header_fill":    None,
         "page_bg":        None,
         "headline_color": "FFFFFF",
         "subtitle_color": "F1F5F9",
-        "title_font_pt":  50,
         "use_hero_image": True,
-        "overlay_fill":   "000000",   # dark overlay for text legibility
     },
 
     "gradient": {
-        "header_fill":    "brand",    # approximates gradient with brand color
-        "page_bg":        "0F172A",   # dark bottom band (visual template's body)
+        "header_fill":    "brand",
+        "page_bg":        "0F172A",
         "headline_color": "FFFFFF",
         "subtitle_color": "E2E8F0",
-        "title_font_pt":  48,
         "use_hero_image": False,
-        "overlay_fill":   None,
     },
 }
 
 
-PRESET_KEYS = tuple(PRESETS.keys())
+# Placeholder groups — used for identifying which existing template shape
+# plays which role on the cover. Matching is substring-based so a shape
+# containing any of these tokens anywhere in its text is considered a
+# match. This is robust across all 6 visual templates because each
+# template uses these exact tokens in its cover.
+_HEADLINE_PLACEHOLDERS = ("{{client_name}}", "{{report_type}}")
+_SUBTITLE_PLACEHOLDERS = ("{{report_period}}", "{{report_date}}")
+_AGENCY_TEXT_PLACEHOLDERS = ("{{agency_name}}", "{{agency_email}}")
 
 
 # ---------------------------------------------------------------------------
@@ -123,69 +107,86 @@ def apply_cover_preset(
     subtitle: Optional[str],
     hero_image_url: Optional[str],
     brand_color: Optional[str] = None,
+    accent_color: Optional[str] = None,
 ) -> None:
     """
-    Apply a cover-page preset to slide[0] of the presentation.
+    Apply a cover preset to slide[0]. Must be called BEFORE the generator's
+    text-replacement pass so placeholder tokens are still intact and can be
+    used to identify shapes.
 
-    Safe to call with preset='default' — no-op. All modifications are
-    wrapped in try/except so a preset failure never breaks generation.
+    Safe to call with preset='default' — that skips colour + hero logic but
+    still honours headline/subtitle text overrides.
     """
+    try:
+        cover = prs.slides[0]
+    except Exception as exc:
+        logger.warning("Cover preset: no cover slide: %s", exc)
+        return
+
+    brand_hex = _normalise_hex(brand_color) or "4338CA"
+    accent_hex = _normalise_hex(accent_color)
+
+    # Always process text overrides — they work even on the 'default' preset
+    # (the user may want to change the headline without changing visuals).
+    _substitute_cover_text(cover, headline=headline, subtitle=subtitle)
+
     if not preset or preset == "default":
+        # No visual changes on default — return after text substitution.
         return
 
     config = PRESETS.get(preset)
     if not config:
-        logger.warning("Unknown cover preset '%s' — skipping", preset)
+        logger.warning("Cover preset: unknown preset '%s'", preset)
         return
 
+    # 1) Header band + page background colours (in-place, modifies existing
+    #    template shapes — does NOT add new rectangles).
     try:
-        cover = prs.slides[0]
+        _apply_header_and_bg_colours(prs, cover, config, brand_hex)
     except Exception as exc:
-        logger.warning("Could not access cover slide: %s", exc)
-        return
+        logger.debug("Cover preset: colour apply failed: %s", exc)
 
-    brand_hex = _normalise_hex(brand_color) or "4338CA"
-
-    # 1) Background + header colours.
-    try:
-        _apply_colours(prs, cover, config, brand_hex)
-    except Exception as exc:
-        logger.debug("Cover preset colour apply failed: %s", exc)
-
-    # 2) Hero image (only for the 'hero' preset when an image is supplied).
+    # 2) Hero image — only preset that adds net-new shapes. Inserted at the
+    #    back of the z-order with a 40% dark overlay between it and text.
     if config.get("use_hero_image") and hero_image_url:
         try:
-            _insert_hero_image(prs, cover, hero_image_url, config)
+            _insert_hero_image(prs, cover, hero_image_url)
         except Exception as exc:
-            logger.debug("Cover preset hero-image apply failed: %s", exc)
+            logger.debug("Cover preset: hero-image apply failed: %s", exc)
 
-    # 3) Headline / subtitle text overrides.
-    if headline or subtitle:
+    # 3) Recolour existing text runs (headline / subtitle / agency text)
+    #    to match the preset. Colour is applied to the runs containing the
+    #    placeholder tokens — when the generator's pass substitutes the
+    #    tokens with real values, the colour is preserved.
+    try:
+        _recolour_cover_text(
+            cover,
+            headline_hex=config.get("headline_color"),
+            subtitle_hex=config.get("subtitle_color"),
+        )
+    except Exception as exc:
+        logger.debug("Cover preset: text recolour failed: %s", exc)
+
+    # 4) Optional accent bar at the bottom of the header band.
+    if accent_hex:
         try:
-            _apply_text_overrides(cover, headline, subtitle, config)
+            _draw_accent_bar(prs, cover, accent_hex)
         except Exception as exc:
-            logger.debug("Cover preset text override failed: %s", exc)
+            logger.debug("Cover preset: accent bar failed: %s", exc)
 
 
 # ---------------------------------------------------------------------------
-# Step 1 — colours
+# Step 1 — header + page background colours
 # ---------------------------------------------------------------------------
 
 
-def _apply_colours(prs: Any, cover: Any, config: dict, brand_hex: str) -> None:
-    """
-    Re-colour the cover's header-band shape and (optionally) the slide
-    background. We identify the header band as the topmost full-width
-    rectangular shape in the slide layout — this matches every visual
-    template's cover pattern where the first shape at top is the coloured
-    header.
-    """
+def _apply_header_and_bg_colours(
+    prs: Any, cover: Any, config: dict, brand_hex: str,
+) -> None:
+    """Recolour the header-band shape and slide background in place."""
     from pptx.dml.color import RGBColor  # noqa: PLC0415
 
-    header_fill = config.get("header_fill")
-    page_bg     = config.get("page_bg")
-
-    # Page background — set the entire slide's background fill when specified.
+    page_bg = config.get("page_bg")
     if page_bg:
         rgb = _hex_to_rgb(_resolve_brand(page_bg, brand_hex))
         try:
@@ -195,7 +196,7 @@ def _apply_colours(prs: Any, cover: Any, config: dict, brand_hex: str) -> None:
         except Exception as exc:
             logger.debug("Cover: slide background fill failed: %s", exc)
 
-    # Header band — recolour the first large rectangle we can find near the top.
+    header_fill = config.get("header_fill")
     if header_fill:
         rgb = _hex_to_rgb(_resolve_brand(header_fill, brand_hex))
         header_shape = _find_header_band(cover, prs)
@@ -203,7 +204,6 @@ def _apply_colours(prs: Any, cover: Any, config: dict, brand_hex: str) -> None:
             try:
                 header_shape.fill.solid()
                 header_shape.fill.fore_color.rgb = RGBColor(*rgb)
-                # Remove any outline that fought with the new fill.
                 try:
                     header_shape.line.fill.background()
                 except Exception:
@@ -214,9 +214,10 @@ def _apply_colours(prs: Any, cover: Any, config: dict, brand_hex: str) -> None:
 
 def _find_header_band(cover: Any, prs: Any) -> Optional[Any]:
     """
-    Heuristic: find the topmost shape that spans at least 60% of slide
-    width and sits in the top third. This is the header band across all
-    six visual templates.
+    Find the header band shape: topmost non-picture shape that spans at
+    least 60% of slide width and sits in the top third. Present in every
+    visual template's cover. NEVER returns a text-bearing shape — those
+    are title boxes, not the coloured header band.
     """
     slide_w = prs.slide_width
     slide_h = prs.slide_height
@@ -225,193 +226,254 @@ def _find_header_band(cover: Any, prs: Any) -> Optional[Any]:
 
     candidates = []
     for shape in cover.shapes:
-        # Skip picture shapes — we don't want to nuke the hero image.
         if shape.shape_type == 13:  # MSO_SHAPE_TYPE.PICTURE
             continue
+        # Skip shapes with text — they're title/subtitle boxes, not a band.
+        if shape.has_text_frame and (shape.text_frame.text or "").strip():
+            continue
         try:
-            if shape.width and shape.width >= min_w and shape.top is not None and shape.top <= top_cap:
+            w = int(shape.width or 0)
+            t = int(shape.top or 0)
+            if w >= min_w and t <= top_cap:
                 candidates.append(shape)
         except Exception:
             continue
     if not candidates:
         return None
-    # Pick the topmost (smallest `top`). Ties broken by largest width.
     candidates.sort(key=lambda s: (int(s.top or 0), -int(s.width or 0)))
     return candidates[0]
 
 
 # ---------------------------------------------------------------------------
-# Step 2 — hero image
+# Step 2 — hero image (z-ordered at back, 40% dark overlay above it)
 # ---------------------------------------------------------------------------
 
 
-def _insert_hero_image(prs: Any, cover: Any, image_url: str, config: dict) -> None:
+def _insert_hero_image(prs: Any, cover: Any, image_url: str) -> None:
     """
-    Insert a full-bleed hero image behind all other shapes on the cover,
-    optionally overlaid with a semi-dark rectangle for text legibility.
+    Insert a hero image full-bleed behind all existing shapes + a 40%
+    dark overlay between the image and the text shapes.
+
+    Uses robust z-order manipulation: finds the end of the group-property
+    children (nvGrpSpPr, grpSpPr) and inserts the pic + overlay there, so
+    they render behind every original template shape regardless of how
+    many group-property nodes the template has.
     """
+    from pptx.dml.color import RGBColor  # noqa: PLC0415
+    from pptx.util import Emu            # noqa: PLC0415
+
     img_bytes = _download_image(image_url)
     if not img_bytes:
+        logger.debug("Cover preset: hero image could not be downloaded")
         return
 
     pic = cover.shapes.add_picture(
-        io.BytesIO(img_bytes),
-        0, 0,
-        width=prs.slide_width,
-        height=prs.slide_height,
+        io.BytesIO(img_bytes), 0, 0,
+        width=prs.slide_width, height=prs.slide_height,
     )
-    # Send picture to the back of z-order.
-    _send_to_back(cover, pic)
 
-    # Optional dark overlay for text contrast.
-    overlay_hex = config.get("overlay_fill")
-    if overlay_hex:
-        from pptx.dml.color import RGBColor  # noqa: PLC0415
-        from pptx.util import Emu           # noqa: PLC0415
+    # Overlay rectangle (black, 40% opacity) above the image but below text.
+    overlay = cover.shapes.add_shape(
+        1,  # MSO_SHAPE.RECTANGLE
+        Emu(0), Emu(0),
+        prs.slide_width, prs.slide_height,
+    )
+    try:
+        overlay.fill.solid()
+        overlay.fill.fore_color.rgb = RGBColor(0, 0, 0)
+        _set_shape_fill_alpha(overlay, 40)
+        overlay.line.fill.background()
+    except Exception as exc:
+        logger.debug("Cover: overlay fill failed: %s", exc)
 
-        rect = cover.shapes.add_shape(
-            1,  # MSO_SHAPE.RECTANGLE
-            Emu(0), Emu(0),
-            prs.slide_width, prs.slide_height,
-        )
-        try:
-            rect.fill.solid()
-            rect.fill.fore_color.rgb = RGBColor(*_hex_to_rgb(overlay_hex))
-            # ~55% opacity via alpha override on the solidFill's <a:srgbClr>.
-            _set_shape_fill_alpha(rect, 55)
-            rect.line.fill.background()
-        except Exception as exc:
-            logger.debug("Cover: overlay fill failed: %s", exc)
-        # Put the overlay between hero image and text. Hero is at the back;
-        # overlay sits above it but below text shapes already in the deck.
-        _move_shape_after(cover, rect, pic)
+    # Z-order: pic must render BEHIND everything (including overlay); overlay
+    # must render above pic but BELOW the text shapes. We do this by moving
+    # both newly-added elements to the very start of spTree (right after
+    # group-property children), pic first, then overlay.
+    _reorder_to_back(cover, pic, overlay)
 
 
-# ---------------------------------------------------------------------------
-# Step 3 — text overrides
-# ---------------------------------------------------------------------------
-
-
-_PLACEHOLDER_PATTERNS = [
-    "{{report_title}}",
-    "{{client_name}}",
-    "performance report",
-    "monthly performance",
-]
-
-
-def _apply_text_overrides(
-    cover: Any,
-    headline: Optional[str],
-    subtitle: Optional[str],
-    config: dict,
-) -> None:
+def _reorder_to_back(slide: Any, pic_shape: Any, overlay_shape: Any) -> None:
     """
-    Replace the text on the cover's title + subtitle shapes.
-
-    Heuristic for finding the title shape: largest text-bearing shape on
-    the slide (by area) whose runs include a sizeable font. Subtitle is
-    the next-largest text shape. Colour + optional font-size limits come
-    from the preset config.
+    Move `pic_shape` and `overlay_shape` to the start of spTree (right
+    after group-property children), with pic BEFORE overlay. Net effect:
+    pic is the deepest-back visible shape, overlay sits just above it,
+    and all other template shapes remain on top.
     """
-    from pptx.dml.color import RGBColor  # noqa: PLC0415
-    from pptx.util import Pt             # noqa: PLC0415
-
-    text_shapes: list[tuple[int, Any]] = []
-    for shape in cover.shapes:
-        if not shape.has_text_frame:
-            continue
-        # Skip logo placeholder shapes — _embed_logos already handles these.
-        txt = (shape.text_frame.text or "").strip().lower()
-        if "agency_logo" in txt or "client_logo" in txt:
-            continue
-        try:
-            area = int(shape.width or 0) * int(shape.height or 0)
-        except Exception:
-            area = 0
-        text_shapes.append((area, shape))
-
-    # Sort largest → smallest.
-    text_shapes.sort(key=lambda t: -t[0])
-
-    headline_color = _hex_to_rgb(config.get("headline_color") or "FFFFFF")
-    subtitle_color = _hex_to_rgb(config.get("subtitle_color") or "E2E8F0")
-    title_pt       = config.get("title_font_pt")
-
-    if headline and text_shapes:
-        _, shape = text_shapes[0]
-        _set_text(shape, headline, color_rgb=headline_color,
-                  font_pt=title_pt)
-    if subtitle and len(text_shapes) >= 2:
-        _, shape = text_shapes[1]
-        _set_text(shape, subtitle, color_rgb=subtitle_color, font_pt=None)
-
-
-def _set_text(shape: Any, text: str, *, color_rgb: tuple[int, int, int],
-              font_pt: Optional[int]) -> None:
-    from pptx.dml.color import RGBColor  # noqa: PLC0415
-    from pptx.util import Pt             # noqa: PLC0415
-
-    tf = shape.text_frame
-    # Clear everything after paragraph 0 (we overwrite p0).
-    while len(tf.paragraphs) > 1:
-        p = tf.paragraphs[-1]._p
-        p.getparent().remove(p)
-    p0 = tf.paragraphs[0]
-    # Remove existing runs so we can cleanly set our text.
-    for r in list(p0.runs):
-        r._r.getparent().remove(r._r)
-    run = p0.add_run()
-    run.text = text
-    run.font.color.rgb = RGBColor(*color_rgb)
-    if font_pt:
-        run.font.size = Pt(font_pt)
-
-
-# ---------------------------------------------------------------------------
-# python-pptx z-order + alpha helpers
-# ---------------------------------------------------------------------------
-
-
-def _send_to_back(slide: Any, shape: Any) -> None:
-    """Move a shape to the first position in the slide's spTree."""
     sp_tree = slide.shapes._spTree
-    el = shape._element
-    sp_tree.remove(el)
-    # Insert after the mandatory <p:nvGrpSpPr> + <p:grpSpPr> children.
-    sp_tree.insert(2, el)
+    pic_el = pic_shape._element
+    ovr_el = overlay_shape._element
 
+    # Remove both from wherever they currently sit.
+    for el in (pic_el, ovr_el):
+        if el.getparent() is sp_tree:
+            sp_tree.remove(el)
 
-def _move_shape_after(slide: Any, shape: Any, anchor: Any) -> None:
-    """Move `shape` to sit immediately after `anchor` in the z-order."""
-    sp_tree = slide.shapes._spTree
-    sp_tree.remove(shape._element)
-    # Insert after anchor element.
-    idx = list(sp_tree).index(anchor._element)
-    sp_tree.insert(idx + 1, shape._element)
+    # Find the first index after the last group-property child.
+    insert_at = 0
+    for i, child in enumerate(sp_tree):
+        tag = etree.QName(child).localname
+        if tag in ("nvGrpSpPr", "grpSpPr"):
+            insert_at = i + 1
+        else:
+            break
+
+    sp_tree.insert(insert_at,     pic_el)
+    sp_tree.insert(insert_at + 1, ovr_el)
 
 
 def _set_shape_fill_alpha(shape: Any, alpha_percent: int) -> None:
     """
-    Apply alpha to a solid-fill shape. python-pptx doesn't expose this
-    directly — patch the underlying XML.
+    Apply alpha (0-100) to a solid-fill shape. python-pptx doesn't expose
+    this on FillFormat; we patch the <a:srgbClr> XML directly.
     """
-    from lxml import etree  # noqa: PLC0415
-
     spPr = shape.fill._xPr
     nsmap = {"a": "http://schemas.openxmlformats.org/drawingml/2006/main"}
-    srgb_clr = spPr.find(".//a:solidFill/a:srgbClr", nsmap)
-    if srgb_clr is None:
+    srgb = spPr.find(".//a:solidFill/a:srgbClr", nsmap)
+    if srgb is None:
         return
-    # Remove any existing alpha child.
-    for child in srgb_clr.findall("a:alpha", nsmap):
-        srgb_clr.remove(child)
+    for child in srgb.findall("a:alpha", nsmap):
+        srgb.remove(child)
     alpha = etree.SubElement(
-        srgb_clr,
+        srgb,
         "{http://schemas.openxmlformats.org/drawingml/2006/main}alpha",
     )
-    # PowerPoint alpha is expressed in 1/100000ths.
     alpha.set("val", str(max(0, min(100, alpha_percent)) * 1000))
+
+
+# ---------------------------------------------------------------------------
+# Step 3 — text overrides (run BEFORE generator's replacement pass)
+# ---------------------------------------------------------------------------
+
+
+def _substitute_cover_text(
+    cover: Any,
+    *,
+    headline: Optional[str],
+    subtitle: Optional[str],
+) -> None:
+    """
+    Replace {{client_name}} with `headline` and {{report_period}} with
+    `subtitle` on the cover slide only. Token-level replacement preserves
+    the run's formatting (font, size, alignment). Subsequent generator
+    passes will see NO {{client_name}} token on slide 0, so the cover
+    shows the override; on other slides the token survives and gets
+    substituted normally with the real client name.
+
+    If headline/subtitle are None, tokens are left intact for the normal
+    substitution to handle.
+    """
+    if not headline and not subtitle:
+        return
+
+    for shape in cover.shapes:
+        if not shape.has_text_frame:
+            continue
+        for para in shape.text_frame.paragraphs:
+            for run in para.runs:
+                txt = run.text or ""
+                if headline:
+                    for token in _HEADLINE_PLACEHOLDERS:
+                        if token in txt:
+                            run.text = txt.replace(token, headline)
+                            txt = run.text or ""
+                if subtitle:
+                    for token in _SUBTITLE_PLACEHOLDERS:
+                        if token in txt:
+                            run.text = txt.replace(token, subtitle)
+                            txt = run.text or ""
+
+
+def _recolour_cover_text(
+    cover: Any,
+    *,
+    headline_hex: Optional[str],
+    subtitle_hex: Optional[str],
+) -> None:
+    """
+    Walk the cover's text frames and recolour runs containing the known
+    placeholder tokens. Runs are recoloured IN PLACE — no new shapes, no
+    text rewriting. Because colouring is applied before the generator's
+    text-substitution pass, the colour survives when the token is
+    replaced with the real value.
+
+    Heuristic:
+      • runs containing {{client_name}} / {{report_type}} → headline colour
+      • runs containing {{report_period}} / {{report_date}} / {{agency_name}}
+        / {{agency_email}} → subtitle colour
+      • runs that have ALREADY been substituted (custom headline present)
+        are matched by the override text instead, so the colour still
+        applies.
+    """
+    if not headline_hex and not subtitle_hex:
+        return
+
+    from pptx.dml.color import RGBColor  # noqa: PLC0415
+
+    head_rgb = _hex_to_rgb(headline_hex) if headline_hex else None
+    sub_rgb  = _hex_to_rgb(subtitle_hex) if subtitle_hex else None
+
+    for shape in cover.shapes:
+        if not shape.has_text_frame:
+            continue
+        frame_text = (shape.text_frame.text or "")
+        if not frame_text.strip():
+            continue
+        # Skip logo placeholders handled by _embed_logos.
+        if "agency_logo" in frame_text.lower() or "client_logo" in frame_text.lower():
+            continue
+        # Determine which colour applies based on the tokens present.
+        target_rgb = None
+        if head_rgb and any(t in frame_text for t in _HEADLINE_PLACEHOLDERS):
+            target_rgb = head_rgb
+        elif sub_rgb and (
+            any(t in frame_text for t in _SUBTITLE_PLACEHOLDERS) or
+            any(t in frame_text for t in _AGENCY_TEXT_PLACEHOLDERS)
+        ):
+            target_rgb = sub_rgb
+        elif head_rgb:
+            # Fallback: any remaining cover text gets the headline colour so
+            # titles/subheadings stay readable against the new background.
+            target_rgb = head_rgb
+
+        if target_rgb is None:
+            continue
+
+        for para in shape.text_frame.paragraphs:
+            for run in para.runs:
+                try:
+                    run.font.color.rgb = RGBColor(*target_rgb)
+                except Exception:
+                    continue
+
+
+# ---------------------------------------------------------------------------
+# Step 4 — accent bar (optional)
+# ---------------------------------------------------------------------------
+
+
+def _draw_accent_bar(prs: Any, cover: Any, accent_hex: str) -> None:
+    """
+    Draw a thin horizontal accent bar at ~33% of slide height (bottom of
+    the header band). Exists only when the user picked an accent colour;
+    kept intentionally minimal so it doesn't collide with the template's
+    native geometry.
+    """
+    from pptx.dml.color import RGBColor  # noqa: PLC0415
+    from pptx.util import Emu            # noqa: PLC0415
+
+    rgb = _hex_to_rgb(accent_hex)
+    slide_w = prs.slide_width
+    slide_h = prs.slide_height
+    bar_h   = Emu(54_000)   # ~0.06"
+    bar_top = int(slide_h * 0.33) - int(bar_h)
+    bar     = cover.shapes.add_shape(1, Emu(0), Emu(bar_top), slide_w, bar_h)
+    try:
+        bar.fill.solid()
+        bar.fill.fore_color.rgb = RGBColor(*rgb)
+        bar.line.fill.background()
+    except Exception as exc:
+        logger.debug("Cover: accent bar fill failed: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -430,16 +492,13 @@ def _normalise_hex(value: Optional[str]) -> Optional[str]:
     return None
 
 
-def _hex_to_rgb(hex_str: str) -> tuple[int, int, int]:
+def _hex_to_rgb(hex_str: Optional[str]) -> tuple[int, int, int]:
     h = _normalise_hex(hex_str) or "4338CA"
     return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
 
 
 def _resolve_brand(value: str, brand_hex: str) -> str:
-    """Translate the special sentinel 'brand' to the actual brand hex."""
-    if value == "brand":
-        return brand_hex
-    return value
+    return brand_hex if value == "brand" else value
 
 
 def _download_image(url: str, max_bytes: int = 5 * 1024 * 1024) -> Optional[bytes]:

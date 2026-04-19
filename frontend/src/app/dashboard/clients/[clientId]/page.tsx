@@ -25,7 +25,7 @@ import IntegrationsTab  from '@/components/clients/tabs/IntegrationsTab'
 import ReportsTab       from '@/components/clients/tabs/ReportsTab'
 import SchedulesTab     from '@/components/clients/tabs/SchedulesTab'
 import SettingsTab      from '@/components/clients/tabs/SettingsTab'
-import CoverPageTab     from '@/components/clients/tabs/CoverPageTab'
+import ReportCustomizationTab from '@/components/clients/tabs/ReportCustomizationTab'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -33,15 +33,15 @@ interface Props {
   params: { clientId: string }
 }
 
-type TabId = 'overview' | 'integrations' | 'reports' | 'schedules' | 'cover' | 'settings'
+type TabId = 'overview' | 'integrations' | 'reports' | 'schedules' | 'customization' | 'settings'
 
 const TABS: { id: TabId; label: string; icon: React.FC<{ className?: string }> }[] = [
-  { id: 'overview',      label: 'Overview',      icon: LayoutDashboard },
-  { id: 'integrations',  label: 'Integrations',  icon: Link2 },
-  { id: 'reports',       label: 'Reports',       icon: FileText },
-  { id: 'schedules',     label: 'Schedules',     icon: Clock },
-  { id: 'cover',         label: 'Cover page',    icon: ImageIcon },
-  { id: 'settings',      label: 'Settings',      icon: Settings },
+  { id: 'overview',      label: 'Overview',              icon: LayoutDashboard },
+  { id: 'integrations',  label: 'Integrations',          icon: Link2 },
+  { id: 'reports',       label: 'Reports',               icon: FileText },
+  { id: 'schedules',     label: 'Schedules',             icon: Clock },
+  { id: 'customization', label: 'Report customisation', icon: ImageIcon },
+  { id: 'settings',      label: 'Settings',              icon: Settings },
 ]
 
 // ── Helper ────────────────────────────────────────────────────────────────────
@@ -517,8 +517,8 @@ export default function ClientDetailPage({ params }: Props) {
         />
       )}
 
-      {activeTab === 'cover' && (
-        <CoverPageTab
+      {activeTab === 'customization' && (
+        <ReportCustomizationTab
           client={client}
           onClientUpdate={(updated) => {
             setClient(updated)

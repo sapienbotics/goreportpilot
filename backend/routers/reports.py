@@ -140,6 +140,13 @@ async def preview_cover(
     subtitle        = body.subtitle        if body.subtitle        is not None else client.get("cover_subtitle")
     hero_image_url  = body.hero_image_url  if body.hero_image_url  is not None else client.get("cover_hero_image_url")
     visual_template = body.visual_template or "modern_clean"
+    # Phase 3 fix — optional in-request overrides for live-preview UX.
+    primary_color   = body.primary_color   if body.primary_color   is not None else client.get("cover_brand_primary_color")
+    accent_color    = body.accent_color    if body.accent_color    is not None else client.get("cover_brand_accent_color")
+    agency_pos      = body.agency_logo_position or client.get("cover_agency_logo_position") or "default"
+    agency_sz       = body.agency_logo_size     or client.get("cover_agency_logo_size")     or "default"
+    client_pos      = body.client_logo_position or client.get("cover_client_logo_position") or "default"
+    client_sz       = body.client_logo_size     or client.get("cover_client_logo_size")     or "default"
 
     # Fetch agency branding for accent colour + logo.
     profile_result = (
@@ -151,21 +158,30 @@ async def preview_cover(
     )
     _profile = profile_result.data or {}
     branding = {
-        "agency_name":      (_profile.get("agency_name") or "Your Agency").strip() or "Your Agency",
-        "agency_logo_url":  _profile.get("agency_logo_url") or "",
-        "brand_color":      _profile.get("brand_color") or "#4338CA",
-        "client_logo_url":  client.get("logo_url") or "",
-        "powered_by_badge": False,
+        "agency_name":          (_profile.get("agency_name") or "Your Agency").strip() or "Your Agency",
+        "agency_logo_url":      _profile.get("agency_logo_url") or "",
+        # Per-client primary overrides the agency default.
+        "brand_color":          primary_color or _profile.get("brand_color") or "#4338CA",
+        "accent_color":         accent_color or "",
+        "agency_logo_position": agency_pos,
+        "agency_logo_size":     agency_sz,
+        "client_logo_position": client_pos,
+        "client_logo_size":     client_sz,
+        "client_logo_url":      client.get("logo_url") or "",
+        "powered_by_badge":     False,
     }
 
     # Build a single-slide PPTX: load the visual template, delete every
-    # slide except slide[0], apply logos + preset.
+    # slide except slide[0], apply preset + logos, then SUBSTITUTE the
+    # remaining placeholders with sample values so the preview doesn't show
+    # raw {{client_name}} / {{report_period}} tokens to the user.
     def _render_preview() -> bytes:
         import io as _io  # noqa: PLC0415
         from pptx import Presentation  # noqa: PLC0415
         from services.report_generator import (  # noqa: PLC0415
             VISUAL_TEMPLATES,
             _embed_logos,
+            _replace_placeholders_in_slide,
         )
         from services.cover_presets import apply_cover_preset  # noqa: PLC0415
 
@@ -178,8 +194,8 @@ async def preview_cover(
             prs.part.drop_rel(rId)
             del prs.slides._sldIdLst[idx]
 
-        # Apply logos + preset.
-        _embed_logos(prs, branding)
+        # 1) Cover preset runs FIRST — relies on placeholder tokens still
+        #    being intact to identify shapes by role.
         apply_cover_preset(
             prs,
             preset=preset,
@@ -187,7 +203,31 @@ async def preview_cover(
             subtitle=subtitle,
             hero_image_url=hero_image_url,
             brand_color=branding["brand_color"],
+            accent_color=branding["accent_color"] or None,
         )
+
+        # 2) Substitute any remaining placeholder tokens with real / sample
+        #    values so the downloaded PPTX never shows {{...}} to the user.
+        #    Bug 3: previously the preview skipped this pass, leaving raw
+        #    tokens visible in the downloaded file.
+        import datetime as _dt  # noqa: PLC0415
+        today = _dt.date.today()
+        sample = {
+            "{{client_name}}":   client.get("name") or "Acme Corp",
+            "{{report_type}}":   "Performance Report",
+            "{{report_period}}": today.strftime("%B %Y"),
+            "{{report_date}}":   today.strftime("%d %B %Y"),
+            "{{agency_name}}":   branding["agency_name"],
+            "{{agency_email}}":  _profile.get("agency_email") or "",
+            "{{agency_logo}}":   "",
+            "{{client_logo}}":   "",
+            "{{footer_text}}":   f"Prepared by {branding['agency_name']}",
+        }
+        for slide in prs.slides:
+            _replace_placeholders_in_slide(slide, sample)
+
+        # 3) Logos LAST so any preset colour changes don't clobber them.
+        _embed_logos(prs, branding)
 
         buf = _io.BytesIO()
         prs.save(buf)
@@ -632,13 +672,25 @@ async def _generate_report_internal(
         "agency_name": branding["agency_name"],
     }
 
-    # Cover-page customisation (Phase 3). Safe to omit — generate_pptx_report
-    # skips the preset step when cover_customization is None or preset='default'.
+    # Cover / report-branding customisation (Phase 3 + fix).
+    # Per-client overrides (brand colour, accent, logo placement) take
+    # precedence over the agency profile defaults. Overriding brand_color
+    # here also drives the chart palette via generate_all_charts below.
+    _client_primary = client.get("cover_brand_primary_color")
+    if _client_primary:
+        branding["brand_color"] = _client_primary
+    branding["accent_color"]           = client.get("cover_brand_accent_color") or ""
+    branding["agency_logo_position"]   = client.get("cover_agency_logo_position") or "default"
+    branding["agency_logo_size"]       = client.get("cover_agency_logo_size")     or "default"
+    branding["client_logo_position"]   = client.get("cover_client_logo_position") or "default"
+    branding["client_logo_size"]       = client.get("cover_client_logo_size")     or "default"
+
     cover_customization = {
         "preset":         client.get("cover_design_preset") or "default",
         "headline":       client.get("cover_headline"),
         "subtitle":       client.get("cover_subtitle"),
         "hero_image_url": client.get("cover_hero_image_url"),
+        "accent_color":   client.get("cover_brand_accent_color"),
     }
 
     # 6 — Build report files (sync, run in thread pool)
@@ -1684,13 +1736,24 @@ async def regenerate_report(
 
     client_info = {"name": client["name"], "agency_name": branding["agency_name"]}
 
-    # Cover-page customisation (Phase 3). Picked up from the current
-    # client row so regenerations always reflect the latest preset choice.
+    # Cover / report-branding customisation (Phase 3 + fix). Picked up from
+    # the current client row so regenerations always reflect the latest
+    # preset choice + per-client brand overrides.
+    _client_primary = client.get("cover_brand_primary_color")
+    if _client_primary:
+        branding["brand_color"] = _client_primary
+    branding["accent_color"]          = client.get("cover_brand_accent_color") or ""
+    branding["agency_logo_position"]  = client.get("cover_agency_logo_position") or "default"
+    branding["agency_logo_size"]      = client.get("cover_agency_logo_size")     or "default"
+    branding["client_logo_position"]  = client.get("cover_client_logo_position") or "default"
+    branding["client_logo_size"]      = client.get("cover_client_logo_size")     or "default"
+
     cover_customization = {
         "preset":         client.get("cover_design_preset") or "default",
         "headline":       client.get("cover_headline"),
         "subtitle":       client.get("cover_subtitle"),
         "hero_image_url": client.get("cover_hero_image_url"),
+        "accent_color":   client.get("cover_brand_accent_color"),
     }
 
     # 6 — PPTX + PDF
