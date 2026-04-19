@@ -94,25 +94,43 @@ export default function IntegrationsPage() {
   const [disconnecting,        setDisconnecting]        = useState<Record<string, boolean>>({})
   const [highlightedPlatform,  setHighlightedPlatform]  = useState<string | null>(null)
 
-  // Load clients on mount
+  // Mount — load clients once. Deep-link selection is handled in the
+  // SEPARATE effect below so it also fires when the URL changes while the
+  // user is already on this page (the mount effect only runs once).
   useEffect(() => {
     clientsApi.list()
       .then(({ clients: data }) => {
         setClients(data)
-        // Deep-link takes priority: if the URL points at a specific client,
-        // honour it (assuming the id matches a client the user owns).
-        if (targetClientParam && data.some((c) => c.id === targetClientParam)) {
-          setSelectedClientId(targetClientParam)
-        } else if (data.length === 1) {
+        // Only auto-select when there's no deep-link target. Deep-link
+        // selection is deferred to the reactive effect so URL changes on
+        // an already-mounted page are honoured.
+        if (!targetClientParam && data.length === 1) {
           setSelectedClientId(data[0].id)
         }
       })
       .catch(() => {/* non-fatal */})
       .finally(() => setClientsLoading(false))
-    // Only on mount — subsequent ?client changes (within the page) are driven
-    // by the user's explicit dropdown interaction.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Deep-link client auto-selection. Fires on URL change OR on clients-list
+  // load, whichever arrives last. Intentionally excludes selectedClientId
+  // from deps — we don't want to override a manual dropdown choice on every
+  // re-render.
+  useEffect(() => {
+    if (!targetClientParam) return
+    if (!clients.length) return
+    if (!clients.some((c) => c.id === targetClientParam)) return
+    // eslint-disable-next-line no-console
+    console.debug(
+      '[integrations] deep-link: auto-selecting client',
+      targetClientParam,
+      'currently:',
+      selectedClientId,
+    )
+    setSelectedClientId(targetClientParam)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetClientParam, clients])
 
   // Load connections whenever selected client changes
   const loadConnections = useCallback(async (clientId: string) => {
@@ -133,19 +151,35 @@ export default function IntegrationsPage() {
   }, [selectedClientId, loadConnections])
 
   // After deep-link client selection + connections finish loading, scroll the
-  // target platform card into view and briefly highlight it. Fires once per
-  // ?platform= query value; re-navigating with a fresh query re-triggers.
+  // target platform card into view and briefly highlight it. Fires any time
+  // the query params change, the client gets selected, or connections load.
   useEffect(() => {
     if (!targetPlatformParam) return
     if (connectionsLoading) return
     if (selectedClientId !== targetClientParam) return
 
-    const el = document.getElementById(`platform-card-${targetPlatformParam}`)
-    if (el) {
+    const elementId = `platform-card-${targetPlatformParam}`
+    const el = document.getElementById(elementId)
+    // eslint-disable-next-line no-console
+    console.debug('[integrations] deep-link scroll effect', {
+      targetPlatform: targetPlatformParam,
+      targetClient: targetClientParam,
+      selectedClient: selectedClientId,
+      connectionsLoading,
+      elementId,
+      elFound: !!el,
+    })
+
+    if (!el) return
+    // Defer one frame so the scroll target reflects the latest layout.
+    const raf = requestAnimationFrame(() => {
       el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      setHighlightedPlatform(targetPlatformParam)
-      const t = setTimeout(() => setHighlightedPlatform(null), 2500)
-      return () => clearTimeout(t)
+    })
+    setHighlightedPlatform(targetPlatformParam)
+    const t = setTimeout(() => setHighlightedPlatform(null), 2500)
+    return () => {
+      cancelAnimationFrame(raf)
+      clearTimeout(t)
     }
   }, [targetPlatformParam, targetClientParam, selectedClientId, connectionsLoading, connections])
 
