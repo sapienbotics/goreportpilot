@@ -184,6 +184,16 @@ def apply_cover_preset(
             except Exception as exc:
                 logger.debug("Cover preset: headline size boost failed: %s", exc)
 
+        # Reposition title + subtitle into the vertical centre for EVERY
+        # non-default preset (including hero). Template positions sit in
+        # the lower half because they were designed for a chrome-heavy
+        # layout — without the chrome around them they look visually
+        # bottom-weighted. v9 fix.
+        try:
+            _reposition_cover_text_for_preset(prs, cover)
+        except Exception as exc:
+            logger.debug("Cover preset: reposition failed: %s", exc)
+
         try:
             _recolour_cover_text(
                 cover,
@@ -472,6 +482,59 @@ def _strip_cover_for_preset(prs: Any, cover: Any, *, keep_header_band: bool) -> 
         keep_header_band, deleted, len(kept), kept,
     )
     return deleted
+
+
+def _reposition_cover_text_for_preset(prs: Any, cover: Any) -> None:
+    """
+    Move the {{client_name}} and {{report_period}} shapes into the
+    vertical centre of the cover for preset-overridden layouts.
+
+    Why: the template positions those shapes for its NATIVE cover
+    (with PERFORMANCE REPORT label, Prepared-by line, report_type
+    placeholder, etc. surrounding them). Once we strip that chrome,
+    the title is left at its original y≈5.0" — dropping it into the
+    lower-middle of the slide visually, far below where a title should
+    sit on a clean preset cover.
+
+    Repositioning rule:
+      * {{client_name}} → top = 35% of slide height     (≈ 2.6" on 7.5")
+      * {{report_period}} → top = 50% of slide height    (≈ 3.8")
+      * Width extended to full slide − 1" margin, horizontally centred,
+        so custom headlines of any length stay inside the cover.
+
+    Footer agency_name is NOT moved — its template position is already
+    in the bottom band which works fine.
+    """
+    from pptx.util import Inches  # noqa: PLC0415
+
+    slide_w = int(prs.slide_width)
+    slide_h = int(prs.slide_height)
+    margin  = int(Inches(0.5))
+    target_w = slide_w - 2 * margin   # full width minus 0.5" margins each side
+
+    for shape in cover.shapes:
+        if not getattr(shape, "has_text_frame", False):
+            continue
+        text = shape.text_frame.text or ""
+        try:
+            if "{{client_name}}" in text:
+                shape.top   = int(slide_h * 0.35)
+                shape.left  = margin
+                shape.width = target_w
+                logger.info(
+                    "Reposition: client_name → top=%.2f\" left=%.2f\" w=%.2f\"",
+                    shape.top / 914400, shape.left / 914400, shape.width / 914400,
+                )
+            elif "{{report_period}}" in text:
+                shape.top   = int(slide_h * 0.50)
+                shape.left  = margin
+                shape.width = target_w
+                logger.info(
+                    "Reposition: report_period → top=%.2f\" left=%.2f\" w=%.2f\"",
+                    shape.top / 914400, shape.left / 914400, shape.width / 914400,
+                )
+        except Exception as exc:
+            logger.debug("Cover reposition failed for shape: %s", exc)
 
 
 def _ensure_hero_headline_size(cover: Any, min_pt: int = 36) -> None:
