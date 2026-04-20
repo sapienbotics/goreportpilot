@@ -46,3 +46,6 @@ supabase/.temp/
 # n8n
 n8n/data/
 demo_reports/
+
+# Railway / backend log dumps (local artifacts — never commit)
+logs.*.json

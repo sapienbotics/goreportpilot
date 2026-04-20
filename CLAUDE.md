@@ -1,447 +1,375 @@
-# CLAUDE.md — ReportPilot Project Instructions
+# CLAUDE.md — GoReportPilot Project Instructions
 
 ## Project Overview
-**ReportPilot** — AI-powered client reporting tool for digital marketing agencies and freelancers.
-Automates the workflow of pulling data from Google Analytics, Meta Ads, and Google Ads, generating AI-written narrative insights, and exporting branded reports as PowerPoint and PDF.
+**GoReportPilot** — AI-powered client reporting tool for digital marketing agencies and freelancers.
+Automates pulling data from GA4, Meta Ads, Google Ads, and Search Console, generating AI-written narrative insights via GPT-4.1, and exporting branded reports as PowerPoint and PDF.
 
-**Founder:** Saurabh Singh / SapienBotics (New Delhi, India)
-**Stage:** Building MVP (4-week timeline)
+**Founder:** Saurabh Singh / SapienBotics (Bareilly, Uttar Pradesh, India)
+**Legal Entity:** Sole proprietorship under Richa Singh, trade name Sahaj Bharat (GSTIN: 09CYVPS3328G1ZQ)
+**Brand:** SapienBotics (tech brand), GoReportPilot (product)
+**Stage:** LIVE in production, pre-launch (awaiting Google OAuth verification + Meta App Review)
+
+**Live URLs:**
+- Frontend: https://goreportpilot.com (Vercel)
+- Backend: https://goreportpilot-production.up.railway.app (Railway)
+- GitHub: sapienbotics/goreportpilot (auto-deploy on push to main)
+- Supabase: kbytzqviqzcvfdepjyby.supabase.co
 
 ---
 
-## Tech Stack (Exact Versions)
+## Tech Stack
 
 | Layer | Technology | Version | Purpose |
 |---|---|---|---|
-| Frontend | Next.js (App Router) | 14.x (latest stable) | Web app + marketing pages |
+| Frontend | Next.js (App Router) | 14.x | Web app + marketing pages |
 | Frontend Language | TypeScript | 5.x | Type safety |
 | CSS Framework | Tailwind CSS | 3.x | Styling |
 | UI Components | shadcn/ui | latest | Pre-built accessible components |
-| Backend API | Python + FastAPI | Python 3.11+, FastAPI 0.110+ | OAuth, data pulls, AI, report gen |
+| Backend API | Python + FastAPI | Python 3.12, FastAPI 0.110+ | OAuth, data pulls, AI, report gen |
 | Database | Supabase (PostgreSQL) | latest | Data storage, RLS, auth |
-| Auth | Supabase Auth | (included with Supabase) | User signup/login, Google SSO, JWT |
-| AI | OpenAI API (GPT-4o) | latest | Narrative commentary generation |
-| Report Gen | python-pptx 0.6.23+ | latest stable | PowerPoint generation |
-| Report Gen | LibreOffice (headless) | 7.x+ | Primary PDF generation — PPTX→PDF with full Unicode support |
-| Report Gen | ReportLab 4.x | latest stable | PDF fallback (Latin languages) when LibreOffice unavailable |
-| Charts | matplotlib 3.8+ | latest stable | Static chart images for reports |
-| Fonts | Google Noto fonts | latest | Full script coverage in PDFs (Devanagari, CJK, Arabic, etc.) |
-| Scheduling | FastAPI BackgroundTasks + APScheduler | latest | Scheduled report generation and delivery |
-| Email | Resend | latest | Branded report delivery emails |
+| Auth | Supabase Auth | (included) | Email/password signup/login, JWT |
+| AI | OpenAI GPT-4.1 | latest | Narrative commentary generation |
+| Report Gen | python-pptx 0.6.23+ | latest | PowerPoint generation |
+| Report Gen | LibreOffice (headless) | 7.x+ | PPTX→PDF conversion (all Unicode scripts) |
+| Report Gen | ReportLab 4.x | latest | PDF fallback (Latin languages only) |
+| Charts | matplotlib 3.8+ | latest | Static chart images for reports |
+| Fonts | Google Noto fonts | latest | Full script coverage (Devanagari, CJK, Arabic) |
+| Scheduling | APScheduler | latest | Background scheduled report generation |
+| Email | Resend | latest | Transactional email (reports@goreportpilot.com) |
+| Email (receiving) | Zoho Mail | free tier | support@, info@ aliases |
 | Frontend Hosting | Vercel | — | Next.js deployment |
-| Backend Hosting | Railway | — | FastAPI deployment |
-| File Storage | Supabase Storage | — | Generated PPT/PDF files |
-| Payments | Razorpay | latest API | Subscription billing (Stripe is invite-only in India) |
+| Backend Hosting | Railway | — | FastAPI + LibreOffice Docker |
+| File Storage | Supabase Storage | — | Logos bucket (public) |
+| Report Files | Local FS (Railway) | — | Ephemeral — regenerate on 410 |
+| Payments | Razorpay | latest | Subscription billing (12 plans, dual INR/USD) |
 | Token Encryption | cryptography (Python) | 42.x+ | AES-256-GCM for OAuth tokens |
+| Analytics | GA4 | G-GMTY15QRRZ | Cookie-consent gated |
+| DNS | Namecheap + Vercel | — | goreportpilot.com |
+| Rate Limiting | slowapi | latest | Key endpoint protection |
 
 ---
 
-## Project Directory Structure
+## Local Dev Environment
+
+- **OS:** Windows 11
+- **Project root:** `F:\Sapienbotics\ClaudeCode\reportpilot\`
+- **Python:** 3.12 (venv at `backend\venv\`)
+- **Node:** 20+
+- **LibreOffice:** `C:\Program Files\LibreOffice\program\soffice.exe`
+
+### Running Locally
+
+```bash
+# Backend
+cd backend && python -m uvicorn main:app --reload --port 8000
+
+# Frontend
+cd frontend && npm run dev
+```
+
+**Access:** http://localhost:3000
+
+---
+
+## Critical Rules — READ BEFORE EVERY PROMPT
+
+1. **NEVER modify .env or .env.local files** — Claude Code must not write to these
+2. **NEVER auto-start dev servers** — Saurabh starts them manually
+3. **ALWAYS run `cd frontend && npx tsc --noEmit` after frontend changes** — must pass with zero errors
+4. **Database changes run manually in Supabase SQL Editor** — never via Supabase CLI
+5. **Single source of truth for pricing:** Always import from `backend/services/plans.py` — never hardcode amounts
+6. **Systemic over narrow:** Fix all cases generically, not targeted patches for specific instances
+7. **Production = MVP:** No quality distinction — potential clients may evaluate at any time
+8. **Incremental safety:** When risk of breaking existing functionality, split into safe incremental steps
+9. **Git commit after every change set** with descriptive message
+
+---
+
+## Project Structure
 
 ```
 reportpilot/
-├── CLAUDE.md                    # THIS FILE — master instructions
-├── README.md                    # Public readme
-├── .env.example                 # Environment variable template
-├── .gitignore
-│
-├── frontend/                    # Next.js app
-│   ├── package.json
-│   ├── next.config.js
-│   ├── tsconfig.json
-│   ├── tailwind.config.js
-│   ├── postcss.config.js
-│   ├── public/
-│   │   └── images/
-│   ├── src/
-│   │   ├── app/                 # Next.js App Router pages
-│   │   │   ├── layout.tsx       # Root layout (fonts, metadata, providers)
-│   │   │   ├── page.tsx         # Landing page (marketing — public)
-│   │   │   ├── pricing/
-│   │   │   │   └── page.tsx
-│   │   │   ├── login/
-│   │   │   │   └── page.tsx
-│   │   │   ├── signup/
-│   │   │   │   └── page.tsx
-│   │   │   ├── dashboard/       # Authenticated app shell
-│   │   │   │   ├── layout.tsx   # Dashboard layout (sidebar + header)
-│   │   │   │   ├── page.tsx     # Dashboard home
-│   │   │   │   ├── clients/
-│   │   │   │   │   ├── page.tsx
-│   │   │   │   │   └── [clientId]/
-│   │   │   │   │       ├── page.tsx
-│   │   │   │   │       ├── reports/
-│   │   │   │   │       │   └── page.tsx
-│   │   │   │   │       └── connections/
-│   │   │   │   │           └── page.tsx
-│   │   │   │   ├── reports/
-│   │   │   │   │   ├── page.tsx
-│   │   │   │   │   └── [reportId]/
-│   │   │   │   │       ├── page.tsx
-│   │   │   │   │       └── deliver/
-│   │   │   │   │           └── page.tsx
-│   │   │   │   ├── integrations/
-│   │   │   │   │   └── page.tsx
-│   │   │   │   └── settings/
-│   │   │   │       └── page.tsx
-│   │   │   └── api/             # Next.js API routes (thin proxy/callbacks)
-│   │   │       └── auth/
-│   │   │           └── callback/
-│   │   │               ├── route.ts   # Supabase auth callback
-│   │   │               ├── google-analytics/
-│   │   │               │   └── route.ts
-│   │   │               └── meta-ads/
-│   │   │                   └── route.ts
-│   │   ├── components/
-│   │   │   ├── ui/              # shadcn/ui base components
-│   │   │   ├── dashboard/       # Dashboard widgets, stat cards
-│   │   │   ├── clients/         # Client cards, forms, detail views
-│   │   │   ├── reports/         # Report preview, editor, delivery
-│   │   │   └── layout/          # Sidebar, Header, Footer, Nav
-│   │   ├── lib/
-│   │   │   ├── supabase/
-│   │   │   │   ├── client.ts    # Browser Supabase client
-│   │   │   │   ├── server.ts    # Server-side Supabase client
-│   │   │   │   └── middleware.ts # Supabase auth helper for middleware
-│   │   │   ├── api.ts           # Axios/fetch wrapper for FastAPI backend
-│   │   │   └── utils.ts         # General helpers (formatDate, formatCurrency, etc.)
-│   │   ├── hooks/
-│   │   │   ├── useAuth.ts       # Auth state hook
-│   │   │   └── useClients.ts    # Client data hook (example)
-│   │   ├── types/
-│   │   │   └── index.ts         # Shared TypeScript interfaces
-│   │   └── styles/
-│   │       └── globals.css      # Tailwind directives + custom CSS vars
-│   └── middleware.ts            # Next.js middleware — protect /dashboard/*
+├── CLAUDE.md                              # THIS FILE
+├── frontend/
+│   ├── src/app/
+│   │   ├── layout.tsx                     # Root layout (fonts, metadata, Toaster, ProgressBar)
+│   │   ├── page.tsx                       # Landing page (hero, features, pricing, FAQ, CTA)
+│   │   ├── sitemap.ts                     # Dynamic sitemap
+│   │   ├── robots.ts                      # Robots.txt
+│   │   ├── login/page.tsx
+│   │   ├── signup/page.tsx
+│   │   ├── privacy/page.tsx
+│   │   ├── terms/page.tsx
+│   │   ├── contact/page.tsx
+│   │   ├── refund/page.tsx
+│   │   ├── shared/[hash]/page.tsx         # Public shared report viewer
+│   │   ├── api/auth/callback/
+│   │   │   ├── route.ts                   # Supabase auth callback
+│   │   │   ├── google-analytics/route.ts
+│   │   │   ├── google-ads/route.ts
+│   │   │   ├── meta-ads/route.ts
+│   │   │   └── search-console/route.ts
+│   │   ├── dashboard/
+│   │   │   ├── layout.tsx                 # Auth guard + DashboardShell + ProgressBar
+│   │   │   ├── page.tsx                   # Dashboard home (stats, onboarding checklist)
+│   │   │   ├── loading.tsx                # Loading spinner
+│   │   │   ├── clients/
+│   │   │   │   ├── page.tsx               # Client list
+│   │   │   │   ├── loading.tsx
+│   │   │   │   └── [clientId]/page.tsx    # Client detail (5 tabs: Overview, Integrations, Reports, Schedules, Settings)
+│   │   │   ├── reports/
+│   │   │   │   ├── page.tsx               # All reports list
+│   │   │   │   ├── loading.tsx
+│   │   │   │   └── [reportId]/page.tsx    # Report preview/edit/send/share/download
+│   │   │   ├── integrations/
+│   │   │   │   ├── page.tsx               # Integration hub
+│   │   │   │   ├── google-callback/page.tsx
+│   │   │   │   └── meta-callback/page.tsx
+│   │   │   ├── settings/page.tsx          # Settings (5 tabs: Account, Branding, AI, Email, Notifications)
+│   │   │   ├── settings/loading.tsx
+│   │   │   ├── billing/page.tsx           # Billing + Razorpay checkout
+│   │   │   └── billing/loading.tsx
+│   │   └── admin/
+│   │       ├── layout.tsx                 # Admin guard (profiles.is_admin)
+│   │       ├── page.tsx                   # Admin overview
+│   │       └── analytics/page.tsx         # Admin analytics dashboard
+│   ├── src/components/
+│   │   ├── ui/                            # shadcn/ui base components
+│   │   ├── dashboard/                     # Stat cards, activity feed, onboarding
+│   │   ├── clients/                       # Client cards, forms, tabs
+│   │   │   └── tabs/SchedulesTab.tsx      # Schedule management
+│   │   ├── reports/
+│   │   │   └── CSVUploadForReport.tsx     # CSV upload in report generation flow
+│   │   ├── billing/UpgradePrompt.tsx      # Reusable upgrade gate
+│   │   ├── landing/CookieConsent.tsx      # GDPR cookie banner
+│   │   ├── AnalyticsProvider.tsx          # GA4 gating on consent
+│   │   └── Logo.tsx, LogoIcon.tsx         # SVG logo components
+│   ├── src/lib/
+│   │   ├── api.ts                         # Axios wrapper for backend
+│   │   ├── detect-currency.ts             # Timezone-based INR/USD detection
+│   │   └── supabase/                      # Client + server Supabase helpers
+│   └── middleware.ts                      # Route protection
 │
 ├── backend/
-│   ├── requirements.txt
-│   ├── main.py                  # FastAPI app entry, CORS, router includes
-│   ├── config.py                # Pydantic Settings — loads .env
+│   ├── main.py                            # FastAPI app, CORS, router includes
+│   ├── config.py                          # Pydantic Settings (auto-derives redirect URIs from FRONTEND_URL)
+│   ├── Dockerfile                         # Python 3.12-slim + LibreOffice + Noto fonts
 │   ├── routers/
-│   │   ├── __init__.py
-│   │   ├── auth.py              # OAuth callback endpoints (GA4, Meta, Google Ads)
-│   │   ├── clients.py           # Client CRUD endpoints
-│   │   ├── connections.py       # Connection management endpoints
-│   │   ├── reports.py           # Report generation, list, detail
-│   │   ├── data_pull.py         # Manual data pull trigger endpoint
-│   │   └── webhooks.py          # Stripe + Resend webhooks
+│   │   ├── auth.py                        # OAuth flows (GA4, Meta, Google Ads, Search Console)
+│   │   ├── clients.py                     # Client CRUD
+│   │   ├── connections.py                 # Connection management
+│   │   ├── reports.py                     # Report generation, list, download, send, share, regenerate
+│   │   ├── admin.py                       # Admin endpoints
+│   │   ├── admin_analytics.py             # Admin analytics API
+│   │   └── webhooks.py                    # Razorpay webhooks
 │   ├── services/
-│   │   ├── __init__.py
-│   │   ├── google_analytics.py  # GA4 Data API client
-│   │   ├── meta_ads.py          # Meta Marketing API client
-│   │   ├── google_ads.py        # Google Ads API client (Phase 2)
-│   │   ├── ai_narrative.py      # OpenAI GPT-4o prompt engine
-│   │   ├── report_generator.py  # python-pptx + ReportLab orchestration
-│   │   ├── chart_generator.py   # matplotlib chart rendering to PNG
-│   │   ├── email_service.py     # Resend SDK wrapper
-│   │   └── encryption.py        # AES-256-GCM encrypt/decrypt for tokens
-│   ├── models/
-│   │   ├── __init__.py
-│   │   └── schemas.py           # Pydantic request/response models
-│   ├── utils/
-│   │   ├── __init__.py
-│   │   ├── token_manager.py     # Token refresh logic, health check
-│   │   └── data_parser.py       # Normalize GA4/Meta/Ads API responses
-│   └── templates/
-│       ├── report_default.py    # Default report template configuration
-│       └── email_templates/
-│           └── report_delivery.html
+│   │   ├── google_analytics.py            # GA4 Data API client (6 API calls)
+│   │   ├── meta_ads.py                    # Meta Marketing API client
+│   │   ├── google_ads.py                  # Google Ads API client (MCC: 815-247-5096)
+│   │   ├── search_console.py             # Search Console API client
+│   │   ├── ai_narrative.py                # GPT-4.1 prompt engine (4 tones, 13 languages)
+│   │   ├── report_generator.py            # python-pptx orchestration, PPTX→PDF
+│   │   ├── chart_generator.py             # matplotlib (19 chart types, 3 themes, 300 DPI)
+│   │   ├── slide_selector.py              # Smart slide selection + KPI scoring
+│   │   ├── csv_parser.py                  # Production-grade CSV parser
+│   │   ├── text_formatter.py              # Rich text parsing for custom sections
+│   │   ├── email_service.py               # Resend SDK wrapper
+│   │   ├── encryption.py                  # AES-256-GCM token encryption
+│   │   ├── plans.py                       # Pricing source of truth (3 plans × 2 currencies × 2 cycles)
+│   │   ├── scheduler.py                   # APScheduler for scheduled reports
+│   │   └── supabase_client.py             # Supabase admin client
+│   ├── middleware/
+│   │   ├── auth.py                        # JWT verification
+│   │   └── plan_enforcement.py            # Plan limit checks
+│   ├── templates/pptx/                    # 6 visual templates (19 slides each)
+│   │   ├── modern_clean.pptx
+│   │   ├── dark_executive.pptx
+│   │   ├── colorful_agency.pptx
+│   │   ├── bold_geometric.pptx
+│   │   ├── minimal_elegant.pptx
+│   │   └── gradient_modern.pptx
+│   └── scripts/                           # Audit and verification scripts
 │
-├── supabase/
-│   └── migrations/
-│       └── 001_initial_schema.sql
+├── supabase/migrations/                   # 001-012 all executed
 │
-├── n8n/
-│   └── workflows/
-│       ├── daily_data_pull.json
-│       ├── token_health_check.json
-│       ├── scheduled_report_delivery.json
-│       └── stripe_webhook_handler.json
-│
-├── docs/
-│   ├── reportpilot-deep-dive.md
-│   ├── reportpilot-feature-design-blueprint.md
-│   └── reportpilot-auth-integration-deepdive.md
-│
-└── scripts/
-    ├── setup_supabase.sh
-    └── seed_test_data.py
+└── docs/
+    ├── HANDOVER-APRIL-11-2026.md          # Comprehensive project state
+    ├── CLAUDE.md                          # THIS FILE
+    ├── MARKETING-VIDEO-PRODUCTION-GUIDE.md
+    ├── PRICING-STRATEGY-2026.md
+    ├── COMPETITOR-FEATURE-MATRIX-2026.md
+    └── DEPLOYMENT-GUIDE.md
 ```
 
 ---
 
-## How to Run Locally
+## Database Schema (12 Migrations)
 
-### Prerequisites
-- Node.js 20+ and npm
-- Python 3.11+
-- Git
-- A Supabase project (free tier)
-- n8n (optional for Phase 1 — needed in Phase 4)
+| Table | Purpose |
+|---|---|
+| profiles | User profiles (extends auth.users) — plan, agency branding, timezone |
+| clients | Client records — name, industry, logo, AI tone, language, report_config |
+| connections | OAuth connections — platform, encrypted tokens, account IDs |
+| reports | Generated reports — raw_data, ai_narrative, user_edits, metadata |
+| data_snapshots | Cached API data per report |
+| report_templates | Report section configuration |
+| subscriptions | Billing — plan, status, Razorpay IDs, trial management |
+| payment_history | Payment records |
+| shared_reports | Shareable report links with optional password/expiry |
+| report_views | View tracking for shared links |
+| scheduled_reports | Recurring report configuration |
+| admin_activity_log | Admin actions audit trail |
+| gdpr_requests | GDPR compliance requests |
 
-### Frontend (Next.js)
-```bash
-cd frontend
-npm install
-cp .env.local.example .env.local   # Fill in Supabase URL + anon key
-npm run dev                         # Runs on http://localhost:3000
-```
+RLS enabled on ALL tables. Users can only access their own data.
 
-### Backend (FastAPI)
-```bash
-cd backend
-python -m venv venv
-# Windows:
-venv\Scripts\activate
-# macOS/Linux:
-source venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env               # Fill in all secrets
-uvicorn main:app --reload --port 8000   # Runs on http://localhost:8000
-```
+---
 
-### Both Together (Development)
-- Frontend: http://localhost:3000
-- Backend: http://localhost:8000
-- Frontend calls backend via `NEXT_PUBLIC_API_URL=http://localhost:8000`
+## Pricing (source: backend/services/plans.py)
+
+| Plan | Monthly USD | Annual USD | Monthly INR | Annual INR | Client Limit |
+|---|---|---|---|---|---|
+| Starter | $19 | $15/mo | ₹999 | ₹799/mo | 5 |
+| Pro | $39 | $31/mo | ₹1,999 | ₹1,599/mo | 15 |
+| Agency | $69 | $55/mo | ₹3,499 | ₹2,799/mo | Unlimited |
+
+Currency auto-detected via timezone (Asia/Kolkata → INR, else USD). 12 Razorpay plans configured.
+Trial: 14 days, Pro-level access, 5-report limit, "Powered by GoReportPilot" badge.
+
+---
+
+## Feature Inventory (Complete)
+
+### Built & Shipped ✅
+- Auth: email/password, email confirmation, forgot password, account deletion, admin guard
+- Client CRUD with logo upload, AI tone, language (13), report_config
+- GA4 OAuth + real data pull (6 API calls)
+- Meta Ads OAuth + short→long-lived token
+- Google Ads OAuth + MCC support
+- Search Console OAuth
+- CSV upload (production-grade parser, 5 templates)
+- AI narrative via GPT-4.1 (4 tones, 13 languages, 6 sections)
+- PPTX generation: 6 visual templates, 19 chart types, smart slide selection
+- PDF via LibreOffice (all scripts) + ReportLab fallback (Latin only)
+- Report preview with inline editing, per-section regenerate
+- Send to client via email (Resend)
+- Share via public link (optional password + expiry + view tracking)
+- Scheduled reports (weekly/biweekly/monthly, timezone, auto-send)
+- White-label: agency logo, brand color, client logo, "Powered by" badge on Starter
+- Plan enforcement: feature gating, client limits, trial management
+- Razorpay billing: dual currency, checkout, webhooks, payment history
+- Admin dashboard: analytics, user management, GDPR
+- Landing page: hero, features (9 cards), pricing, FAQ (10 questions), SEO
+- Cookie consent + GA4 tracking
+- Navigation progress bar + loading skeletons
+- Rate limiting on public endpoints
+- Legal pages: privacy, terms, refund, contact
+
+### Pending
+- Google OAuth production verification (submitted, awaiting approval)
+- Meta App Review (submitted, review in progress ~April 18)
+- Multi-language slide titles/KPI labels/footer (currently English-only — narrative translated)
+- Annual pricing as default display on landing page
+- PPTX fixes: sparkline ordering, agency logo bounding box, traffic label capitalization
+- Demo video polish
+- Marketing outreach launch
+
+---
+
+## OAuth Integrations
+
+| Platform | Status | Scopes |
+|---|---|---|
+| GA4 | ✅ Production (pending verification) | analytics.readonly |
+| Meta Ads | ✅ Production (pending review) | ads_read, ads_management, business_management, pages_read_engagement, pages_show_list, public_profile |
+| Google Ads | ✅ Production | adwords scope + MCC (815-247-5096) |
+| Search Console | ✅ Production | webmasters.readonly |
+
+All tokens encrypted with AES-256-GCM. Redirect URIs auto-derived from FRONTEND_URL via config.py.
 
 ---
 
 ## Environment Variables
 
-### Frontend (`frontend/.env.local`)
+### Backend (.env)
 ```
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-NEXT_PUBLIC_API_URL=http://localhost:8000
-NEXT_PUBLIC_APP_URL=http://localhost:3000
+SUPABASE_URL, SUPABASE_SERVICE_KEY, SUPABASE_ANON_KEY
+OPENAI_API_KEY (GPT-4.1)
+TOKEN_ENCRYPTION_KEY (AES-256-GCM)
+GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
+META_APP_ID, META_APP_SECRET
+GOOGLE_ADS_DEVELOPER_TOKEN, GOOGLE_ADS_LOGIN_CUSTOMER_ID
+RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET
+RESEND_API_KEY
+FRONTEND_URL (https://goreportpilot.com)
+BACKEND_URL (https://goreportpilot-production.up.railway.app)
 ```
 
-### Backend (`backend/.env`)
+### Frontend (.env.local)
 ```
-# Supabase
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-
-# Google OAuth (GA4 + Google Ads)
-GOOGLE_CLIENT_ID=your-google-client-id
-GOOGLE_CLIENT_SECRET=your-google-client-secret
-GOOGLE_REDIRECT_URI=http://localhost:3000/api/auth/callback/google-analytics
-
-# Meta OAuth
-META_APP_ID=your-meta-app-id
-META_APP_SECRET=your-meta-app-secret
-META_REDIRECT_URI=http://localhost:3000/api/auth/callback/meta-ads
-
-# Google Ads
-GOOGLE_ADS_DEVELOPER_TOKEN=your-developer-token
-
-# OpenAI
-OPENAI_API_KEY=your-openai-api-key
-
-# Token Encryption
-TOKEN_ENCRYPTION_KEY=base64-encoded-32-byte-key
-
-# Stripe
-STRIPE_SECRET_KEY=your-stripe-secret-key
-STRIPE_WEBHOOK_SECRET=your-stripe-webhook-secret
-STRIPE_PRICE_STARTER=price_xxx
-STRIPE_PRICE_PRO=price_xxx
-STRIPE_PRICE_AGENCY=price_xxx
-
-# Resend
-RESEND_API_KEY=your-resend-api-key
-
-# App
-FRONTEND_URL=http://localhost:3000
-BACKEND_URL=http://localhost:8000
-ENVIRONMENT=development
+NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY
+NEXT_PUBLIC_API_URL, NEXT_PUBLIC_APP_URL
+NEXT_PUBLIC_GA_MEASUREMENT_ID=G-GMTY15QRRZ
 ```
 
 ---
 
-## Database (Supabase)
+## What NOT To Do
 
-The full schema is defined in `supabase/migrations/001_initial_schema.sql`.
-
-**7 core tables:** users (extends Supabase auth.users), clients, connections, data_snapshots, reports, report_templates, report_deliveries, scheduled_reports.
-
-**Row-Level Security (RLS):** MUST be enabled on every table from Day 1. Every table with user data has a policy: `auth.uid() = user_id` (or joined through clients table). See the migration file for exact policies.
-
-**Important:** Run migrations via Supabase Dashboard SQL editor or Supabase CLI. Never create tables manually through the Table Editor — always use SQL migrations for reproducibility.
-
----
-
-## Key Architectural Decisions
-
-### 1. Monorepo (frontend/ + backend/ in one repo)
-**Why:** Solo developer. Simplifies version control, deployment coordination, and shared types. No need for separate repos until team grows.
-
-### 2. Next.js App Router (not Pages Router)
-**Why:** App Router is the current standard. Server Components reduce client JS. Layouts enable shared dashboard shell. Route groups organize public vs authenticated pages.
-
-### 3. FastAPI backend (not Next.js API routes for everything)
-**Why:** The backend does heavy work — OAuth token exchange, API data pulls, AI calls, PPT/PDF generation. Python is the right language for python-pptx, ReportLab, matplotlib, and the Google/Meta SDKs. Next.js API routes are only used as thin callback proxies for OAuth redirects.
-
-### 4. Supabase (not Firebase, not raw PostgreSQL)
-**Why:** Gives us PostgreSQL + Auth + Storage + RLS + REST API in one hosted service. Free tier is generous enough for MVP. RLS is critical for multi-tenant data isolation.
-
-### 5. OAuth callbacks go through Next.js API routes, then forward to FastAPI
-**Why:** Google and Meta redirect to your app domain. The Next.js API route receives the callback, then forwards the auth code to FastAPI for token exchange. This avoids CORS issues and keeps the backend URL private.
-
-### 6. Token encryption at application level (AES-256-GCM)
-**Why:** Supabase encrypts at rest, but if someone accesses the Supabase dashboard or gets a DB dump, tokens would be readable. Application-level encryption means tokens are unreadable without the encryption key (stored as env var, never in DB).
-
-### 7. n8n for scheduling (not Celery or cron)
-**Why:** Founder is an n8n expert with years of experience. n8n provides visual workflow management, easy debugging, webhook triggers, and built-in retry logic. Self-hosted = free.
-
-### 8. shadcn/ui for UI components
-**Why:** Copy-paste components (not a dependency). Accessible, customizable, works perfectly with Tailwind. Avoids vendor lock-in.
+1. **DO NOT expose OAuth tokens to the frontend.** Tokens live in backend only.
+2. **DO NOT use `localStorage` for auth tokens.** Supabase handles via httpOnly cookies.
+3. **DO NOT skip Row-Level Security.** Every table with user data has RLS policies.
+4. **DO NOT confuse Google SSO with GA4 OAuth.** Separate flows, different scopes.
+5. **DO NOT use the `requests` library in FastAPI.** Use `httpx` with async.
+6. **DO NOT store encryption key in database.** Environment variable only.
+7. **DO NOT modify .env files via Claude Code.** Manual only.
+8. **DO NOT start dev servers automatically.** Saurabh starts manually.
+9. **DO NOT include `prompt=consent` only sometimes for Google OAuth.** Always include `prompt=consent&access_type=offline`.
+10. **DO NOT assume Meta tokens last forever.** ~60 days. Store `token_expires_at`.
+11. **DO NOT log OAuth tokens or encryption keys.** Log connection IDs and status only.
+12. **DO NOT import from relative paths in frontend.** Use `@/` alias.
+13. **DO NOT hardcode pricing.** Import from `backend/services/plans.py`.
+14. **DO NOT forget LibreOffice for PDF.** Primary path for all Unicode scripts. ReportLab is Latin-only fallback.
 
 ---
 
-## Coding Conventions
+## Development Workflow
 
-### Frontend (TypeScript + React)
-- **Language:** TypeScript everywhere. No `any` types unless absolutely unavoidable (comment why).
-- **Components:** Functional components only. Use React hooks.
-- **File naming:** `kebab-case` for files (`client-card.tsx`), `PascalCase` for component names (`ClientCard`).
-- **Page files:** Always `page.tsx` (Next.js convention).
-- **Imports:** Use `@/` path alias for `src/` directory (configured in tsconfig).
-- **State management:** React Context + hooks for global state (auth, user). No Redux. Use SWR or React Query for server state.
-- **Styling:** Tailwind utility classes. Use `cn()` helper (from shadcn/ui) for conditional classes. No CSS modules, no styled-components.
-- **Forms:** Use React Hook Form + Zod for validation.
-- **API calls:** Use a centralized `api.ts` client. Never call `fetch()` directly in components.
-
-### Backend (Python)
-- **Language:** Python 3.11+. Use type hints everywhere.
-- **Framework:** FastAPI with async endpoints where possible.
-- **File naming:** `snake_case` for all Python files.
-- **Models:** Pydantic v2 models for all request/response schemas.
-- **Config:** Use `pydantic-settings` for environment variable loading (config.py).
-- **Error handling:** Use FastAPI HTTPException with meaningful status codes and messages.
-- **Logging:** Use Python `logging` module. Log INFO for normal operations, WARNING for token issues, ERROR for failures. NEVER log tokens or secrets.
-- **Async:** Use `async/await` for I/O operations (API calls, DB queries). Use `httpx` for HTTP requests (not `requests` library — it's sync-only).
-- **Security:** All token operations go through `services/encryption.py`. No plaintext tokens anywhere.
-
-### General
-- **Git commits:** Commit after every working feature. Use conventional commit messages: `feat: add client CRUD`, `fix: handle empty GA4 response`, `chore: update env template`.
-- **No console.log in production code.** Use a proper logger.
-- **No hardcoded values.** All configuration through environment variables.
-- **No secrets in code.** Ever. Use .env files (gitignored) and environment variables.
+1. Saurabh describes requirements in Claude.ai chat
+2. Claude.ai writes detailed numbered prompts (PROMPT-N format)
+3. Saurabh pastes into Claude Code (Opus 4.6 for complex, Sonnet 4.6 for simple)
+4. Saurabh reports back with screenshots/terminal output
+5. Claude.ai diagnoses and writes fix prompts
+6. DB changes run manually in Supabase SQL Editor
+7. Always run `cd frontend && npx tsc --noEmit` after frontend changes
 
 ---
 
-## Design System (For UI Implementation)
+## Prompt History
 
-- **Primary color:** Deep Indigo `#4338CA` (Tailwind: `indigo-700`)
-- **Accent/Success:** Emerald `#059669` (Tailwind: `emerald-600`)
-- **Danger:** Rose `#E11D48` (Tailwind: `rose-600`)
-- **Warning:** Amber `#D97706` (Tailwind: `amber-600`)
-- **Background:** White `#FFFFFF` + Slate-50 `#F8FAFC` for sections
-- **Primary text:** Slate-900 `#0F172A`
-- **Secondary text:** Slate-500 `#64748B`
-- **Heading font:** Plus Jakarta Sans (Google Fonts)
-- **Body font:** Inter (Google Fonts)
-- **Border radius:** `rounded-lg` (8px) for cards, `rounded-md` (6px) for buttons/inputs
-- **Shadows:** `shadow-sm` for cards, `shadow-md` on hover
+Prompts 1-64: Core product build (March-April 2026)
+Prompt 65-69: Marketing video production
+Prompt 70: Trial watermark removal + navigation loading UX
+Prompt 71: Multi-language translation (pending)
+
+See `docs/HANDOVER-APRIL-11-2026.md` for detailed prompt-by-prompt history.
 
 ---
 
-## What NOT To Do (Critical Pitfalls)
+## Accounts & Credentials
 
-1. **DO NOT expose OAuth tokens to the frontend.** Tokens live in the backend only. The frontend knows "connected" or "not connected" — never the token value.
-
-2. **DO NOT use `localStorage` for auth tokens.** Use `httpOnly` cookies via Supabase Auth. Supabase handles this automatically.
-
-3. **DO NOT skip Row-Level Security.** Every table with user data MUST have RLS policies before any data is inserted. Test that User A cannot see User B's data.
-
-4. **DO NOT confuse Google SSO login with Google Analytics OAuth.** They are completely separate flows with different scopes, different tokens, different purposes. Google SSO = logging into ReportPilot. GA4 OAuth = connecting a client's analytics property.
-
-5. **DO NOT use the `requests` library in FastAPI.** Use `httpx` with async. The `requests` library is synchronous and will block the event loop.
-
-6. **DO NOT store the encryption key in the database.** It lives in environment variables only.
-
-7. **DO NOT create database tables through the Supabase Table Editor.** Always use SQL migrations in `supabase/migrations/`. This ensures reproducibility.
-
-8. **DO NOT build the frontend before the backend endpoint exists.** Build API → test with curl → build UI → connect.
-
-9. **DO NOT include `prompt=consent` only sometimes for Google OAuth.** ALWAYS include `prompt=consent&access_type=offline` to guarantee a refresh token.
-
-10. **DO NOT assume Meta tokens last forever.** Long-lived user tokens expire after 60 days. Store `token_expires_at` and build health check logic from Day 1.
-
-11. **DO NOT log OAuth tokens or encryption keys.** Not in application logs, not in error output, not in debug messages. Log connection IDs and status only.
-
-12. **DO NOT import from relative paths in frontend.** Always use the `@/` alias (e.g., `import { Button } from '@/components/ui/button'`).
-
-13. **DO NOT skip error handling on API responses.** Every fetch call must handle network errors, 4xx, and 5xx responses gracefully with user-friendly messages.
-
-14. **DO NOT forget LibreOffice for PDF generation.** The backend uses `soffice --headless --convert-to pdf` as the primary PDF path (handles all scripts including Hindi, Japanese, Arabic). For non-Latin reports, if LibreOffice is absent, `generate_pdf_report()` returns `None` and the frontend shows "PDF unavailable — download PPTX instead." LibreOffice is installed via `apt-get` in the Docker image. For local dev: `winget install LibreOffice.LibreOffice` (Windows) or `brew install --cask libreoffice` (Mac).
-
-15. **DO NOT use ReportLab as the primary PDF path for non-Latin languages.** ReportLab with DejaVu Sans cannot render Devanagari, CJK, or Arabic. The correct order is: LibreOffice first → ReportLab fallback (Latin only) → None (non-Latin without LibreOffice).
+| Service | Account |
+|---|---|
+| Google Cloud | sapienbotics@gmail.com |
+| Meta Developer | sapienbotics@gmail.com |
+| Supabase | sapienbotics@gmail.com |
+| Railway | sapienbotics@gmail.com |
+| Vercel | sapienbotics@gmail.com |
+| Razorpay | Proprietorship (Sahaj Bharat) |
+| Resend | reports@goreportpilot.com (DKIM verified) |
+| Namecheap | goreportpilot.com |
+| GitHub | sapienbotics/goreportpilot |
 
 ---
 
-## System Dependencies (Local Development)
-
-| Tool | Purpose | Install |
-|---|---|---|
-| Node.js 20+ | Frontend | https://nodejs.org/ |
-| Python 3.11+ | Backend | https://www.python.org/ |
-| LibreOffice 7.x+ | PPTX→PDF conversion (all scripts) | `winget install LibreOffice.LibreOffice` / `brew install --cask libreoffice` |
-| Noto fonts | Non-Latin PDF rendering (optional for LibreOffice) | `apt-get install fonts-noto-core fonts-noto-cjk` |
-
-After installing LibreOffice, verify: `soffice --version` or `libreoffice --version`
-
-See `docs/PROJECT-HANDOFF.md` for full setup guide including Docker deployment instructions.
-
----
-
-## Spec Documents (Reference Before Implementing)
-
-These three documents contain the complete product specification. **Read the relevant section BEFORE implementing any feature.**
-
-1. **`docs/reportpilot-deep-dive.md`**
-   Business case, competitor pricing, market analysis, pricing strategy ($19/$39/$69), go-to-market plan, revenue projections, risk register, 30-day launch plan.
-
-2. **`docs/reportpilot-feature-design-blueprint.md`**
-   Every screen wireframed, all user flows, AI prompt architecture (4 tone presets), report template structure (10 slides), database schema (7 tables with exact fields), integration architecture, notification system, white-label system, billing/plan details, error handling matrix, design system, phased roadmap.
-
-3. **`docs/reportpilot-auth-integration-deepdive.md`**
-   Complete OAuth flows (Google + Meta + Google Ads) with code examples, token storage encryption (AES-256-GCM), token lifecycle management, Google OAuth verification process, Meta App Review process, multi-account/property selection, connection health monitoring, security architecture, testing strategy, common pitfalls.
-
----
-
-## Build Progress
-
-### COMPLETED ✅
-- **Scaffolding**: Monorepo (Next.js 14 + FastAPI), directory structure, 95+ files
-- **Database**: 8 Supabase tables + 28 RLS policies + 15 indexes + 5 triggers + 1 seed template
-- **Auth**: Email/password signup, email confirmation, login, logout, protected /dashboard/* routes
-- **Dashboard**: Sidebar nav, header with email + sign out, active highlighting
-- **Backend API**: FastAPI with JWT auth middleware (verifies Supabase tokens)
-- **Client CRUD**: Create, list, get, update, soft-delete with ownership verification + frontend pages
-- **Landing Page**: 10-section marketing page (hero with CSS mockup, problem, how-it-works, features, competitor comparison, pricing with annual toggle, FAQ accordion, CTA, footer)
-- **Mock Data Service**: Realistic GA4 + Meta Ads fake data matching real API response structure
-- **AI Narrative Engine**: GPT-4o with 4 tone presets (professional/conversational/executive/data-heavy), returns 6 sections as JSON, graceful fallback
-- **Chart Generator**: 4 matplotlib charts (sessions line, traffic sources bar, spend vs conversions dual-axis, campaign performance)
-- **PowerPoint Generator**: 8-slide branded deck with embedded charts, KPI scorecard with color-coded changes
-- **PDF Generator**: Clean A4 report with ReportLab, KPI table, embedded charts, all narrative sections
-- **Report API**: Generate, list, get, download PPTX/PDF endpoints
-- **Report Preview UI**: KPI cards, narrative sections, key wins/concerns/next steps, download buttons
-- **GA4 OAuth**: Full flow (consent → callback → token exchange → property listing → connection save → real data pull with auto-refresh)
-- **Meta Ads OAuth**: Full flow (Facebook login → token exchange → short-to-long-lived → ad account listing → connection save → real data pull)
-- **Token Encryption**: AES-256-GCM via cryptography library, nonce prepended, base64 encoded
-- **Currency Handling**: Dynamic currency symbols (₹, $, €, £, etc.) across AI narrative, charts, PDF, PPTX, and frontend preview
-- **Connection Management**: Save, list, delete connections with encrypted tokens, platform normalization
-
-### REMAINING — See `docs/REMAINING-FEATURES.md` for full checklist
-- Report customization (section toggles, KPI selection, templates, inline editing)
-- Email delivery (Resend)
-- Scheduled reports (background jobs)
-- White-label branding (logo, colors, remove ReportPilot badge)
-- Settings page (account, branding, AI prefs, email config)
-- Billing & subscription (Razorpay, plan enforcement, trials, webhooks)
-- Legal pages (Privacy Policy, Terms of Service)
-- Polish & deployment
+*Updated: April 13, 2026. 71 prompts executed.*
