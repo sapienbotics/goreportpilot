@@ -28,15 +28,21 @@ This module is now the SOLE writer of cover content. It:
      holds.
 
   3. Adds a headline text box at ``theme_layout.client_name_box``
-     coordinates, using the theme's native font spec. The headline
-     content is the user's ``cover_headline`` override, or the
-     client's name.
+     coordinates, using the theme's native font spec + its
+     per-theme ``client_name_align`` alignment (v2.1 fix DA1).
 
-  4. Adds a subtitle / period text box at ``theme_layout.report_period_box``
-     coordinates. Contains the period label ("April 2026") and, when
-     the user provided a subtitle, appends " — <subtitle>".
+  4. **v2.1 fix (DA2 Option B-1):** when the user has set a subtitle
+     (cover tagline), draws it at ``theme_layout.subtitle_box`` —
+     which occupies the ORIGINAL period slot — and shifts the period
+     down by ``subtitle.h + SUBTITLE_PERIOD_GAP``. When subtitle is
+     absent, period renders at its original coords unchanged. The
+     v1 " — subtitle" append-to-period behaviour is retired.
 
-  5. **v2 fix (D-D Option D-1):** Adds a "Prepared by <agency_name>"
+  5. Adds the period text box at ``theme_layout.report_period_box``
+     (shifted per step 4 when subtitle present), using the theme's
+     native font spec + its per-theme ``report_period_align``.
+
+  6. **v2 fix (D-D Option D-1):** Adds a "Prepared by <agency_name>"
      attribution text box at ``theme_layout.agency_attribution`` coords.
      Restores the composition density stripped out by the chrome-only
      template pass — modern_clean and gradient_modern had attribution
@@ -44,7 +50,7 @@ This module is now the SOLE writer of cover content. It:
      themes had it in the footer. Drawn only when the theme has the
      slot configured and a meaningful ``agency_name`` is provided.
 
-  6. Logos are NOT drawn here. They're added by
+  7. Logos are NOT drawn here. They're added by
      ``report_generator._embed_logos`` after this function runs, using
      the client's per-report position + size overrides. When the
      generator finds no placeholder shape on the chrome-only cover, it
@@ -74,6 +80,7 @@ from pptx.oxml.ns import qn
 from pptx.util import Emu, Inches, Pt
 
 from services.theme_layout import (
+    SUBTITLE_PERIOD_GAP,
     get as get_theme_layout,
     supports_brand_tint,
 )
@@ -146,19 +153,38 @@ def apply_cover_customization(
         except Exception as exc:  # noqa: BLE001
             logger.debug("Cover: accent bar draw failed: %s", exc)
 
-    # 3. Headline + 4. period/subtitle text boxes — always drawn.
+    # 3. Headline — always drawn.
     try:
         _draw_headline(cover, theme, headline or "Report")
     except Exception as exc:  # noqa: BLE001
         logger.warning("Cover: headline draw failed: %s", exc)
 
-    period_line = period_label if not subtitle else f"{period_label} \u2014 {subtitle}"
+    # 4. Subtitle (tagline) — v2.1 fix (DA2 Option B-1). When the
+    # user has set a subtitle, draw it at the theme's subtitle_box
+    # coords (which occupy the natural period slot) and shift the
+    # period line down. When subtitle is empty, skip entirely and
+    # let the period render at its natural y unchanged.
+    clean_subtitle = (subtitle or "").strip()
+    period_shift = 0.0
+    if clean_subtitle:
+        try:
+            _draw_subtitle(cover, theme, clean_subtitle)
+            layout = get_theme_layout(theme)
+            _sub_box = layout.get("subtitle_box")
+            if _sub_box is not None:
+                period_shift = float(_sub_box["h"]) + SUBTITLE_PERIOD_GAP
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Cover: subtitle draw failed: %s", exc)
+            period_shift = 0.0
+
+    # 5. Period line. Shifted down by ``period_shift`` inches when a
+    # subtitle was drawn; otherwise rendered at report_period_box.y.
     try:
-        _draw_period_line(cover, theme, period_line)
+        _draw_period_line(cover, theme, period_label, shift_y=period_shift)
     except Exception as exc:  # noqa: BLE001
         logger.warning("Cover: period line draw failed: %s", exc)
 
-    # 5. Agency attribution — v2 fix (D-D Option D-1). Restores
+    # 6. Agency attribution — v2 fix (D-D Option D-1). Restores
     # composition density for themes whose pre-strip design relied on
     # "Prepared by …" text. Skipped if the theme has no attribution
     # slot or the agency name is empty.
@@ -294,7 +320,12 @@ def _draw_accent_bar(prs: Any, cover: Any, theme: str, hex_str: str) -> None:
 
 
 def _draw_headline(cover: Any, theme: str, headline: str) -> None:
-    """Add a text box for the headline at the theme's ``client_name_box``."""
+    """Add a text box for the headline at the theme's ``client_name_box``.
+
+    v2.1: alignment comes from ``theme_layout.client_name_align`` instead
+    of the former hardcoded CENTER. Mirrors pre-strip template intent —
+    5/6 themes are left-aligned, minimal_elegant is centre.
+    """
     layout = get_theme_layout(theme)
     box  = layout["client_name_box"]
     font = layout["client_name_font"]
@@ -306,19 +337,26 @@ def _draw_headline(cover: Any, theme: str, headline: str) -> None:
         size_pt=int(font["size_pt"]),
         color_hex=font["color_hex"],
         bold=bool(font.get("bold")),
-        align=PP_ALIGN.CENTER,
+        align=_resolve_alignment(layout.get("client_name_align")),
         anchor=MSO_ANCHOR.MIDDLE,
     )
 
 
-# ── Step 4: period / subtitle line ────────────────────────────────────────────
+# ── Step 4: subtitle (tagline) ────────────────────────────────────────────────
 
 
-def _draw_period_line(cover: Any, theme: str, text: str) -> None:
-    """Add a text box for the period + optional subtitle."""
+def _draw_subtitle(cover: Any, theme: str, text: str) -> None:
+    """Add the user's subtitle tagline at ``theme_layout.subtitle_box``.
+
+    v2.1 fix (DA2 Option B-1). Only called when subtitle is non-empty.
+    Occupies the same slot the period would otherwise render in; the
+    period is drawn shifted-down by the caller in that case.
+    """
     layout = get_theme_layout(theme)
-    box  = layout["report_period_box"]
-    font = layout["report_period_font"]
+    box  = layout.get("subtitle_box")
+    font = layout.get("subtitle_font")
+    if box is None or font is None:
+        return
     _add_text_box(
         cover,
         text=text,
@@ -327,7 +365,41 @@ def _draw_period_line(cover: Any, theme: str, text: str) -> None:
         size_pt=int(font["size_pt"]),
         color_hex=font["color_hex"],
         bold=bool(font.get("bold")),
-        align=PP_ALIGN.CENTER,
+        # Subtitle tracks the period's alignment so the two stacked
+        # rows share the same visual axis.
+        align=_resolve_alignment(layout.get("report_period_align")),
+        anchor=MSO_ANCHOR.MIDDLE,
+    )
+
+
+# ── Step 5: period line ───────────────────────────────────────────────────────
+
+
+def _draw_period_line(
+    cover: Any, theme: str, text: str, *, shift_y: float = 0.0,
+) -> None:
+    """Add a text box for the period.
+
+    v2.1: alignment comes from ``theme_layout.report_period_align``.
+    ``shift_y`` (inches) is applied to the box's y-coord so the period
+    row moves below the subtitle when one is being drawn above it.
+    """
+    layout = get_theme_layout(theme)
+    box  = layout["report_period_box"]
+    font = layout["report_period_font"]
+    shifted_box = {
+        **box,
+        "y": float(box["y"]) + float(shift_y or 0.0),
+    }
+    _add_text_box(
+        cover,
+        text=text,
+        box=shifted_box,
+        font_name=font["name"],
+        size_pt=int(font["size_pt"]),
+        color_hex=font["color_hex"],
+        bold=bool(font.get("bold")),
+        align=_resolve_alignment(layout.get("report_period_align")),
         anchor=MSO_ANCHOR.TOP,
     )
 

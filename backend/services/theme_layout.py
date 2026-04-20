@@ -9,7 +9,25 @@ there (same coordinates, same field names).
 Per-theme fields:
   slide_inches                 — {width, height}
   client_name_box              — position/size of the {{client_name}} shape
+  client_name_align            — v2.1: per-theme alignment ("left"|"center"|
+                                 "right"). Matches designer intent from the
+                                 pre-strip template paragraphs. 5/6 themes
+                                 are "left", minimal_elegant is "center".
   report_period_box            — position/size of the {{report_period}} shape
+                                 (the "natural" y before any subtitle shift)
+  report_period_align          — v2.1: per-theme alignment, same values as
+                                 client_name_align.
+  subtitle_box                 — v2.1 fix (DA2 Option B-1). Where the user's
+                                 cover subtitle (tagline) renders when set.
+                                 Occupies the original period slot — when
+                                 subtitle is present, the period is shifted
+                                 down by subtitle.h + a small gap. When
+                                 subtitle is absent, period renders at its
+                                 report_period_box coords unchanged.
+  subtitle_font                — v2.1: font spec for the tagline. Mid-tier
+                                 sizing (between headline and period) so the
+                                 tagline reads as secondary to headline but
+                                 more prominent than the period line.
   header_band                  — the recolourable header band (None if the
                                  template's top decoration is multi-shape
                                  or side-based — see `brand_tint_strategy`)
@@ -45,7 +63,11 @@ THEME_LAYOUT: dict[str, dict[str, Any]] = {
     "modern_clean": {
         "slide_inches":           {"width": 13.333, "height": 7.5},
         "client_name_box":        {"x": 0.8, "y": 2.70, "w": 11.7, "h": 1.5},
+        "client_name_align":      "left",
         "report_period_box":      {"x": 0.8, "y": 4.35, "w": 11.7, "h": 0.5},
+        "report_period_align":    "left",
+        "subtitle_box":           {"x": 0.8, "y": 4.35, "w": 11.7, "h": 0.4},
+        "subtitle_font":          {"name": "Calibri", "size_pt": 18, "color_hex": "64748B", "bold": False},
         "header_band":            {"x": 0.0, "y": 0.00, "w": 13.3, "h": 2.2},
         "agency_logo_placeholder":{"x": 10.5, "y": 0.40, "w": 2.0, "h": 1.0},
         "client_logo_placeholder":{"x": 9.8,  "y": 4.50, "w": 2.5, "h": 1.5},
@@ -64,7 +86,11 @@ THEME_LAYOUT: dict[str, dict[str, Any]] = {
     "dark_executive": {
         "slide_inches":           {"width": 13.333, "height": 7.5},
         "client_name_box":        {"x": 0.8, "y": 2.50, "w": 11.7, "h": 1.5},
+        "client_name_align":      "left",
         "report_period_box":      {"x": 0.8, "y": 4.15, "w":  8.0, "h": 0.45},
+        "report_period_align":    "left",
+        "subtitle_box":           {"x": 0.8, "y": 4.15, "w":  8.0, "h": 0.4},
+        "subtitle_font":          {"name": "Calibri", "size_pt": 18, "color_hex": "CBD5E1", "bold": False},
         # A thin accent line (4-tenths of an inch thick); still a single shape
         # so brand tint works. If the template is ever redesigned the dark
         # navy body is achieved via slide-background, not a band shape.
@@ -86,7 +112,11 @@ THEME_LAYOUT: dict[str, dict[str, Any]] = {
     "colorful_agency": {
         "slide_inches":           {"width": 13.333, "height": 7.5},
         "client_name_box":        {"x": 0.8, "y": 1.80, "w": 11.7, "h": 1.6},
+        "client_name_align":      "left",
         "report_period_box":      {"x": 0.8, "y": 3.60, "w":  8.0, "h": 0.45},
+        "report_period_align":    "left",
+        "subtitle_box":           {"x": 0.8, "y": 3.60, "w":  8.0, "h": 0.4},
+        "subtitle_font":          {"name": "Calibri", "size_pt": 18, "color_hex": "64748B", "bold": False},
         # No single band — template uses 3 coloured strips at top + a left
         # sidebar. Brand-colour recolour would collapse the palette.
         "header_band":            None,
@@ -105,7 +135,11 @@ THEME_LAYOUT: dict[str, dict[str, Any]] = {
     "bold_geometric": {
         "slide_inches":           {"width": 13.333, "height": 7.5},
         "client_name_box":        {"x": 0.8, "y": 2.00, "w":  7.0, "h": 1.8},
+        "client_name_align":      "left",
         "report_period_box":      {"x": 0.8, "y": 3.90, "w":  6.0, "h": 0.45},
+        "report_period_align":    "left",
+        "subtitle_box":           {"x": 0.8, "y": 3.90, "w":  6.0, "h": 0.4},
+        "subtitle_font":          {"name": "Calibri", "size_pt": 20, "color_hex": "C7D2FE", "bold": False},
         # No single band — right-side coloured block + asymmetric layout.
         "header_band":            None,
         "agency_logo_placeholder":{"x": 10.3, "y": 0.50, "w": 2.2, "h": 1.0},
@@ -124,7 +158,12 @@ THEME_LAYOUT: dict[str, dict[str, Any]] = {
     "minimal_elegant": {
         "slide_inches":           {"width": 13.333, "height": 7.5},
         "client_name_box":        {"x": 1.5, "y": 2.40, "w": 10.3, "h": 1.4},
+        "client_name_align":      "center",
         "report_period_box":      {"x": 1.5, "y": 4.30, "w": 10.3, "h": 0.4},
+        "report_period_align":    "center",
+        # Serif subtitle continues the editorial voice of the headline.
+        "subtitle_box":           {"x": 1.5, "y": 4.30, "w": 10.3, "h": 0.4},
+        "subtitle_font":          {"name": "Georgia", "size_pt": 16, "color_hex": "64748B", "bold": False},
         # Deliberately no band — minimalist layout depends on white space.
         "header_band":            None,
         "agency_logo_placeholder":{"x": 1.5, "y": 0.80, "w": 2.0, "h": 0.8},
@@ -143,7 +182,11 @@ THEME_LAYOUT: dict[str, dict[str, Any]] = {
     "gradient_modern": {
         "slide_inches":           {"width": 13.333, "height": 7.5},
         "client_name_box":        {"x": 0.8, "y": 3.10, "w": 11.7, "h": 1.5},
+        "client_name_align":      "left",
         "report_period_box":      {"x": 0.8, "y": 4.70, "w":  8.0, "h": 0.45},
+        "report_period_align":    "left",
+        "subtitle_box":           {"x": 0.8, "y": 4.70, "w":  8.0, "h": 0.4},
+        "subtitle_font":          {"name": "Calibri", "size_pt": 20, "color_hex": "64748B", "bold": False},
         # Multi-shape gradient band at top. The leftmost (index 0) spans
         # the full width; recolouring it approximates the brand-tint
         # effect acceptably.
@@ -162,6 +205,12 @@ THEME_LAYOUT: dict[str, dict[str, Any]] = {
         },
     },
 }
+
+
+# v2.1: exposed constant for the period-shift-on-subtitle amount. Kept as
+# a module-level value so both backend render + frontend overlay can use
+# the exact same offset.
+SUBTITLE_PERIOD_GAP = 0.10
 
 
 VALID_THEMES = tuple(THEME_LAYOUT.keys())

@@ -24,7 +24,8 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { clientsApi, previewCover, settingsApi, uploadClientLogo } from '@/lib/api'
 import {
-  THEME_IDS, THEME_LAYOUT, boxToPercentStyle, type ThemeId,
+  SUBTITLE_PERIOD_GAP, THEME_IDS, THEME_LAYOUT, boxToPercentStyle,
+  type Align, type ThemeId,
 } from '@/lib/theme-layout'
 
 // ── Constants ───────────────────────────────────────────────────────────────
@@ -52,6 +53,15 @@ const LOGO_SIZES: { id: LogoSize; label: string }[] = [
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
+// Bump when any cover_thumbnails/*.png changes on the backend so clients
+// refresh stale copies from browser/CDN caches. C3 fix (v2.1).
+const THUMBNAIL_VERSION = 'v2-1'
+
+/** Build the thumbnail URL for a theme with a cache-bust query. */
+function thumbnailUrl(theme: ThemeId): string {
+  return `${API_URL}/static/cover_thumbnails/${theme}.png?v=${THUMBNAIL_VERSION}`
+}
+
 // ── Component ───────────────────────────────────────────────────────────────
 
 interface Props {
@@ -62,16 +72,19 @@ interface Props {
 export default function DesignTab({ client, onClientUpdate }: Props) {
   const clientLogoInputRef = useRef<HTMLInputElement>(null)
 
-  // Fetch agency profile for logo + brand_color (used in preview overlay).
+  // Fetch agency profile for logo + brand_color + name (used in preview overlay).
   const [agencyLogoUrl, setAgencyLogoUrl] = useState<string | null>(null)
   const [brandDefault,  setBrandDefault]  = useState<string | null>(null)
+  const [agencyName,    setAgencyName]    = useState<string>('')
   useEffect(() => {
     settingsApi.getProfile()
       .then((p) => {
         const logo = typeof p.agency_logo_url === 'string' ? p.agency_logo_url : null
         const bc   = typeof p.brand_color === 'string' ? p.brand_color : null
+        const name = typeof p.agency_name === 'string' ? p.agency_name.trim() : ''
         setAgencyLogoUrl(logo)
         setBrandDefault(bc)
+        setAgencyName(name || 'Your Agency')
       })
       .catch(() => { /* non-fatal */ })
   }, [])
@@ -258,7 +271,7 @@ export default function DesignTab({ client, onClientUpdate }: Props) {
                       <div className="rounded overflow-hidden mb-2 aspect-video bg-slate-100 border border-slate-100">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                          src={`${API_URL}/static/cover_thumbnails/${id}.png`}
+                          src={thumbnailUrl(id)}
                           alt={info.label}
                           className="w-full h-full object-cover"
                         />
@@ -323,12 +336,12 @@ export default function DesignTab({ client, onClientUpdate }: Props) {
                   <Input
                     value={subtitle}
                     onChange={(e) => setSubtitle(e.target.value)}
-                    placeholder="Leave blank to show just the report period"
+                    placeholder="Tagline shown directly below the headline"
                     maxLength={120}
                     className="mt-1"
                   />
                   <p className="text-[10px] text-slate-400 mt-0.5">
-                    Appended after the period — e.g. <span className="font-mono">April 2026 — {subtitle || 'Executive Brief'}</span>
+                    Renders as a tagline below the headline. Period line stays on its own row.
                   </p>
                 </div>
               </div>
@@ -378,7 +391,9 @@ export default function DesignTab({ client, onClientUpdate }: Props) {
           <OverlayPreview
             theme={theme}
             headline={headline || client.name}
-            periodLine={buildPeriodLine(subtitle)}
+            subtitle={subtitle}
+            periodLabel={buildPeriodLabel()}
+            agencyName={agencyName}
             primary={isValidHex(primary) ? primary : null}
             accent={isValidHex(accent) ? accent : null}
             agencyLogoUrl={agencyLogoUrl ?? null}
@@ -402,7 +417,11 @@ export default function DesignTab({ client, onClientUpdate }: Props) {
 interface OverlayPreviewProps {
   theme: ThemeId
   headline: string
-  periodLine: string
+  /** User's subtitle override (tagline). Empty string = not shown. */
+  subtitle: string
+  /** "April 2026" etc. Never includes the subtitle (v2.1 split). */
+  periodLabel: string
+  agencyName: string
   primary: string | null
   accent: string | null
   agencyLogoUrl: string | null
@@ -413,17 +432,31 @@ interface OverlayPreviewProps {
   clientSz: LogoSize
 }
 
+/** Translate a theme alignment string to the CSS justification triplet. */
+function alignToCss(a: Align): {
+  justifyContent: 'flex-start' | 'center' | 'flex-end'
+  textAlign: 'left' | 'center' | 'right'
+} {
+  if (a === 'center') return { justifyContent: 'center', textAlign: 'center' }
+  if (a === 'right')  return { justifyContent: 'flex-end', textAlign: 'right' }
+  return { justifyContent: 'flex-start', textAlign: 'left' }
+}
+
 function OverlayPreview({
-  theme, headline, periodLine, primary, accent,
+  theme, headline, subtitle, periodLabel, agencyName, primary, accent,
   agencyLogoUrl, agencyPos, agencySz, clientLogoUrl, clientPos, clientSz,
 }: OverlayPreviewProps) {
   const layout = THEME_LAYOUT[theme]
+  const hasSubtitle = subtitle.trim().length > 0
+  // v2.1 DA2: period shifts down by subtitle.h + gap when subtitle is set.
+  const periodShift = hasSubtitle
+    ? layout.subtitle_box.h + SUBTITLE_PERIOD_GAP
+    : 0
 
   const nameStyle = useMemo(() => {
     const box = boxToPercentStyle(layout.client_name_box)
-    // Text overlays are the sole source of cover text since the
-    // chrome-only thumbnails carry no placeholder runs. Center-aligned
-    // to match backend cover_customization.py (PP_ALIGN.CENTER).
+    // v2.1 DA1: alignment from theme_layout (matches backend _draw_headline).
+    const { justifyContent, textAlign } = alignToCss(layout.client_name_align)
     return {
       ...box,
       color: `#${layout.client_name_font.color_hex}`,
@@ -433,8 +466,8 @@ function OverlayPreview({
       lineHeight: 1.1,
       display: 'flex',
       alignItems: 'center',
-      justifyContent: 'center',
-      textAlign: 'center' as const,
+      justifyContent,
+      textAlign,
       overflow: 'hidden',
       whiteSpace: 'nowrap' as const,
       textOverflow: 'ellipsis',
@@ -442,8 +475,35 @@ function OverlayPreview({
     }
   }, [layout])
 
+  // v2.1 DA2: subtitle sits at subtitle_box coords — only rendered when set.
+  const subtitleStyle = useMemo(() => {
+    const box = boxToPercentStyle(layout.subtitle_box)
+    const { justifyContent, textAlign } = alignToCss(layout.report_period_align)
+    return {
+      ...box,
+      color: `#${layout.subtitle_font.color_hex}`,
+      fontWeight: layout.subtitle_font.bold ? 700 : 400,
+      fontFamily: layout.subtitle_font.name === 'Georgia' ? 'Georgia, serif' : 'Inter, Arial, sans-serif',
+      fontSize: `clamp(11px, ${layout.subtitle_font.size_pt / 4}%, 22px)`,
+      lineHeight: 1.15,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent,
+      textAlign,
+      zIndex: 3,
+    }
+  }, [layout])
+
   const periodStyle = useMemo(() => {
-    const box = boxToPercentStyle(layout.report_period_box)
+    // Dynamic y: period shifts down by subtitle.h + gap when subtitle is set.
+    const shiftedBox = {
+      x: layout.report_period_box.x,
+      y: layout.report_period_box.y + periodShift,
+      w: layout.report_period_box.w,
+      h: layout.report_period_box.h,
+    }
+    const box = boxToPercentStyle(shiftedBox)
+    const { justifyContent, textAlign } = alignToCss(layout.report_period_align)
     return {
       ...box,
       color: `#${layout.report_period_font.color_hex}`,
@@ -452,8 +512,28 @@ function OverlayPreview({
       fontSize: `clamp(10px, ${layout.report_period_font.size_pt / 4}%, 18px)`,
       display: 'flex',
       alignItems: 'flex-start',
-      justifyContent: 'center',
-      textAlign: 'center' as const,
+      justifyContent,
+      textAlign,
+      zIndex: 3,
+    }
+  }, [layout, periodShift])
+
+  // v2.1 C4: agency attribution ("Prepared by …") — preview parity with PPTX.
+  const attributionStyle = useMemo(() => {
+    const a = layout.agency_attribution
+    if (!a) return null
+    const box = boxToPercentStyle(a.box)
+    const { justifyContent, textAlign } = alignToCss(a.align)
+    return {
+      ...box,
+      color: `#${a.font.color_hex}`,
+      fontWeight: a.font.bold ? 700 : 400,
+      fontFamily: a.font.name === 'Georgia' ? 'Georgia, serif' : 'Inter, Arial, sans-serif',
+      fontSize: `clamp(8px, ${a.font.size_pt / 4}%, 14px)`,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent,
+      textAlign,
       zIndex: 3,
     }
   }, [layout])
@@ -473,15 +553,14 @@ function OverlayPreview({
     }
   }, [layout, primary])
 
-  // B-fix: accent bar bumped to 0.10" (was 0.08"), pinned above band via
-  // z-index so it stays visible. Matches backend cover_customization.py:
-  // _draw_accent_bar uses bar_h_emu = Inches(0.10).
+  // v2 fix: accent bar sits at the band/body boundary (body side), 0.10" tall.
+  // Matches backend cover_customization.py v2 fix in _draw_accent_bar.
   const accentStyle = useMemo(() => {
     if (!layout.header_band || !accent || layout.brand_tint_strategy !== 'header_band') return null
     return {
       ...boxToPercentStyle({
         x: layout.header_band.x,
-        y: layout.header_band.y + layout.header_band.h - 0.10,
+        y: layout.header_band.y + layout.header_band.h,
         w: layout.header_band.w,
         h: 0.10,
       }),
@@ -495,10 +574,10 @@ function OverlayPreview({
       className="relative w-full rounded-lg overflow-hidden border border-slate-200 shadow-sm bg-slate-100"
       style={{ aspectRatio: '13.333 / 7.5' }}
     >
-      {/* Base: template thumbnail */}
+      {/* Base: template thumbnail (cache-busted URL, C3 fix v2.1). */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={`${API_URL}/static/cover_thumbnails/${theme}.png`}
+        src={thumbnailUrl(theme)}
         alt=""
         className="absolute inset-0 w-full h-full object-cover"
       />
@@ -509,16 +588,29 @@ function OverlayPreview({
       {/* Accent bar */}
       {accentStyle && <div className="absolute" style={accentStyle} />}
 
-      {/* Headline overlay — drawn over (and partially occluding) the
-          template's own {{client_name}} text. Colour from theme layout. */}
+      {/* Headline overlay */}
       <div className="absolute px-1" style={nameStyle}>
         <span className="block truncate w-full">{headline}</span>
       </div>
 
-      {/* Period / subtitle overlay */}
+      {/* Subtitle overlay — v2.1 DA2. Drawn only when user set a subtitle. */}
+      {hasSubtitle && (
+        <div className="absolute px-1" style={subtitleStyle}>
+          <span className="block truncate w-full">{subtitle}</span>
+        </div>
+      )}
+
+      {/* Period overlay — y shifted when subtitle present. */}
       <div className="absolute px-1" style={periodStyle}>
-        <span className="block truncate w-full">{periodLine}</span>
+        <span className="block truncate w-full">{periodLabel}</span>
       </div>
+
+      {/* Agency attribution overlay — v2.1 C4 preview parity with PPTX. */}
+      {attributionStyle && agencyName && (
+        <div className="absolute px-1" style={attributionStyle}>
+          <span className="block truncate w-full">Prepared by {agencyName}</span>
+        </div>
+      )}
 
       {/* Agency logo overlay */}
       {agencyLogoUrl && (
@@ -719,11 +811,11 @@ function isValidHex(v: string): boolean {
   return /^#[0-9a-fA-F]{6}$/.test(v)
 }
 
-function buildPeriodLine(subtitle: string): string {
+function buildPeriodLabel(): string {
+  // v2.1 DA2: the period line is now standalone (subtitle lives in its
+  // own overlay). No more em-dash concatenation.
   const now = new Date()
-  const period = now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-  if (subtitle) return `${period} — ${subtitle}`
-  return period
+  return now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 }
 
 // Collapse the legacy 'default' value (which resolved to Medium on the
