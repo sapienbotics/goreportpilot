@@ -19,9 +19,13 @@ This module is now the SOLE writer of cover content. It:
      ``fore_color.rgb`` setter does not clear these inherited theme
      modifiers, which caused ``#3AB2CB`` → ``~#4CC5D5`` drift.
 
-  2. Draws a thin (0.10") accent bar along the bottom of the header
-     band using the user's accent colour (same themes only). Colour
-     scrub applied so hex parity holds.
+  2. Draws a thin (0.10") accent bar at the band/body boundary on
+     the body side using the user's accent colour (brand-tinted themes
+     only). **v2 fix:** repositioned from ``band.y + band.h - 0.10``
+     (inside band — camouflaged against similar-hue tints) to
+     ``band.y + band.h`` (just below the band in the body area, high
+     contrast across all themes). Colour scrub applied so hex parity
+     holds.
 
   3. Adds a headline text box at ``theme_layout.client_name_box``
      coordinates, using the theme's native font spec. The headline
@@ -32,7 +36,15 @@ This module is now the SOLE writer of cover content. It:
      coordinates. Contains the period label ("April 2026") and, when
      the user provided a subtitle, appends " — <subtitle>".
 
-  5. Logos are NOT drawn here. They're added by
+  5. **v2 fix (D-D Option D-1):** Adds a "Prepared by <agency_name>"
+     attribution text box at ``theme_layout.agency_attribution`` coords.
+     Restores the composition density stripped out by the chrome-only
+     template pass — modern_clean and gradient_modern had attribution
+     INSIDE the tinted band (so the band isn't empty), the other
+     themes had it in the footer. Drawn only when the theme has the
+     slot configured and a meaningful ``agency_name`` is provided.
+
+  6. Logos are NOT drawn here. They're added by
      ``report_generator._embed_logos`` after this function runs, using
      the client's per-report position + size overrides. When the
      generator finds no placeholder shape on the chrome-only cover, it
@@ -81,6 +93,7 @@ def apply_cover_customization(
     subtitle: Optional[str] = None,
     brand_primary_color: Optional[str] = None,
     accent_color: Optional[str] = None,
+    agency_name: Optional[str] = None,
 ) -> None:
     """
     Draw the cover's text + colour overrides on slide[0].
@@ -104,7 +117,11 @@ def apply_cover_customization(
         Hex (#rrggbb or rrggbb). Applied to the header band. Skipped
         for themes without a band.
     accent_color
-        Hex. Drawn as a thin bar on the band's bottom edge.
+        Hex. Drawn as a thin bar at the band/body boundary.
+    agency_name
+        Agency name used for the "Prepared by …" attribution text.
+        Drawn only when the theme has an ``agency_attribution`` slot
+        and the name is non-empty. v2 fix (D-D Option D-1).
     """
     try:
         cover = prs.slides[0]
@@ -140,6 +157,17 @@ def apply_cover_customization(
         _draw_period_line(cover, theme, period_line)
     except Exception as exc:  # noqa: BLE001
         logger.warning("Cover: period line draw failed: %s", exc)
+
+    # 5. Agency attribution — v2 fix (D-D Option D-1). Restores
+    # composition density for themes whose pre-strip design relied on
+    # "Prepared by …" text. Skipped if the theme has no attribution
+    # slot or the agency name is empty.
+    clean_agency = (agency_name or "").strip()
+    if clean_agency:
+        try:
+            _draw_agency_attribution(cover, theme, clean_agency)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Cover: agency attribution draw failed: %s", exc)
 
 
 # ── Step 1: header-band recolour (+ C-fix colour scrub) ───────────────────────
@@ -226,7 +254,15 @@ def _find_header_band(cover: Any, prs: Any, theme: str) -> Optional[Any]:
 
 def _draw_accent_bar(prs: Any, cover: Any, theme: str, hex_str: str) -> None:
     """
-    Thin (0.10") accent bar at the bottom of the theme's header band.
+    Thin (0.10") accent bar at the band-body boundary, on the body side.
+
+    v2 fix (D-A Option A-1): previously positioned at
+    ``band.y + band.h - 0.10`` which put the bar INSIDE thick bands,
+    camouflaging it against similar-hue brand tints (e.g. modern_clean
+    with teal primary + teal accent). Moved to ``band.y + band.h`` so
+    the bar sits just below the band, in the body area, with consistent
+    visibility across all brand-tinted themes regardless of band height.
+
     Colour-scrubbed for exact hex rendering.
     """
     band_spec = get_theme_layout(theme).get("header_band")
@@ -236,7 +272,7 @@ def _draw_accent_bar(prs: Any, cover: Any, theme: str, hex_str: str) -> None:
     rgb = _hex_to_rgb(hex_str)
     EMU = 914400
     bar_h_emu = int(Inches(0.10))
-    bar_top_emu = int((band_spec["y"] + band_spec["h"]) * EMU) - bar_h_emu
+    bar_top_emu = int((band_spec["y"] + band_spec["h"]) * EMU)
     bar_left_emu = int(band_spec["x"] * EMU)
     bar_width_emu = int(band_spec["w"] * EMU)
 
@@ -294,6 +330,50 @@ def _draw_period_line(cover: Any, theme: str, text: str) -> None:
         align=PP_ALIGN.CENTER,
         anchor=MSO_ANCHOR.TOP,
     )
+
+
+# ── Step 5: agency attribution ("Prepared by …") ──────────────────────────────
+
+
+def _draw_agency_attribution(cover: Any, theme: str, agency_name: str) -> None:
+    """
+    Add a "Prepared by <agency_name>" text box at the theme's
+    ``agency_attribution`` coordinates.
+
+    v2 fix (D-D Option D-1). Four of the six themes placed this text
+    IN the tinted band or just below it (modern_clean, gradient_modern,
+    colorful_agency, bold_geometric), the other two used it as a
+    footer signature (dark_executive, minimal_elegant). In every case
+    we restore the designer's original position + font + colour so the
+    composition matches what the template designer intended when they
+    drew the layout.
+    """
+    spec = get_theme_layout(theme).get("agency_attribution")
+    if not spec:
+        return
+    box  = spec["box"]
+    font = spec["font"]
+    _add_text_box(
+        cover,
+        text=f"Prepared by {agency_name}",
+        box=box,
+        font_name=font["name"],
+        size_pt=int(font["size_pt"]),
+        color_hex=font["color_hex"],
+        bold=bool(font.get("bold")),
+        align=_resolve_alignment(spec.get("align")),
+        anchor=MSO_ANCHOR.MIDDLE,
+    )
+
+
+def _resolve_alignment(key: Optional[str]) -> Any:
+    """Translate a theme_layout alignment string to a PP_ALIGN enum."""
+    mapping = {
+        "left":   PP_ALIGN.LEFT,
+        "center": PP_ALIGN.CENTER,
+        "right":  PP_ALIGN.RIGHT,
+    }
+    return mapping.get((key or "left").lower(), PP_ALIGN.LEFT)
 
 
 # ── Shared text-box helper ────────────────────────────────────────────────────

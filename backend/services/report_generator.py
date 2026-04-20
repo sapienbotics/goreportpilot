@@ -1001,11 +1001,15 @@ def _logo_max_box(size: str, *, kind: str) -> tuple[int, int]:
             "default": (Inches(2.5), Inches(0.8)),
         }
     else:
+        # v2 fix (D-B Option B-1): "medium" was 3.0"×2.0" which dominated
+        # covers — 20-27% larger than every theme's client_logo_placeholder
+        # box. Shrunk to 2.5"×1.5" which matches the average template-designer
+        # intent. Users who want larger still get 4.5"×3.0" via "large".
         box = {
             "small":   (Inches(1.5), Inches(1.0)),
-            "medium":  (Inches(3.0), Inches(2.0)),   # default
+            "medium":  (Inches(2.5), Inches(1.5)),   # default — cover-calibrated
             "large":   (Inches(4.5), Inches(3.0)),
-            "default": (Inches(3.0), Inches(2.0)),
+            "default": (Inches(2.5), Inches(1.5)),
         }
     return box.get(size, box["default"])
 
@@ -1751,6 +1755,10 @@ def generate_pptx_report(
                 or (branding or {}).get("brand_color")
             ),
             accent_color=_cc.get("accent_color"),
+            # v2 fix (D-D): restore "Prepared by <agency_name>" drawn at
+            # theme_layout coords. Uses the agency_name already resolved
+            # from the placeholder replacements (profile → client → stub).
+            agency_name=replacements.get("{{agency_name}}"),
         )
     except Exception as exc:
         logger.warning("Cover customisation application failed: %s", exc)

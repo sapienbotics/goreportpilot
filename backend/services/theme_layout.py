@@ -23,6 +23,16 @@ Per-theme fields:
                                  Three templates use multi-colour cover
                                  decoration that would break under a single
                                  recolour.
+  agency_attribution           — v2 fix (D-D Option D-1). Where to draw
+                                 "Prepared by <agency_name>" at generate
+                                 time. Coordinates + font measured from
+                                 the pre-strip template masters so the
+                                 restored text sits exactly where the
+                                 designer originally placed it. Some
+                                 themes place it inside the tinted band
+                                 (modern_clean, gradient_modern), others
+                                 in the footer. Optional — set to None
+                                 to skip drawing it for a theme.
 
 All coordinates in SLIDE INCHES (1 inch = 914400 EMU).
 """
@@ -42,6 +52,13 @@ THEME_LAYOUT: dict[str, dict[str, Any]] = {
         "client_name_font":       {"name": "Calibri",       "size_pt": 40, "color_hex": "0F172A", "bold": True},
         "report_period_font":     {"name": "Calibri Light", "size_pt": 14, "color_hex": "64748B", "bold": False},
         "brand_tint_strategy":    "header_band",
+        # Attribution sits INSIDE the tinted band. Original designer hue
+        # C7D2FE (indigo-200) reads as "light text on brand tint".
+        "agency_attribution":     {
+            "box":   {"x": 0.8, "y": 1.15, "w": 6.0, "h": 0.35},
+            "font":  {"name": "Calibri Light", "size_pt": 11, "color_hex": "C7D2FE", "bold": False},
+            "align": "left",
+        },
     },
 
     "dark_executive": {
@@ -57,6 +74,13 @@ THEME_LAYOUT: dict[str, dict[str, Any]] = {
         "client_name_font":       {"name": "Calibri", "size_pt": 40, "color_hex": "F8FAFC", "bold": True},
         "report_period_font":     {"name": "Calibri", "size_pt": 14, "color_hex": "CBD5E1", "bold": False},
         "brand_tint_strategy":    "header_band",
+        # Attribution in the footer on dark-navy body — slate-700 reads as
+        # subdued muted text per designer intent.
+        "agency_attribution":     {
+            "box":   {"x": 0.8, "y": 6.70, "w": 8.0, "h": 0.35},
+            "font":  {"name": "Calibri", "size_pt": 11, "color_hex": "475569", "bold": False},
+            "align": "left",
+        },
     },
 
     "colorful_agency": {
@@ -71,6 +95,11 @@ THEME_LAYOUT: dict[str, dict[str, Any]] = {
         "client_name_font":       {"name": "Calibri", "size_pt": 40, "color_hex": "0F172A", "bold": True},
         "report_period_font":     {"name": "Calibri", "size_pt": 14, "color_hex": "64748B", "bold": False},
         "brand_tint_strategy":    "none",
+        "agency_attribution":     {
+            "box":   {"x": 0.8, "y": 6.80, "w": 8.0, "h": 0.35},
+            "font":  {"name": "Calibri", "size_pt": 11, "color_hex": "94A3B8", "bold": False},
+            "align": "left",
+        },
     },
 
     "bold_geometric": {
@@ -84,6 +113,12 @@ THEME_LAYOUT: dict[str, dict[str, Any]] = {
         "client_name_font":       {"name": "Calibri", "size_pt": 44, "color_hex": "FFFFFF", "bold": True},
         "report_period_font":     {"name": "Calibri", "size_pt": 16, "color_hex": "C7D2FE", "bold": False},
         "brand_tint_strategy":    "none",
+        # Attribution in footer on the left (white) side — indigo-300 accent.
+        "agency_attribution":     {
+            "box":   {"x": 0.8, "y": 6.80, "w": 8.0, "h": 0.35},
+            "font":  {"name": "Calibri", "size_pt": 11, "color_hex": "A5B4FC", "bold": False},
+            "align": "left",
+        },
     },
 
     "minimal_elegant": {
@@ -97,6 +132,12 @@ THEME_LAYOUT: dict[str, dict[str, Any]] = {
         "client_name_font":       {"name": "Georgia", "size_pt": 40, "color_hex": "0F172A", "bold": False},
         "report_period_font":     {"name": "Calibri", "size_pt": 14, "color_hex": "64748B", "bold": False},
         "brand_tint_strategy":    "none",
+        # Center-aligned footer attribution — editorial style.
+        "agency_attribution":     {
+            "box":   {"x": 1.5, "y": 6.90, "w": 10.3, "h": 0.3},
+            "font":  {"name": "Calibri", "size_pt": 9, "color_hex": "94A3B8", "bold": False},
+            "align": "center",
+        },
     },
 
     "gradient_modern": {
@@ -112,6 +153,13 @@ THEME_LAYOUT: dict[str, dict[str, Any]] = {
         "client_name_font":       {"name": "Calibri", "size_pt": 42, "color_hex": "0F172A", "bold": True},
         "report_period_font":     {"name": "Calibri", "size_pt": 16, "color_hex": "64748B", "bold": False},
         "brand_tint_strategy":    "header_band",
+        # Attribution inside the gradient band — rose-200 reads as warm
+        # light text on coloured background.
+        "agency_attribution":     {
+            "box":   {"x": 0.8, "y": 1.20, "w": 6.0, "h": 0.35},
+            "font":  {"name": "Calibri", "size_pt": 11, "color_hex": "FECDD3", "bold": False},
+            "align": "left",
+        },
     },
 }
 

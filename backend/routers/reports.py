@@ -203,6 +203,7 @@ async def preview_cover(
             subtitle=subtitle,
             brand_primary_color=branding["brand_color"],
             accent_color=branding["accent_color"] or None,
+            agency_name=branding["agency_name"],
         )
 
         # 2) Stray-token substitution on slide[0] — a safety net for any

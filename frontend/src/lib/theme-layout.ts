@@ -38,6 +38,12 @@ export interface FontSpec {
   bold: boolean
 }
 
+export interface AgencyAttribution {
+  box: Box
+  font: FontSpec
+  align: 'left' | 'center' | 'right'
+}
+
 export interface ThemeLayout {
   slide_inches: { width: number; height: number }
   client_name_box: Box
@@ -53,6 +59,13 @@ export interface ThemeLayout {
    * - 'none': cover palette stays theme-native (colour flows to charts only)
    */
   brand_tint_strategy: 'header_band' | 'none'
+  /**
+   * Where "Prepared by <agency_name>" is drawn on the cover. Mirrors
+   * the pre-strip templates' original attribution placement. Set to
+   * null to skip. Frontend preview does not currently render this
+   * overlay; the backend draws it during PPTX generation.
+   */
+  agency_attribution: AgencyAttribution | null
   /** Short description shown in the theme picker. */
   label: string
   tagline: string
@@ -69,6 +82,11 @@ export const THEME_LAYOUT: Record<ThemeId, ThemeLayout> = {
     client_name_font:        { name: 'Calibri',       size_pt: 40, color_hex: '0F172A', bold: true },
     report_period_font:      { name: 'Calibri Light', size_pt: 14, color_hex: '64748B', bold: false },
     brand_tint_strategy:     'header_band',
+    agency_attribution: {
+      box:   { x: 0.8, y: 1.15, w: 6.0, h: 0.35 },
+      font:  { name: 'Calibri Light', size_pt: 11, color_hex: 'C7D2FE', bold: false },
+      align: 'left',
+    },
     label:                   'Modern Clean',
     tagline:                 'Light, minimalist; indigo accent',
   },
@@ -82,6 +100,11 @@ export const THEME_LAYOUT: Record<ThemeId, ThemeLayout> = {
     client_name_font:        { name: 'Calibri', size_pt: 40, color_hex: 'F8FAFC', bold: true },
     report_period_font:      { name: 'Calibri', size_pt: 14, color_hex: 'CBD5E1', bold: false },
     brand_tint_strategy:     'header_band',
+    agency_attribution: {
+      box:   { x: 0.8, y: 6.70, w: 8.0, h: 0.35 },
+      font:  { name: 'Calibri', size_pt: 11, color_hex: '475569', bold: false },
+      align: 'left',
+    },
     label:                   'Dark Executive',
     tagline:                 'Dark navy; corporate; serif accents',
   },
@@ -95,6 +118,11 @@ export const THEME_LAYOUT: Record<ThemeId, ThemeLayout> = {
     client_name_font:        { name: 'Calibri', size_pt: 40, color_hex: '0F172A', bold: true },
     report_period_font:      { name: 'Calibri', size_pt: 14, color_hex: '64748B', bold: false },
     brand_tint_strategy:     'none',
+    agency_attribution: {
+      box:   { x: 0.8, y: 6.80, w: 8.0, h: 0.35 },
+      font:  { name: 'Calibri', size_pt: 11, color_hex: '94A3B8', bold: false },
+      align: 'left',
+    },
     label:                   'Colorful Agency',
     tagline:                 'Multi-colour, agency-forward',
   },
@@ -108,6 +136,11 @@ export const THEME_LAYOUT: Record<ThemeId, ThemeLayout> = {
     client_name_font:        { name: 'Calibri', size_pt: 44, color_hex: 'FFFFFF', bold: true },
     report_period_font:      { name: 'Calibri', size_pt: 16, color_hex: 'C7D2FE', bold: false },
     brand_tint_strategy:     'none',
+    agency_attribution: {
+      box:   { x: 0.8, y: 6.80, w: 8.0, h: 0.35 },
+      font:  { name: 'Calibri', size_pt: 11, color_hex: 'A5B4FC', bold: false },
+      align: 'left',
+    },
     label:                   'Bold Geometric',
     tagline:                 'High-contrast, geometric, modern',
   },
@@ -121,6 +154,11 @@ export const THEME_LAYOUT: Record<ThemeId, ThemeLayout> = {
     client_name_font:        { name: 'Georgia', size_pt: 40, color_hex: '0F172A', bold: false },
     report_period_font:      { name: 'Calibri', size_pt: 14, color_hex: '64748B', bold: false },
     brand_tint_strategy:     'none',
+    agency_attribution: {
+      box:   { x: 1.5, y: 6.90, w: 10.3, h: 0.3 },
+      font:  { name: 'Calibri', size_pt: 9, color_hex: '94A3B8', bold: false },
+      align: 'center',
+    },
     label:                   'Minimal Elegant',
     tagline:                 'Off-white; serif; editorial',
   },
@@ -134,6 +172,11 @@ export const THEME_LAYOUT: Record<ThemeId, ThemeLayout> = {
     client_name_font:        { name: 'Calibri', size_pt: 42, color_hex: '0F172A', bold: true },
     report_period_font:      { name: 'Calibri', size_pt: 16, color_hex: '64748B', bold: false },
     brand_tint_strategy:     'header_band',
+    agency_attribution: {
+      box:   { x: 0.8, y: 1.20, w: 6.0, h: 0.35 },
+      font:  { name: 'Calibri', size_pt: 11, color_hex: 'FECDD3', bold: false },
+      align: 'left',
+    },
     label:                   'Gradient Modern',
     tagline:                 'Gradient accents, dark body',
   },
