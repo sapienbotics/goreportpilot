@@ -166,6 +166,9 @@ async def preview_cover(
         "client_logo_size":     client_sz,
         "client_logo_url":      client.get("logo_url") or "",
         "powered_by_badge":     False,
+        # Theme hint consumed by _embed_logos when no placeholder shape
+        # exists on the chrome-only cover (A-fix plumbing).
+        "_cover_theme":         theme,
     }
 
     def _render_preview() -> bytes:
@@ -187,25 +190,26 @@ async def preview_cover(
             prs.part.drop_rel(rId)
             del prs.slides._sldIdLst[idx]
 
-        # 1) Cover customisation runs FIRST — needs placeholder tokens
-        #    still intact to locate the client_name + report_period runs.
+        # 1) Cover customisation is the SOLE writer of cover text + colours
+        #    on the chrome-only cover (no placeholders remain to substitute).
+        import datetime as _dt  # noqa: PLC0415
+        today = _dt.date.today()
+        _effective_headline = (headline or "").strip() or (client.get("name") or "Acme Corp")
         apply_cover_customization(
             prs,
             theme=theme,
-            headline=headline,
+            headline=_effective_headline,
+            period_label=today.strftime("%B %Y"),
             subtitle=subtitle,
             brand_primary_color=branding["brand_color"],
             accent_color=branding["accent_color"] or None,
         )
 
-        # 2) Substitute remaining placeholder tokens with sample values.
-        import datetime as _dt  # noqa: PLC0415
-        today = _dt.date.today()
+        # 2) Stray-token substitution on slide[0] — a safety net for any
+        #    leftover placeholders in the chrome (e.g. a stale template
+        #    that hasn't been re-stripped). For the 6 design templates
+        #    this pass is a no-op because the cover is chrome-only.
         sample = {
-            "{{client_name}}":   client.get("name") or "Acme Corp",
-            "{{report_type}}":   "Performance Report",
-            "{{report_period}}": today.strftime("%B %Y"),
-            "{{report_date}}":   today.strftime("%d %B %Y"),
             "{{agency_name}}":   branding["agency_name"],
             "{{agency_email}}":  _profile.get("agency_email") or "",
             "{{agency_logo}}":   "",
@@ -215,7 +219,7 @@ async def preview_cover(
         for slide in prs.slides:
             _replace_placeholders_in_slide(slide, sample)
 
-        # 3) Logos LAST so preset colour changes don't touch them.
+        # 3) Logos LAST so colour changes don't touch them.
         _embed_logos(prs, branding)
 
         buf = _io.BytesIO()
@@ -683,6 +687,10 @@ async def _generate_report_internal(
     branding["agency_logo_size"]       = client.get("cover_agency_logo_size")     or "default"
     branding["client_logo_position"]   = client.get("cover_client_logo_position") or "default"
     branding["client_logo_size"]       = client.get("cover_client_logo_size")     or "default"
+    # Theme hint consumed by _embed_logos when no placeholder shape exists on
+    # the chrome-only cover — the A-fix strip removed placeholder shapes, so
+    # "default" logo position must fall back to theme_layout coordinates.
+    branding["_cover_theme"]           = client_theme
 
     logger.info(
         "generate[%s] theme=%r brand=%s agency_pos=%r client_pos=%r",
@@ -1756,6 +1764,7 @@ async def regenerate_report(
     # Design System (Option F v1) — regenerate honours the client's theme
     # at regeneration time (so presentation evolves with design changes).
     client_theme = client.get("theme") or "modern_clean"
+    branding["_cover_theme"]          = client_theme
     cover_customization = {
         "theme":                client_theme,
         "headline":             client.get("cover_headline"),

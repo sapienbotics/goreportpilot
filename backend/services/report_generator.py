@@ -966,6 +966,28 @@ def _measure_image(image_stream: "io.BytesIO") -> tuple[int, int]:
 _LOGO_MARGIN = Inches(0.3)
 
 
+def _theme_agency_logo_box(theme: str | None) -> dict | None:
+    """Return theme_layout's ``agency_logo_placeholder`` box, or None."""
+    if not theme:
+        return None
+    try:
+        from services.theme_layout import get as _get_layout  # noqa: PLC0415
+        return _get_layout(theme).get("agency_logo_placeholder")
+    except Exception:
+        return None
+
+
+def _theme_client_logo_box(theme: str | None) -> dict | None:
+    """Return theme_layout's ``client_logo_placeholder`` box, or None."""
+    if not theme:
+        return None
+    try:
+        from services.theme_layout import get as _get_layout  # noqa: PLC0415
+        return _get_layout(theme).get("client_logo_placeholder")
+    except Exception:
+        return None
+
+
 def _logo_max_box(size: str, *, kind: str) -> tuple[int, int]:
     """Return (max_w, max_h) EMU for a given size preset and logo kind."""
     size = (size or "default").lower()
@@ -1118,17 +1140,34 @@ def _embed_logos(prs: Any, branding: dict | None) -> None:
                     _delete_shape(cover, agency_logo_shape)
                     agency_logo_shape = None
             else:
-                # Legacy placeholder-based placement.
+                # "default" position. Order of preference:
+                #   1. Placeholder shape on the cover (legacy templates)
+                #   2. Theme layout's agency_logo_placeholder (chrome-only cover)
+                #   3. Hardcoded top-right corner
                 if agency_logo_shape:
                     max_w = min(int(agency_logo_shape.width or max_w), max_w)
                     max_h = min(int(agency_logo_shape.height or max_h), max_h)
+                    fit_w, fit_h = _fit_image_to_box(img_w_px, img_h_px, max_w, max_h)
                     base_top = int(agency_logo_shape.top)
+                    pic_left = sw - fit_w - _RIGHT_MARGIN
+                    pic_top = base_top
                 else:
-                    base_top = Inches(0.3)
-
-                fit_w, fit_h = _fit_image_to_box(img_w_px, img_h_px, max_w, max_h)
-                pic_left = sw - fit_w - _RIGHT_MARGIN
-                pic_top = base_top
+                    # Theme layout fallback — post-strip the chrome-only cover
+                    # has no placeholder shapes. Anchor to the theme's
+                    # agency_logo_placeholder box.
+                    _layout_box = _theme_agency_logo_box(br.get("_cover_theme"))
+                    if _layout_box is not None:
+                        lb_w = Inches(_layout_box["w"])
+                        lb_h = Inches(_layout_box["h"])
+                        max_w = min(lb_w, max_w)
+                        max_h = min(lb_h, max_h)
+                        fit_w, fit_h = _fit_image_to_box(img_w_px, img_h_px, max_w, max_h)
+                        pic_left = Inches(_layout_box["x"]) + (lb_w - fit_w) // 2
+                        pic_top  = Inches(_layout_box["y"])
+                    else:
+                        fit_w, fit_h = _fit_image_to_box(img_w_px, img_h_px, max_w, max_h)
+                        pic_left = sw - fit_w - _RIGHT_MARGIN
+                        pic_top = Inches(0.3)
 
             # Logo renders directly on the indigo header with no background
             # pad — agencies are expected to upload a logo that works on
@@ -1169,20 +1208,29 @@ def _embed_logos(prs: Any, branding: dict | None) -> None:
                     _delete_shape(cover, client_logo_shape)
                     client_logo_shape = None
             else:
+                # "default" position. Same preference order as agency.
                 if client_logo_shape:
                     max_w = min(int(client_logo_shape.width or max_w), max_w)
                     max_h = min(int(client_logo_shape.height or max_h), max_h)
+                    fit_w, fit_h = _fit_image_to_box(img_w_px, img_h_px, max_w, max_h)
                     base_top = int(client_logo_shape.top)
                     center_x = int(client_logo_shape.left) + max_w // 2
+                    pic_left = center_x - fit_w // 2
+                    pic_top = base_top
                 else:
-                    base_top = Inches(5.5)
-                    center_x = sw // 2
-
-                fit_w, fit_h = _fit_image_to_box(img_w_px, img_h_px, max_w, max_h)
-
-                # Horizontally centered around the placeholder (or slide center).
-                pic_left = center_x - fit_w // 2
-                pic_top = base_top
+                    _layout_box = _theme_client_logo_box(br.get("_cover_theme"))
+                    if _layout_box is not None:
+                        lb_w = Inches(_layout_box["w"])
+                        lb_h = Inches(_layout_box["h"])
+                        max_w = min(lb_w, max_w)
+                        max_h = min(lb_h, max_h)
+                        fit_w, fit_h = _fit_image_to_box(img_w_px, img_h_px, max_w, max_h)
+                        pic_left = Inches(_layout_box["x"]) + (lb_w - fit_w) // 2
+                        pic_top  = Inches(_layout_box["y"])
+                    else:
+                        fit_w, fit_h = _fit_image_to_box(img_w_px, img_h_px, max_w, max_h)
+                        pic_left = (sw - fit_w) // 2
+                        pic_top = Inches(5.5)
 
             # Client logos typically sit on the light body area; skip the pad
             # there. They only need contrast help when the slide background
@@ -1679,26 +1727,33 @@ def generate_pptx_report(
     except Exception as exc:
         logger.warning("KPI sparkline embedding skipped: %s", exc)
 
-    # ── Cover customisation (Option F v1) — MUST run BEFORE placeholder
-    # substitution so the module can identify {{client_name}} /
-    # {{report_period}} tokens. Minimal, template-respecting overrides:
-    # headline replace, subtitle append, header-band tint, accent bar.
-    if cover_customization:
-        try:
-            from services.cover_customization import apply_cover_customization  # noqa: PLC0415
-            apply_cover_customization(
-                prs,
-                theme=cover_customization.get("theme") or visual_template,
-                headline=cover_customization.get("headline"),
-                subtitle=cover_customization.get("subtitle"),
-                brand_primary_color=(
-                    cover_customization.get("brand_primary_color")
-                    or (branding or {}).get("brand_color")
-                ),
-                accent_color=cover_customization.get("accent_color"),
-            )
-        except Exception as exc:
-            logger.warning("Cover customisation application failed: %s", exc)
+    # ── Cover customisation (Option F v1, post-chrome-strip) ──────────────────
+    # The cover slide is chrome-only (no placeholder shapes). This module
+    # is the SOLE writer of cover text + colour overrides — it adds
+    # headline + period/subtitle text boxes at the theme's known
+    # coordinates, recolours the header band, and draws the accent bar.
+    # Logos are added later by ``_embed_logos``. Runs unconditionally so
+    # the cover always gets its baseline content even when no user
+    # overrides are set.
+    try:
+        from services.cover_customization import apply_cover_customization  # noqa: PLC0415
+        _cc = cover_customization or {}
+        _theme_for_cover = _cc.get("theme") or visual_template
+        _headline = (_cc.get("headline") or "").strip() or (client_info.get("name") or "Report")
+        apply_cover_customization(
+            prs,
+            theme=_theme_for_cover,
+            headline=_headline,
+            period_label=replacements.get("{{report_period}}", ""),
+            subtitle=_cc.get("subtitle"),
+            brand_primary_color=(
+                _cc.get("brand_primary_color")
+                or (branding or {}).get("brand_color")
+            ),
+            accent_color=_cc.get("accent_color"),
+        )
+    except Exception as exc:
+        logger.warning("Cover customisation application failed: %s", exc)
 
     # ── Generic pass: single-value placeholders (names, KPIs, dates, logos) ─
     for slide in prs.slides:

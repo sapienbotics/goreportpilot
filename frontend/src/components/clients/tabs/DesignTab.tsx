@@ -40,10 +40,13 @@ const LOGO_POSITIONS: { id: LogoPosition; label: string }[] = [
   { id: 'center',        label: 'Slide centre' },
 ]
 
+// Dropdown labels mirror the actual backend bounding boxes. "default" on
+// the backend maps to Medium (agency 2.5"×0.8", client 3"×2"), so the
+// dropdown now surfaces that truth — "default" is no longer a separate
+// option that confused users into thinking it was Small.
 const LOGO_SIZES: { id: LogoSize; label: string }[] = [
-  { id: 'default', label: 'Default' },
   { id: 'small',   label: 'Small' },
-  { id: 'medium',  label: 'Medium' },
+  { id: 'medium',  label: 'Medium (default)' },
   { id: 'large',   label: 'Large' },
 ]
 
@@ -83,14 +86,16 @@ export default function DesignTab({ client, onClientUpdate }: Props) {
   const [agencyPos,   setAgencyPos]  = useState<LogoPosition>(
     (client.cover_agency_logo_position as LogoPosition) || 'default',
   )
+  // Normalise legacy 'default' size → 'medium' so the dropdown renders the
+  // true size. Backend still accepts 'default' (treated as medium).
   const [agencySz,    setAgencySz]   = useState<LogoSize>(
-    (client.cover_agency_logo_size as LogoSize) || 'default',
+    normaliseLogoSize(client.cover_agency_logo_size),
   )
   const [clientPos,   setClientPos]  = useState<LogoPosition>(
     (client.cover_client_logo_position as LogoPosition) || 'default',
   )
   const [clientSz,    setClientSz]   = useState<LogoSize>(
-    (client.cover_client_logo_size as LogoSize) || 'default',
+    normaliseLogoSize(client.cover_client_logo_size),
   )
   const [clientLogo,  setClientLogo] = useState<string>(client.logo_url ?? '')
   const [logoUploading, setLogoUploading] = useState(false)
@@ -99,11 +104,6 @@ export default function DesignTab({ client, onClientUpdate }: Props) {
   const [previewing, setPreviewing] = useState(false)
 
   const layout = THEME_LAYOUT[theme]
-
-  // Effective brand colour — per-client override takes priority.
-  const effectiveBrand = isValidHex(primary)
-    ? primary
-    : (isValidHex(brandDefault ?? '') ? (brandDefault as string) : '#4338CA')
 
   const bandTintSupported = layout.brand_tint_strategy === 'header_band'
 
@@ -114,9 +114,9 @@ export default function DesignTab({ client, onClientUpdate }: Props) {
     primary    !== (client.cover_brand_primary_color ?? '') ||
     accent     !== (client.cover_brand_accent_color ?? '') ||
     agencyPos  !== ((client.cover_agency_logo_position as string) ?? 'default') ||
-    agencySz   !== ((client.cover_agency_logo_size as string)     ?? 'default') ||
+    agencySz   !== normaliseLogoSize(client.cover_agency_logo_size) ||
     clientPos  !== ((client.cover_client_logo_position as string) ?? 'default') ||
-    clientSz   !== ((client.cover_client_logo_size as string)     ?? 'default')
+    clientSz   !== normaliseLogoSize(client.cover_client_logo_size)
   )
 
   // ── Save ──────────────────────────────────────────────────────────────────
@@ -205,7 +205,7 @@ export default function DesignTab({ client, onClientUpdate }: Props) {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[1fr_minmax(0,480px)] gap-6">
+    <div className="grid grid-cols-1 lg:grid-cols-[1fr_minmax(0,560px)] gap-6">
       {/* ── Left: controls ──────────────────────────────────────────────── */}
       <div className="space-y-4">
         <Card>
@@ -381,7 +381,6 @@ export default function DesignTab({ client, onClientUpdate }: Props) {
             periodLine={buildPeriodLine(subtitle)}
             primary={isValidHex(primary) ? primary : null}
             accent={isValidHex(accent) ? accent : null}
-            effectiveBrand={effectiveBrand}
             agencyLogoUrl={agencyLogoUrl ?? null}
             agencyPos={agencyPos}
             agencySz={agencySz}
@@ -406,7 +405,6 @@ interface OverlayPreviewProps {
   periodLine: string
   primary: string | null
   accent: string | null
-  effectiveBrand: string
   agencyLogoUrl: string | null
   agencyPos: LogoPosition
   agencySz: LogoSize
@@ -416,29 +414,31 @@ interface OverlayPreviewProps {
 }
 
 function OverlayPreview({
-  theme, headline, periodLine, primary, accent, effectiveBrand,
+  theme, headline, periodLine, primary, accent,
   agencyLogoUrl, agencyPos, agencySz, clientLogoUrl, clientPos, clientSz,
 }: OverlayPreviewProps) {
   const layout = THEME_LAYOUT[theme]
 
   const nameStyle = useMemo(() => {
     const box = boxToPercentStyle(layout.client_name_box)
-    // Scale the point size to the preview width (preview height ≈ 270 px at
-    // typical widths). Template point sizes are calibrated for 13.333 inches.
-    // We approximate via width-proportional scaling on the parent's em base.
+    // Text overlays are the sole source of cover text since the
+    // chrome-only thumbnails carry no placeholder runs. Center-aligned
+    // to match backend cover_customization.py (PP_ALIGN.CENTER).
     return {
       ...box,
       color: `#${layout.client_name_font.color_hex}`,
       fontWeight: layout.client_name_font.bold ? 700 : 400,
       fontFamily: layout.client_name_font.name === 'Georgia' ? 'Georgia, serif' : 'Inter, Arial, sans-serif',
-      // Size scales with the preview's width via vw units clamped sensibly.
       fontSize: `clamp(14px, ${layout.client_name_font.size_pt / 4}%, 44px)`,
       lineHeight: 1.1,
       display: 'flex',
       alignItems: 'center',
+      justifyContent: 'center',
+      textAlign: 'center' as const,
       overflow: 'hidden',
       whiteSpace: 'nowrap' as const,
       textOverflow: 'ellipsis',
+      zIndex: 3,
     }
   }, [layout])
 
@@ -451,30 +451,42 @@ function OverlayPreview({
       fontFamily: 'Inter, Arial, sans-serif',
       fontSize: `clamp(10px, ${layout.report_period_font.size_pt / 4}%, 18px)`,
       display: 'flex',
-      alignItems: 'center',
+      alignItems: 'flex-start',
+      justifyContent: 'center',
+      textAlign: 'center' as const,
+      zIndex: 3,
     }
   }, [layout])
 
+  // B-fix: solid overlay (no blend mode) so the user's exact hex renders
+  // in the preview. Previously `mixBlendMode: multiply` + `opacity: 0.85`
+  // on dark template bands produced a muddy colour that didn't match the
+  // user's intent. Trade-off: solid hides any decorative shading under
+  // the band — acceptable because the chrome-only thumbnails now leave
+  // the band region clean anyway.
   const bandStyle = useMemo(() => {
     if (!layout.header_band || !primary || layout.brand_tint_strategy !== 'header_band') return null
     return {
       ...boxToPercentStyle(layout.header_band),
       background: primary,
-      mixBlendMode: 'multiply' as const,
-      opacity: 0.85,
+      zIndex: 1,
     }
   }, [layout, primary])
 
+  // B-fix: accent bar bumped to 0.10" (was 0.08"), pinned above band via
+  // z-index so it stays visible. Matches backend cover_customization.py:
+  // _draw_accent_bar uses bar_h_emu = Inches(0.10).
   const accentStyle = useMemo(() => {
     if (!layout.header_band || !accent || layout.brand_tint_strategy !== 'header_band') return null
     return {
       ...boxToPercentStyle({
         x: layout.header_band.x,
-        y: layout.header_band.y + layout.header_band.h - 0.08,
+        y: layout.header_band.y + layout.header_band.h - 0.10,
         w: layout.header_band.w,
-        h: 0.08,
+        h: 0.10,
       }),
       background: accent,
+      zIndex: 2,
     }
   }, [layout, accent])
 
@@ -530,10 +542,6 @@ function OverlayPreview({
         />
       )}
 
-      {/* Effective brand colour ink — invisible element carrying the colour
-          for debug inspection only. Keeps tsc warning-free about `effectiveBrand`
-          when the theme disables tint. */}
-      <span className="sr-only" data-effective-brand={effectiveBrand} />
     </div>
   )
 }
@@ -564,7 +572,7 @@ function PreviewLogo({
     <img
       src={url}
       alt=""
-      style={{ ...boxToPercentStyle(box), objectFit: 'contain' }}
+      style={{ ...boxToPercentStyle(box), objectFit: 'contain', zIndex: 4 }}
       className="absolute"
     />
   )
@@ -716,4 +724,11 @@ function buildPeriodLine(subtitle: string): string {
   const period = now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
   if (subtitle) return `${period} — ${subtitle}`
   return period
+}
+
+// Collapse the legacy 'default' value (which resolved to Medium on the
+// backend) to its honest name so users see what they're actually getting.
+function normaliseLogoSize(value: LogoSize | string | null | undefined): LogoSize {
+  if (value === 'small' || value === 'medium' || value === 'large') return value
+  return 'medium'
 }
