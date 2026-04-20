@@ -55,7 +55,10 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 // Bump when any cover_thumbnails/*.png changes on the backend so clients
 // refresh stale copies from browser/CDN caches. C3 fix (v2.1).
-const THUMBNAIL_VERSION = 'v2-1'
+// v2-2: forced bust after audit confirmed all 6 thumbnails are
+// byte-correct on the server — users reporting stale renders need
+// their browser disk cache invalidated, not a new regeneration.
+const THUMBNAIL_VERSION = 'v2-2'
 
 /** Build the thumbnail URL for a theme with a cache-bust query. */
 function thumbnailUrl(theme: ThemeId): string {
