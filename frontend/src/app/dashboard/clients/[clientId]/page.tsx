@@ -25,7 +25,7 @@ import IntegrationsTab  from '@/components/clients/tabs/IntegrationsTab'
 import ReportsTab       from '@/components/clients/tabs/ReportsTab'
 import SchedulesTab     from '@/components/clients/tabs/SchedulesTab'
 import SettingsTab      from '@/components/clients/tabs/SettingsTab'
-import ReportCustomizationTab from '@/components/clients/tabs/ReportCustomizationTab'
+import DesignTab            from '@/components/clients/tabs/DesignTab'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -33,15 +33,15 @@ interface Props {
   params: { clientId: string }
 }
 
-type TabId = 'overview' | 'integrations' | 'reports' | 'schedules' | 'customization' | 'settings'
+type TabId = 'overview' | 'integrations' | 'reports' | 'schedules' | 'design' | 'settings'
 
 const TABS: { id: TabId; label: string; icon: React.FC<{ className?: string }> }[] = [
-  { id: 'overview',      label: 'Overview',              icon: LayoutDashboard },
-  { id: 'integrations',  label: 'Integrations',          icon: Link2 },
-  { id: 'reports',       label: 'Reports',               icon: FileText },
-  { id: 'schedules',     label: 'Schedules',             icon: Clock },
-  { id: 'customization', label: 'Report customisation', icon: ImageIcon },
-  { id: 'settings',      label: 'Settings',              icon: Settings },
+  { id: 'overview',      label: 'Overview',     icon: LayoutDashboard },
+  { id: 'integrations',  label: 'Integrations', icon: Link2 },
+  { id: 'reports',       label: 'Reports',      icon: FileText },
+  { id: 'schedules',     label: 'Schedules',    icon: Clock },
+  { id: 'design',        label: 'Design',       icon: ImageIcon },
+  { id: 'settings',      label: 'Settings',     icon: Settings },
 ]
 
 // ── Helper ────────────────────────────────────────────────────────────────────
@@ -188,7 +188,6 @@ export default function ClientDetailPage({ params }: Props) {
   const [periodStart,      setPeriodStart]      = useState(defaultRange.start)
   const [periodEnd,        setPeriodEnd]        = useState(defaultRange.end)
   const [selectedTemplate, setSelectedTemplate] = useState<'full' | 'summary' | 'brief'>('full')
-  const [visualTemplate,   setVisualTemplate]   = useState<'modern_clean' | 'dark_executive' | 'colorful_agency' | 'bold_geometric' | 'minimal_elegant' | 'gradient_modern'>('modern_clean')
   const [generating,       setGenerating]       = useState(false)
   const [genError,         setGenError]         = useState<string | null>(null)
   const [csvFiles,         setCsvFiles]         = useState<ParsedCSV[]>([])
@@ -202,12 +201,13 @@ export default function ClientDetailPage({ params }: Props) {
     }
     setGenerating(true); setGenError(null)
     try {
+      // Design System (Option F v1) — theme now lives on the client row.
+      // No visual_template sent; backend reads client.theme authoritatively.
       const report = await reportsApi.generate({
         client_id:       clientId,
         period_start:    periodStart,
         period_end:      periodEnd,
         template:        selectedTemplate,
-        visual_template: visualTemplate,
         csv_sources:     csvFiles.length > 0
           ? csvFiles.map(c => ({ source_name: c.sourceName, metrics: c.metrics }))
           : undefined,
@@ -267,7 +267,11 @@ export default function ClientDetailPage({ params }: Props) {
   const [schedForm,    setSchedForm]    = useState<ScheduledReportPayload>({
     client_id: clientId, frequency: 'monthly', day_of_month: 1,
     time_utc: '09:00', template: 'full', auto_send: false, send_to_emails: [],
-    attachment_type: 'both', visual_template: 'modern_clean',
+    attachment_type: 'both',
+    // Design System (Option F v1) — scheduler reads client.theme; legacy
+    // visual_template on scheduled_reports is ignored. Keeping a default
+    // here only so new rows don't NULL-fail if the column still exists.
+    visual_template: 'modern_clean',
   })
   const [savingSched, setSavingSched] = useState(false)
   const [schedSaved,  setSchedSaved]  = useState(false)
@@ -483,8 +487,6 @@ export default function ClientDetailPage({ params }: Props) {
           setPeriodEnd={setPeriodEnd}
           selectedTemplate={selectedTemplate}
           setSelectedTemplate={setSelectedTemplate}
-          visualTemplate={visualTemplate}
-          setVisualTemplate={setVisualTemplate}
           generating={generating}
           genError={genError}
           reportConfig={reportConfig}
@@ -517,8 +519,8 @@ export default function ClientDetailPage({ params }: Props) {
         />
       )}
 
-      {activeTab === 'customization' && (
-        <ReportCustomizationTab
+      {activeTab === 'design' && (
+        <DesignTab
           client={client}
           onClientUpdate={(updated) => {
             setClient(updated)

@@ -60,23 +60,32 @@ export interface Client {
   is_active: boolean
   report_config?: ReportConfig | null
   report_language?: string | null  // 'en' | 'es' | 'fr' | etc.
-  // Cover-page customisation (Phase 3)
-  cover_design_preset?: CoverPreset | null
+  // Design System (Option F v1)
+  theme?: Theme | null
   cover_headline?: string | null
   cover_subtitle?: string | null
-  cover_hero_image_url?: string | null
-  // Phase 3 fix (Part B) — per-client brand + logo placement
   cover_brand_primary_color?: string | null
   cover_brand_accent_color?: string | null
   cover_agency_logo_position?: LogoPosition | null
   cover_agency_logo_size?: LogoSize | null
   cover_client_logo_position?: LogoPosition | null
   cover_client_logo_size?: LogoSize | null
+  // DEPRECATED — backend still returns these (nullable) for backward compat.
+  // The Design tab ignores them; they'll be dropped in migration 018.
+  cover_design_preset?: string | null
+  cover_hero_image_url?: string | null
   created_at: string
   updated_at: string
 }
 
-export type CoverPreset = 'default' | 'minimal' | 'bold' | 'corporate' | 'hero' | 'gradient'
+export type Theme =
+  | 'modern_clean'
+  | 'dark_executive'
+  | 'colorful_agency'
+  | 'bold_geometric'
+  | 'minimal_elegant'
+  | 'gradient_modern'
+
 export type LogoPosition =
   | 'default'
   | 'top-left'

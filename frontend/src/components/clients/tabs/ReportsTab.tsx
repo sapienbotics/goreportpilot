@@ -13,7 +13,6 @@ import CSVUploadForReport, { type ParsedCSV } from '@/components/reports/CSVUplo
 import type { Report, ReportConfig } from '@/types'
 
 type TemplateValue = 'full' | 'summary' | 'brief'
-type VisualValue = 'modern_clean' | 'dark_executive' | 'colorful_agency' | 'bold_geometric' | 'minimal_elegant' | 'gradient_modern'
 
 interface Props {
   clientId: string
@@ -25,8 +24,6 @@ interface Props {
   setPeriodEnd: (v: string) => void
   selectedTemplate: TemplateValue
   setSelectedTemplate: (v: TemplateValue) => void
-  visualTemplate: VisualValue
-  setVisualTemplate: (v: VisualValue) => void
   generating: boolean
   genError: string | null
   reportConfig: ReportConfig
@@ -47,7 +44,6 @@ export default function ReportsTab({
   clientId, reports, reportsLoading,
   periodStart, periodEnd, setPeriodStart, setPeriodEnd,
   selectedTemplate, setSelectedTemplate,
-  visualTemplate, setVisualTemplate,
   generating, genError,
   reportConfig, setReportConfig,
   savingConfig, configSaved,
@@ -55,7 +51,7 @@ export default function ReportsTab({
   csvFiles, setCsvFiles,
   handleGenerate, handleSaveConfig, handleCustomSectionImageUpload,
 }: Props) {
-  const { features: planFeatures, status: subStatus, trialReportsUsed, trialReportsLimit } = usePlanFeatures()
+  const { status: subStatus, trialReportsUsed, trialReportsLimit } = usePlanFeatures()
   const isExpired = subStatus === 'expired' || subStatus === 'cancelled'
   const isTrialing = subStatus === 'trialing'
   const trialLimitReached = isTrialing && trialReportsUsed >= trialReportsLimit
@@ -125,45 +121,7 @@ export default function ReportsTab({
                 </div>
               </div>
 
-              {/* Visual style */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Visual Style</label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {([
-                    { value: 'modern_clean' as const, label: 'Modern Clean', desc: 'Light & professional', colors: ['#4338CA', '#FAFAFA', '#FFFFFF'] },
-                    { value: 'dark_executive' as const, label: 'Dark Executive', desc: 'Premium dark theme', colors: ['#06B6D4', '#0F172A', '#1E293B'] },
-                    { value: 'colorful_agency' as const, label: 'Colorful Agency', desc: 'Vibrant & creative', colors: ['#F97316', '#8B5CF6', '#14B8A6'] },
-                    { value: 'bold_geometric' as const, label: 'Bold Geometric', desc: 'Strong shapes & impact', colors: ['#4338CA', '#3730A3', '#FFFFFF'] },
-                    { value: 'minimal_elegant' as const, label: 'Minimal Elegant', desc: 'Ultra-clean whitespace', colors: ['#0F172A', '#FFFFFF', '#E2E8F0'] },
-                    { value: 'gradient_modern' as const, label: 'Gradient Modern', desc: 'Warm startup aesthetic', colors: ['#F97316', '#F43F5E', '#8B5CF6'] },
-                  ]).map(opt => {
-                    const isLocked = !planFeatures.visual_templates.includes(opt.value)
-                    return (
-                      <button key={opt.value}
-                        onClick={() => !isLocked && setVisualTemplate(opt.value)}
-                        disabled={isLocked}
-                        className={`flex flex-col items-start px-3 py-2.5 rounded-lg border text-left transition-colors ${
-                          isLocked
-                            ? 'bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed opacity-60'
-                            : visualTemplate === opt.value
-                            ? 'bg-indigo-700 border-indigo-700 text-white'
-                            : 'bg-white border-slate-200 text-slate-700 hover:border-indigo-300 hover:bg-indigo-50'
-                        }`}>
-                        <div className="flex items-center gap-2 mb-1">
-                          <div className="flex -space-x-0.5">
-                            {opt.colors.map((c, i) => <div key={i} className="w-3 h-3 rounded-full border border-white/50" style={{ backgroundColor: c }} />)}
-                          </div>
-                          <span className="text-sm font-semibold">{opt.label}</span>
-                          {isLocked && <Lock className="h-3 w-3 text-amber-500" />}
-                        </div>
-                        <span className={`text-xs ${isLocked ? 'text-slate-400' : visualTemplate === opt.value ? 'text-indigo-200' : 'text-slate-400'}`}>
-                          {isLocked ? 'Upgrade to Pro' : opt.desc}
-                        </span>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
+              {/* Visual style moved to Design tab — theme is per-client now. */}
 
               {/* Date range */}
               <div className="flex flex-wrap gap-4">

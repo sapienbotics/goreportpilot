@@ -65,12 +65,10 @@ export interface ClientUpdatePayload extends Partial<ClientCreatePayload> {
   report_language?: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   report_config?: any  // ReportConfig — use any to avoid circular import
-  // Cover-page customisation (Phase 3)
-  cover_design_preset?: 'default' | 'minimal' | 'bold' | 'corporate' | 'hero' | 'gradient'
+  // Design System (Option F v1) — single per-client theme + minimal overrides.
+  theme?: 'modern_clean' | 'dark_executive' | 'colorful_agency' | 'bold_geometric' | 'minimal_elegant' | 'gradient_modern'
   cover_headline?: string | null
   cover_subtitle?: string | null
-  cover_hero_image_url?: string | null
-  // Phase 3 fix (Part B) — per-client brand + logo placement
   cover_brand_primary_color?: string | null
   cover_brand_accent_color?: string | null
   cover_agency_logo_position?: string | null
@@ -125,7 +123,8 @@ export interface ReportGeneratePayload {
   period_start: string // "YYYY-MM-DD"
   period_end: string   // "YYYY-MM-DD"
   template?: string    // "full" | "summary" | "brief" — defaults to "full"
-  visual_template?: string // "modern_clean" | "dark_executive" | "colorful_agency"
+  /** @deprecated Design System uses client.theme. Server ignores this field with a warn log. */
+  visual_template?: string
   csv_sources?: CSVSourcePayload[]
 }
 
@@ -445,14 +444,12 @@ export async function uploadCoverHero(clientId: string, file: File): Promise<{ u
   return res.json()
 }
 
-// Phase 3 — download a single-slide PPTX preview of a cover design.
+// Design System (Option F v1) — download a single-slide PPTX preview of the cover.
 export async function previewCover(payload: {
   client_id: string
-  preset?: string
+  theme?: string
   headline?: string | null
   subtitle?: string | null
-  hero_image_url?: string | null
-  visual_template?: string
   primary_color?: string | null
   accent_color?: string | null
   agency_logo_position?: string | null
