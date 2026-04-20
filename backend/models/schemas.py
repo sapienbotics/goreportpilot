@@ -42,18 +42,24 @@ class ClientUpdate(BaseModel):
     is_active: bool | None = None
     report_config: dict | None = None  # Per-client report customisation (sections, KPIs, template)
     report_language: str | None = None  # BCP-47 language code, e.g. "en", "fr", "de"
-    # Cover-page customisation (Phase 3)
-    cover_design_preset: str | None = None
+    # Design System (Option F v1) — single per-client theme choice.
+    # Replaces the old cover_design_preset concept.
+    theme: str | None = None
+    # Cover text + brand overrides
     cover_headline: str | None = None
     cover_subtitle: str | None = None
-    cover_hero_image_url: str | None = None
-    # Phase 3 fix (Part B) — per-client brand + logo placement
     cover_brand_primary_color: str | None = None
     cover_brand_accent_color: str | None = None
+    # Logo placement (unchanged from Phase 3)
     cover_agency_logo_position: str | None = None
     cover_agency_logo_size: str | None = None
     cover_client_logo_position: str | None = None
     cover_client_logo_size: str | None = None
+    # DEPRECATED — kept nullable for backward compat with old clients.
+    # The UI no longer writes these. Migration 017 ignores them. Future
+    # migration 018 will drop the columns.
+    cover_design_preset: str | None = None
+    cover_hero_image_url: str | None = None
 
     @field_validator("ai_tone")
     @classmethod
@@ -65,14 +71,17 @@ class ClientUpdate(BaseModel):
             raise ValueError(f"ai_tone must be one of {allowed}")
         return v
 
-    @field_validator("cover_design_preset")
+    @field_validator("theme")
     @classmethod
-    def validate_cover_preset(cls, v: str | None) -> str | None:
+    def validate_theme(cls, v: str | None) -> str | None:
         if v is None:
             return v
-        allowed = {"default", "minimal", "bold", "corporate", "hero", "gradient"}
+        allowed = {
+            "modern_clean", "dark_executive", "colorful_agency",
+            "bold_geometric", "minimal_elegant", "gradient_modern",
+        }
         if v not in allowed:
-            raise ValueError(f"cover_design_preset must be one of {allowed}")
+            raise ValueError(f"theme must be one of {allowed}")
         return v
 
     @field_validator("cover_agency_logo_position", "cover_client_logo_position")
@@ -113,18 +122,19 @@ class ClientResponse(BaseModel):
     is_active: bool
     report_config: dict | None = None  # Per-client section toggles, KPI selection, template
     report_language: str | None = None  # BCP-47 language code, e.g. "en", "fr", "de"
-    # Cover-page customisation (Phase 3)
-    cover_design_preset: str | None = None
+    # Design System (Option F v1)
+    theme: str | None = None
     cover_headline: str | None = None
     cover_subtitle: str | None = None
-    cover_hero_image_url: str | None = None
-    # Phase 3 fix (Part B) — per-client brand + logo placement
     cover_brand_primary_color: str | None = None
     cover_brand_accent_color: str | None = None
     cover_agency_logo_position: str | None = None
     cover_agency_logo_size: str | None = None
     cover_client_logo_position: str | None = None
     cover_client_logo_size: str | None = None
+    # DEPRECATED — see ClientUpdate notes.
+    cover_design_preset: str | None = None
+    cover_hero_image_url: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -141,14 +151,15 @@ class ClientListResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 class CoverPreviewRequest(BaseModel):
-    """Phase 3 — generate a single-slide PPTX preview of a cover design."""
+    """Generate a single-slide PPTX preview of a cover design (Option F v1).
+
+    All fields except `client_id` are optional per-request overrides. When
+    omitted, the stored value on `clients` is used.
+    """
     client_id: str
-    preset: str | None = None          # overrides stored client.cover_design_preset
-    headline: str | None = None        # overrides stored client.cover_headline
-    subtitle: str | None = None        # overrides stored client.cover_subtitle
-    hero_image_url: str | None = None  # overrides stored client.cover_hero_image_url
-    visual_template: str | None = None # overrides stored visual template
-    # Phase 3 fix (Part B) — per-request overrides for live-preview UX
+    theme: str | None = None
+    headline: str | None = None
+    subtitle: str | None = None
     primary_color: str | None = None
     accent_color: str | None = None
     agency_logo_position: str | None = None
@@ -156,14 +167,17 @@ class CoverPreviewRequest(BaseModel):
     client_logo_position: str | None = None
     client_logo_size: str | None = None
 
-    @field_validator("preset")
+    @field_validator("theme")
     @classmethod
-    def validate_preset(cls, v: str | None) -> str | None:
+    def validate_theme(cls, v: str | None) -> str | None:
         if v is None:
             return v
-        allowed = {"default", "minimal", "bold", "corporate", "hero", "gradient"}
+        allowed = {
+            "modern_clean", "dark_executive", "colorful_agency",
+            "bold_geometric", "minimal_elegant", "gradient_modern",
+        }
         if v not in allowed:
-            raise ValueError(f"preset must be one of {allowed}")
+            raise ValueError(f"theme must be one of {allowed}")
         return v
 
 

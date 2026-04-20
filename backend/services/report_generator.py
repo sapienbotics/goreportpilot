@@ -1679,24 +1679,26 @@ def generate_pptx_report(
     except Exception as exc:
         logger.warning("KPI sparkline embedding skipped: %s", exc)
 
-    # ── Cover preset (Phase 3) — MUST run BEFORE placeholder substitution
-    # so apply_cover_preset can identify shapes by their placeholder tokens
-    # ({{client_name}}, {{report_period}}, etc.). Recolouring here persists
-    # through the later text-replacement pass.
+    # ── Cover customisation (Option F v1) — MUST run BEFORE placeholder
+    # substitution so the module can identify {{client_name}} /
+    # {{report_period}} tokens. Minimal, template-respecting overrides:
+    # headline replace, subtitle append, header-band tint, accent bar.
     if cover_customization:
         try:
-            from services.cover_presets import apply_cover_preset  # noqa: PLC0415
-            apply_cover_preset(
+            from services.cover_customization import apply_cover_customization  # noqa: PLC0415
+            apply_cover_customization(
                 prs,
-                preset=cover_customization.get("preset") or "default",
+                theme=cover_customization.get("theme") or visual_template,
                 headline=cover_customization.get("headline"),
                 subtitle=cover_customization.get("subtitle"),
-                hero_image_url=cover_customization.get("hero_image_url"),
-                brand_color=(branding or {}).get("brand_color"),
+                brand_primary_color=(
+                    cover_customization.get("brand_primary_color")
+                    or (branding or {}).get("brand_color")
+                ),
                 accent_color=cover_customization.get("accent_color"),
             )
         except Exception as exc:
-            logger.warning("Cover preset application failed: %s", exc)
+            logger.warning("Cover customisation application failed: %s", exc)
 
     # ── Generic pass: single-value placeholders (names, KPIs, dates, logos) ─
     for slide in prs.slides:

@@ -72,31 +72,18 @@ async def _process_scheduled_report(schedule: dict, supabase, now: datetime) -> 
     user_id         = schedule["user_id"]
     template        = schedule.get("template", "full")
     frequency       = schedule.get("frequency", "monthly")
-    visual_template = schedule.get("visual_template") or "modern_clean"
 
-    # ── Plan pre-check for the visual template ────────────────────────────
-    # _generate_report_internal will also clamp internally, but we
-    # log a warning here for operator visibility when a schedule
-    # references a template the user's current plan no longer allows
-    # (e.g. downgraded from Pro to Starter).
-    try:
-        from middleware.plan_enforcement import get_user_subscription  # noqa: PLC0415
-        from services.plans import get_plan  # noqa: PLC0415
-        _sub = get_user_subscription(user_id)
-        _plan_name = _sub.get("plan", "trial")
-        _allowed = (
-            get_plan(_plan_name).get("features", {}).get("visual_templates")
-            or ["modern_clean"]
+    # Option F v1 — theme is per-client, not per-schedule. _generate_report_internal
+    # reads client.theme authoritatively. Legacy scheduled_reports.visual_template
+    # is ignored (kept in DB for historical reads). Log it when set so ops
+    # can see stale data without it affecting generation.
+    legacy_visual_template = schedule.get("visual_template")
+    if legacy_visual_template:
+        logger.debug(
+            "Scheduler: ignoring legacy visual_template=%r on schedule %s "
+            "(client.theme now authoritative)",
+            legacy_visual_template, schedule.get("id"),
         )
-        if visual_template not in _allowed:
-            logger.warning(
-                "Scheduler: plan %s does not allow visual_template=%s for "
-                "schedule %s — overriding to modern_clean",
-                _plan_name, visual_template, schedule.get("id"),
-            )
-            visual_template = "modern_clean"
-    except Exception as exc:
-        logger.debug("Scheduler: plan pre-check skipped — %s", exc)
 
     # ── Calculate report period based on frequency ──────────────────────────
     today = now.date()
@@ -112,8 +99,8 @@ async def _process_scheduled_report(schedule: dict, supabase, now: datetime) -> 
 
     # ── Generate the report ─────────────────────────────────────────────────
     logger.info(
-        "Scheduler: generating %s %s report for client %s (%s → %s, visual=%s)",
-        frequency, template, client_id, period_start, period_end, visual_template,
+        "Scheduler: generating %s %s report for client %s (%s → %s)",
+        frequency, template, client_id, period_start, period_end,
     )
     row, client_name = await _generate_report_internal(
         client_id=client_id,
@@ -121,7 +108,6 @@ async def _process_scheduled_report(schedule: dict, supabase, now: datetime) -> 
         period_start=str(period_start),
         period_end=str(period_end),
         template=template,
-        visual_template=visual_template,
         supabase=supabase,
     )
     report_id = row["id"]
