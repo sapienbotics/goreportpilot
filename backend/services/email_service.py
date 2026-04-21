@@ -255,3 +255,104 @@ def build_report_email_html(
   </table>
 </body>
 </html>"""
+
+
+# ---------------------------------------------------------------------------
+# build_goal_alert_email_html (Phase 6)
+# ---------------------------------------------------------------------------
+
+def _format_metric_value(value: float | None, metric_label: str) -> str:
+    """Render a metric value with unit hints inferred from the label."""
+    if value is None:
+        return "\u2014"  # em-dash
+    label_lc = (metric_label or "").lower()
+    if "rate" in label_lc or "ctr" in label_lc:
+        return f"{value:.1f}%"
+    if "roas" in label_lc:
+        return f"{value:.2f}x"
+    if "spend" in label_lc or "cost" in label_lc or "revenue" in label_lc or "cpa" in label_lc:
+        return f"{value:,.2f}"
+    return f"{value:,.0f}"
+
+
+def build_goal_alert_email_html(
+    *,
+    client_name: str,
+    metric_label: str,
+    actual: float | None,
+    target: float,
+    comparison: str,
+    status: str,           # 'missed' | 'at_risk' | 'on_track'
+    period_key: str,
+) -> str:
+    """
+    Phase 6 — alert email. Colour + headline vary with status so agencies
+    can triage in the inbox without opening the mail.
+    """
+    theme = {
+        "missed":   {"accent": "#DC2626", "badge_bg": "#FEF2F2", "badge_fg": "#991B1B",
+                     "title":  "Goal missed", "icon": "&#9888;"},
+        "at_risk":  {"accent": "#D97706", "badge_bg": "#FFFBEB", "badge_fg": "#92400E",
+                     "title":  "Goal at risk", "icon": "&#9888;"},
+        "on_track": {"accent": "#059669", "badge_bg": "#ECFDF5", "badge_fg": "#065F46",
+                     "title":  "Goal on track", "icon": "&#10003;"},
+    }.get(status, {
+        "accent": "#4338CA", "badge_bg": "#EEF2FF", "badge_fg": "#3730A3",
+        "title":  "Goal update", "icon": "&#8226;",
+    })
+
+    actual_str = _format_metric_value(actual, metric_label)
+    target_str = _format_metric_value(target, metric_label)
+    cmp_symbol = {"gte": "&ge;", "lte": "&le;", "eq": "="}.get(comparison, comparison)
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><title>{theme['title']}</title></head>
+<body style="margin:0;padding:0;background:#F8FAFC;font-family:Inter,Segoe UI,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#F8FAFC;">
+    <tr><td align="center" style="padding:32px 16px;">
+      <table width="600" cellpadding="0" cellspacing="0" role="presentation"
+             style="background:#ffffff;border-radius:12px;overflow:hidden;
+                    box-shadow:0 1px 3px rgba(0,0,0,0.08);max-width:600px;width:100%;">
+        <tr><td style="background:{theme['accent']};padding:24px 32px;">
+          <p style="margin:0;color:#ffffff;font-size:11px;font-weight:700;
+                    letter-spacing:0.08em;text-transform:uppercase;opacity:0.9;">
+            {client_name}
+          </p>
+          <h1 style="margin:6px 0 0 0;color:#ffffff;font-size:22px;font-weight:700;line-height:1.3;">
+            {theme['icon']} {theme['title']}: {metric_label}
+          </h1>
+          <p style="margin:6px 0 0 0;color:#ffffff;font-size:13px;opacity:0.9;">
+            Period {period_key}
+          </p>
+        </td></tr>
+        <tr><td style="padding:28px 32px;">
+          <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="margin-bottom:20px;">
+            <tr>
+              <td style="width:48%;padding:16px;background:#F8FAFC;border-radius:8px;vertical-align:top;">
+                <p style="margin:0;color:#64748B;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">Current</p>
+                <p style="margin:6px 0 0 0;color:#0F172A;font-size:24px;font-weight:700;">{actual_str}</p>
+              </td>
+              <td style="width:4%;"></td>
+              <td style="width:48%;padding:16px;background:{theme['badge_bg']};border-radius:8px;vertical-align:top;">
+                <p style="margin:0;color:{theme['badge_fg']};font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">Target ({cmp_symbol})</p>
+                <p style="margin:6px 0 0 0;color:{theme['badge_fg']};font-size:24px;font-weight:700;">{target_str}</p>
+              </td>
+            </tr>
+          </table>
+          <p style="margin:0;color:#334155;font-size:14px;line-height:1.6;">
+            This is an automated alert from GoReportPilot. Review the goal in
+            your client dashboard to adjust the target or mute alerts if the
+            expectation has changed.
+          </p>
+        </td></tr>
+        <tr><td style="padding:16px 32px 24px;border-top:1px solid #F1F5F9;">
+          <p style="margin:0;font-size:11px;color:#94A3B8;line-height:1.5;">
+            Sent by GoReportPilot. One alert per goal per period.
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>"""

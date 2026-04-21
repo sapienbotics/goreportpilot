@@ -5,7 +5,7 @@ Check subscription status and plan limits before allowing actions.
 import logging
 from datetime import datetime, timezone
 
-from services.plans import get_client_limit, check_feature, get_plan
+from services.plans import get_client_limit, get_goal_limit, check_feature, get_plan
 from services.supabase_client import get_supabase_admin
 
 logger = logging.getLogger(__name__)
@@ -96,6 +96,43 @@ def can_create_client(user_id: str) -> tuple[bool, str]:
             False,
             f"You've reached your plan limit ({current_count}/{limit} clients). "
             "Upgrade to add more.",
+        )
+
+    return True, ""
+
+
+def can_create_goal(user_id: str, client_id: str) -> tuple[bool, str]:
+    """
+    Phase 6 — enforce per-client goal limits.
+    Starter = 1, Pro = 3, Agency = unlimited (999).
+    Count is scoped per client (not per user), so upgrading a client's
+    plan doesn't retroactively affect a different client's quota.
+    """
+    supabase = get_supabase_admin()
+    sub = get_user_subscription(user_id)
+
+    if sub.get("status") in ("expired", "cancelled"):
+        return False, "Your subscription has expired. Please upgrade to continue."
+
+    plan = sub.get("plan", "trial")
+    limit = get_goal_limit(plan)
+
+    count_result = (
+        supabase.table("goals")
+        .select("id", count="exact")
+        .eq("client_id", client_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    current_count = count_result.count or 0
+
+    if current_count >= limit:
+        plan_cfg = get_plan(plan)
+        display  = plan_cfg.get("display_name", plan.capitalize())
+        return (
+            False,
+            f"You've reached the {display} plan's goal limit "
+            f"({current_count}/{limit} goals on this client). Upgrade to add more.",
         )
 
     return True, ""

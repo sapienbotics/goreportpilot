@@ -44,9 +44,13 @@ async def _scheduler_loop() -> None:
             from services.scheduler import (  # noqa: PLC0415
                 check_and_run_scheduled_reports,
                 check_and_run_health_checks,
+                check_and_run_goal_checks,
             )
             await check_and_run_scheduled_reports()
             await check_and_run_health_checks()
+            # Phase 6 — evaluate goals after the health sweep so alerts
+            # benefit from any snapshot refresh a health check might trigger.
+            await check_and_run_goal_checks()
         except Exception as exc:
             logger.error("Scheduler loop error: %s", exc)
         await asyncio.sleep(900)  # run every 15 minutes
@@ -142,6 +146,7 @@ async def health_check():
 from routers import auth, clients, connections, reports, settings as settings_router, scheduled_reports, billing, dashboard, admin  # noqa: E402
 from routers import csv_upload  # noqa: E402
 from routers import admin_analytics  # noqa: E402
+from routers import goals as goals_router  # noqa: E402  # Phase 6
 from routers.shared import reports_router as shared_reports_router, public_router as shared_public_router  # noqa: E402
 
 # Create custom_sections static dir if not exists
@@ -163,3 +168,6 @@ app.include_router(admin.router,              prefix="/api/admin",              
 app.include_router(admin_analytics.router,    prefix="/api/admin",              tags=["admin"])
 app.include_router(shared_reports_router,     prefix="/api/reports",            tags=["sharing"])
 app.include_router(shared_public_router,      prefix="/api/shared",             tags=["shared-public"])
+# Phase 6 — Goals & Alerts. Routes in goals.py carry absolute segments
+# (/goals/metrics, /clients/{id}/goals/...) so we mount once at /api.
+app.include_router(goals_router.router,       prefix="/api",                    tags=["goals"])

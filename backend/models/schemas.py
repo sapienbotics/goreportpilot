@@ -430,3 +430,88 @@ class ScheduledReportResponse(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+# ---------------------------------------------------------------------------
+# Goal schemas (Phase 6)
+# ---------------------------------------------------------------------------
+
+_GOAL_COMPARISONS = {"gte", "lte", "eq"}
+_GOAL_PERIODS     = {"weekly", "monthly"}
+
+
+class GoalCreate(BaseModel):
+    metric: str
+    comparison: str = "gte"
+    target_value: float
+    tolerance_pct: float = 5.0
+    period: str = "monthly"
+    is_active: bool = True
+    alert_emails: list[str] | None = None
+
+    @field_validator("comparison")
+    @classmethod
+    def _v_cmp(cls, v: str) -> str:
+        if v not in _GOAL_COMPARISONS:
+            raise ValueError(f"comparison must be one of {_GOAL_COMPARISONS}")
+        return v
+
+    @field_validator("period")
+    @classmethod
+    def _v_period(cls, v: str) -> str:
+        if v not in _GOAL_PERIODS:
+            raise ValueError(f"period must be one of {_GOAL_PERIODS}")
+        return v
+
+
+class GoalUpdate(BaseModel):
+    metric: str | None = None
+    comparison: str | None = None
+    target_value: float | None = None
+    tolerance_pct: float | None = None
+    period: str | None = None
+    is_active: bool | None = None
+    alert_emails: list[str] | None = None
+
+    @field_validator("comparison")
+    @classmethod
+    def _v_cmp(cls, v: str | None) -> str | None:
+        if v is not None and v not in _GOAL_COMPARISONS:
+            raise ValueError(f"comparison must be one of {_GOAL_COMPARISONS}")
+        return v
+
+    @field_validator("period")
+    @classmethod
+    def _v_period(cls, v: str | None) -> str | None:
+        if v is not None and v not in _GOAL_PERIODS:
+            raise ValueError(f"period must be one of {_GOAL_PERIODS}")
+        return v
+
+
+class GoalResponse(BaseModel):
+    id: str
+    client_id: str
+    user_id: str
+    metric: str
+    metric_label: str | None = None
+    comparison: str
+    target_value: float
+    tolerance_pct: float
+    period: str
+    is_active: bool
+    alert_emails: list[str] = []
+    last_evaluated_at: datetime | None = None
+    # Computed fields — populated by the GET endpoint, not stored in DB.
+    current_value: float | None = None
+    status: str | None = None  # 'on_track' | 'at_risk' | 'missed' | 'no_data'
+    period_key: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class GoalListResponse(BaseModel):
+    goals: list[GoalResponse]
+    total: int
+    limit: int   # plan limit so the UI can render "X/Y goals used"

@@ -21,6 +21,16 @@ logger = logging.getLogger(__name__)
 HEALTH_CHECK_INTERVAL_SECONDS = 6 * 3600   # 6 hours
 _last_health_check_ts: float = 0.0
 
+# ---------------------------------------------------------------------------
+# Goal-check cadence (Phase 6)
+# ---------------------------------------------------------------------------
+# Goals are evaluated against cached snapshots and send at most one alert
+# per (goal, period, alert_type), so running hourly is cheap. We still
+# gate to avoid hammering Resend if the scheduler tick drops below 60 min.
+
+GOAL_CHECK_INTERVAL_SECONDS = 1 * 3600   # 1 hour
+_last_goal_check_ts: float = 0.0
+
 
 # ---------------------------------------------------------------------------
 # Public entry point — called by the lifespan loop
@@ -247,3 +257,35 @@ async def check_and_run_health_checks() -> None:
     except Exception as exc:
         logger.error("Health check sweep failed: %s", exc)
         # Do NOT advance _last_health_check_ts on failure so we retry next tick.
+
+
+# ---------------------------------------------------------------------------
+# Goal-check sweep (Phase 6)
+# ---------------------------------------------------------------------------
+
+
+async def check_and_run_goal_checks() -> None:
+    """
+    Evaluate every active goal and send alerts where (a) the goal is missed
+    or at risk and (b) we haven't already alerted for this period + type.
+
+    Short-circuits if fewer than GOAL_CHECK_INTERVAL_SECONDS have elapsed
+    since the last sweep — mirrors the cadence pattern used by
+    check_and_run_health_checks() so the main scheduler loop can call
+    this every tick without worrying about rate.
+    """
+    global _last_goal_check_ts  # noqa: PLW0603
+
+    now = time.monotonic()
+    if (now - _last_goal_check_ts) < GOAL_CHECK_INTERVAL_SECONDS:
+        remaining = int(GOAL_CHECK_INTERVAL_SECONDS - (now - _last_goal_check_ts))
+        logger.debug("Goal check skipped — %d seconds until next sweep", remaining)
+        return
+
+    try:
+        from services.goal_checker import check_and_send_alerts  # noqa: PLC0415
+        await check_and_send_alerts()
+        _last_goal_check_ts = now
+    except Exception as exc:
+        logger.error("Goal check sweep failed: %s", exc)
+        # Do NOT advance _last_goal_check_ts on failure so we retry next tick.
