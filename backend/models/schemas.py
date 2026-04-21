@@ -518,3 +518,28 @@ class GoalListResponse(BaseModel):
     plan: str    # plan name e.g. 'starter', 'pro', 'agency', 'trial'
     is_trial: bool = False
     plan_goal_limit: int | None = None  # what the limit will be AFTER trial ends
+
+
+# ---------------------------------------------------------------------------
+# Business-context AI enhancement (Phase 7 UX)
+# ---------------------------------------------------------------------------
+
+class EnhanceContextRequest(BaseModel):
+    text: str
+
+    @field_validator("text")
+    @classmethod
+    def _v_text(cls, v: str) -> str:
+        stripped = (v or "").strip()
+        if len(stripped) < 20:
+            raise ValueError("text must be at least 20 characters")
+        if len(stripped) > 2000:
+            # Hard ceiling well above the 500-char UI counter — catches abuse
+            # without blocking users who paste a long brief and then expect
+            # the model to condense it.
+            raise ValueError("text exceeds 2000 characters")
+        return stripped
+
+
+class EnhanceContextResponse(BaseModel):
+    enhanced: str

@@ -11,7 +11,7 @@ import { X } from 'lucide-react'
 import { toast } from 'sonner'
 import { clientsApi } from '@/lib/api'
 import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
+import BusinessContextField, { BUSINESS_CONTEXT_MAX } from '@/components/clients/BusinessContextField'
 import type { Client } from '@/types'
 
 const schema = z.object({
@@ -19,7 +19,7 @@ const schema = z.object({
   website_url: z.string().optional(),
   industry: z.string().optional(),
   primary_contact_email: z.string().email('Invalid email').optional().or(z.literal('')),
-  goals_context: z.string().optional(),
+  goals_context: z.string().max(BUSINESS_CONTEXT_MAX).optional(),
 })
 
 type FormValues = z.infer<typeof schema>
@@ -37,10 +37,18 @@ export default function AddClientDialog({ open, onOpenChange, onClientAdded }: P
     register,
     handleSubmit,
     reset,
+    setValue,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
+    defaultValues: { goals_context: '' },
   })
+
+  // Watched so BusinessContextField stays a controlled input (react-hook-form
+  // only registers raw refs; this field needs full value/onChange control for
+  // the AI-assist diff flow and the character counter).
+  const goalsContext = watch('goals_context') ?? ''
 
   const onSubmit = async (values: FormValues) => {
     setServerError(null)
@@ -52,6 +60,10 @@ export default function AddClientDialog({ open, onOpenChange, onClientAdded }: P
       const client = await clientsApi.create(payload)
       reset()
       toast.success('Client created successfully')
+      // Nudge toward richer context after save — doesn't block, just informs.
+      if (!values.goals_context || values.goals_context.trim().length === 0) {
+        toast.warning('Reports will use generic AI analysis. Add business context anytime for more strategic insights.')
+      }
       onClientAdded(client)
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
@@ -141,18 +153,12 @@ export default function AddClientDialog({ open, onOpenChange, onClientAdded }: P
             )}
           </div>
 
-          {/* Goals / context */}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Goals &amp; context
-              <span className="ml-1 font-normal text-slate-400">(for AI reports)</span>
-            </label>
-            <Textarea
-              {...register('goals_context')}
-              placeholder="This client wants to grow e-commerce revenue by 30%..."
-              rows={3}
-            />
-          </div>
+          {/* Business context (shared component — quality dot, counter, AI assist, hints) */}
+          <BusinessContextField
+            value={goalsContext}
+            onChange={(next) => setValue('goals_context', next, { shouldDirty: true })}
+            rows={3}
+          />
 
           {serverError && (
             <p className="text-sm text-rose-600">{serverError}</p>

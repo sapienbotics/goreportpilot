@@ -346,6 +346,11 @@ export default function ClientDetailPage({ params }: Props) {
       setClient(updated)
       setEditing(false)
       toast.success('Client saved')
+      // Nudge when business context is left empty — doesn't block save, just
+      // reminds the user that AI output degrades to generic without it.
+      if (!(editValues.goals_context ?? '').trim()) {
+        toast.warning('Reports will use generic AI analysis. Add business context anytime for more strategic insights.')
+      }
     } catch { toast.error('Failed to save changes.') }
     finally { setSaving(false) }
   }

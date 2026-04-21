@@ -6,6 +6,7 @@ import {
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import LanguageSelector, { LANGUAGES } from '@/components/clients/LanguageSelector'
+import BusinessContextField, { computeQuality } from '@/components/clients/BusinessContextField'
 import type { Client } from '@/types'
 
 interface Props {
@@ -124,12 +125,42 @@ export default function SettingsTab({
             ) : <span className="text-slate-400">—</span>}
           </Field>
 
-          <Field label="Goals & context">
+          <Field label="Business Context">
             {editing ? (
-              <textarea value={editValues.goals_context ?? ''} onChange={e => setEditValues(v => ({ ...v, goals_context: e.target.value }))}
-                placeholder="Goals, KPIs, context for AI reports…" rows={4}
-                className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none" />
-            ) : <span className="whitespace-pre-wrap">{client.goals_context ?? <span className="text-slate-400">—</span>}</span>}
+              <BusinessContextField
+                value={editValues.goals_context ?? ''}
+                onChange={(next) => setEditValues(v => ({ ...v, goals_context: next }))}
+                showLabel={false}
+                rows={4}
+              />
+            ) : (
+              <div className="space-y-1">
+                {client.goals_context ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`inline-block h-2 w-2 rounded-full ${
+                          computeQuality(client.goals_context) === 'good' ? 'bg-emerald-500'
+                          : computeQuality(client.goals_context) === 'medium' ? 'bg-amber-400'
+                          : computeQuality(client.goals_context) === 'low' ? 'bg-amber-500'
+                          : 'bg-rose-500'
+                        }`}
+                        title="Context quality — longer and goal-oriented text unlocks better AI recommendations."
+                      />
+                      <span className="text-xs text-slate-400">
+                        {client.goals_context.length} characters
+                      </span>
+                    </div>
+                    <span className="whitespace-pre-wrap">{client.goals_context}</span>
+                  </>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="inline-block h-2 w-2 rounded-full bg-rose-500" title="Empty — reports will use generic AI analysis." />
+                    <span className="text-slate-400">—</span>
+                  </div>
+                )}
+              </div>
+            )}
           </Field>
 
           <Field label="Report language">

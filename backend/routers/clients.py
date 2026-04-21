@@ -10,13 +10,25 @@ import os
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from slowapi import Limiter
 
 from config import settings as app_settings
 from middleware.auth import get_current_user_id
 from middleware.plan_enforcement import can_create_client
-from models.schemas import ClientCreate, ClientUpdate, ClientResponse, ClientListResponse
+from middleware.rate_limit import user_rate_limit_key
+from models.schemas import (
+    ClientCreate, ClientUpdate, ClientResponse, ClientListResponse,
+    EnhanceContextRequest, EnhanceContextResponse,
+)
+from services.context_enhancer import enhance_business_context
 from services.supabase_client import get_supabase_admin
+
+# Per-user rate limiter for the AI-assist endpoint. Separate from the
+# app-level IP limiter in main.py so the "10 per hour" quota follows the
+# agency user, not whatever NAT they're behind. In-memory only — fine for
+# a single Railway replica; revisit if we move to multi-replica.
+_user_limiter = Limiter(key_func=user_rate_limit_key)
 
 _BACKEND_DIR    = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _CLIENT_LOGOS   = os.path.join(_BACKEND_DIR, "static", "logos", "clients")
@@ -65,6 +77,41 @@ async def create_client(
             detail="Failed to create client",
         )
     return ClientResponse(**result.data[0])
+
+
+# ---------------------------------------------------------------------------
+# POST /enhance-context  (Phase 7 UX — AI-assist on Business Context field)
+# ---------------------------------------------------------------------------
+# Declared BEFORE /{client_id} routes so "enhance-context" is never matched
+# as a UUID path param.
+
+@router.post("/enhance-context", response_model=EnhanceContextResponse)
+@_user_limiter.limit("10/hour")
+async def enhance_context(
+    request: Request,  # noqa: ARG001 — required by slowapi for key extraction
+    payload: EnhanceContextRequest,
+    user_id: str = Depends(get_current_user_id),  # noqa: ARG001 — auth only
+) -> EnhanceContextResponse:
+    """
+    Rewrite the agency's raw client business-context blurb into a concise
+    report-ready paragraph. Calls GPT-4.1. Rate-limited to 10/hour per user
+    so a single agency can't burn through OpenAI quota on this optional
+    convenience endpoint.
+    """
+    try:
+        enhanced = await enhance_business_context(payload.text)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        logger.error("enhance_context failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="AI enhancement temporarily unavailable. Please try again.",
+        ) from exc
+    return EnhanceContextResponse(enhanced=enhanced)
 
 
 @router.get("/{client_id}", response_model=ClientResponse)

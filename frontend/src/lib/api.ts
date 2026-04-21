@@ -101,6 +101,13 @@ export const clientsApi = {
   delete: async (clientId: string): Promise<void> => {
     await api.delete(`/api/clients/${clientId}`)
   },
+
+  // Phase 7 — AI-assist for the Business Context field. Rate-limited server-
+  // side to 10/hour per user. `text` must be >= 20 chars.
+  enhanceContext: async (text: string): Promise<{ enhanced: string }> => {
+    const { data } = await api.post('/api/clients/enhance-context', { text })
+    return data
+  },
 }
 
 // ---------------------------------------------------------------------------
