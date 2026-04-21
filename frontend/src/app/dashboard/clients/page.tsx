@@ -5,8 +5,8 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Plus, Globe, Mail, Building2 } from 'lucide-react'
-import { clientsApi } from '@/lib/api'
+import { Plus, Globe, Mail, Building2, MessageSquare } from 'lucide-react'
+import { clientsApi, commentsApi } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import AddClientDialog from '@/components/clients/add-client-dialog'
 import type { Client } from '@/types'
@@ -16,6 +16,7 @@ export default function ClientsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [unreadByClient, setUnreadByClient] = useState<Record<string, number>>({})
 
   const fetchClients = async () => {
     try {
@@ -30,6 +31,13 @@ export default function ClientsPage() {
 
   useEffect(() => {
     fetchClients()
+    commentsApi.unread()
+      .then((res) => {
+        const map: Record<string, number> = {}
+        for (const row of res.by_client) map[row.client_id] = row.unresolved_count
+        setUnreadByClient(map)
+      })
+      .catch(() => { /* non-fatal */ })
   }, [])
 
   const handleClientAdded = (newClient: Client) => {
@@ -92,35 +100,49 @@ export default function ClientsPage() {
         </Card>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {clients.map((client) => (
-            <Link key={client.id} href={`/dashboard/clients/${client.id}`}>
-              <Card className="h-full transition-shadow hover:shadow-md cursor-pointer">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base text-slate-800 truncate">{client.name}</CardTitle>
-                  {client.industry && (
-                    <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
-                      <Building2 className="h-3 w-3" />
-                      {client.industry}
-                    </p>
-                  )}
-                </CardHeader>
-                <CardContent className="space-y-1.5">
-                  {client.website_url && (
-                    <p className="text-xs text-slate-500 flex items-center gap-1.5 truncate">
-                      <Globe className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                      {client.website_url.replace(/^https?:\/\//, '')}
-                    </p>
-                  )}
-                  {client.primary_contact_email && (
-                    <p className="text-xs text-slate-500 flex items-center gap-1.5 truncate">
-                      <Mail className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                      {client.primary_contact_email}
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-            </Link>
-          ))}
+          {clients.map((client) => {
+            const unread = unreadByClient[client.id] ?? 0
+            return (
+              <Link key={client.id} href={`/dashboard/clients/${client.id}`}>
+                <Card className="h-full transition-shadow hover:shadow-md cursor-pointer">
+                  <CardHeader className="pb-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <CardTitle className="text-base text-slate-800 truncate">{client.name}</CardTitle>
+                      {unread > 0 && (
+                        <span
+                          className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-600 shrink-0"
+                          title={`${unread} unresolved comment${unread === 1 ? '' : 's'}`}
+                        >
+                          <MessageSquare className="h-3 w-3" />
+                          {unread}
+                        </span>
+                      )}
+                    </div>
+                    {client.industry && (
+                      <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
+                        <Building2 className="h-3 w-3" />
+                        {client.industry}
+                      </p>
+                    )}
+                  </CardHeader>
+                  <CardContent className="space-y-1.5">
+                    {client.website_url && (
+                      <p className="text-xs text-slate-500 flex items-center gap-1.5 truncate">
+                        <Globe className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                        {client.website_url.replace(/^https?:\/\//, '')}
+                      </p>
+                    )}
+                    {client.primary_contact_email && (
+                      <p className="text-xs text-slate-500 flex items-center gap-1.5 truncate">
+                        <Mail className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                        {client.primary_contact_email}
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              </Link>
+            )
+          })}
         </div>
       )}
 

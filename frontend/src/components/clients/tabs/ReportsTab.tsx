@@ -1,15 +1,17 @@
 'use client'
-import { useState, useMemo } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
 import {
   FileText, Sparkles, Calendar, ChevronRight, Settings2,
   Check, Loader2, Image as ImageIcon, Search, X as XIcon, Upload, Lock,
+  MessageSquare,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { usePlanFeatures } from '@/hooks/usePlanFeatures'
 import RichTextEditor from '@/components/clients/RichTextEditor'
 import CSVUploadForReport, { type ParsedCSV } from '@/components/reports/CSVUploadForReport'
+import { commentsApi } from '@/lib/api'
 import type { Report, ReportConfig } from '@/types'
 
 type TemplateValue = 'full' | 'summary' | 'brief'
@@ -64,6 +66,18 @@ export default function ReportsTab({
   const [historyStatus,     setHistoryStatus]     = useState<'all' | 'draft' | 'approved' | 'generating' | 'sent' | 'failed'>('all')
   const [historyDateFrom,   setHistoryDateFrom]   = useState('')
   const [historyDateTo,     setHistoryDateTo]     = useState('')
+
+  // Unread-comment counts per report — loaded once, merged into each row.
+  const [unreadByReport, setUnreadByReport] = useState<Record<string, number>>({})
+  useEffect(() => {
+    commentsApi.unread()
+      .then((res) => {
+        const map: Record<string, number> = {}
+        for (const row of res.by_report) map[row.report_id] = row.unresolved_count
+        setUnreadByReport(map)
+      })
+      .catch(() => { /* non-fatal */ })
+  }, [])
 
   const filteredReports = useMemo(() => {
     return reports.filter(r => {
@@ -366,36 +380,48 @@ export default function ReportsTab({
             </div>
           ) : (
             <ul className="divide-y divide-slate-100">
-              {filteredReports.map(report => (
-                <li key={report.id}>
-                  <Link href={`/dashboard/reports/${report.id}`} className="flex items-center justify-between py-3 hover:bg-slate-50 -mx-2 px-2 rounded-lg transition-colors group">
-                    <div className="flex items-start gap-3">
-                      <FileText className="h-4 w-4 text-indigo-400 mt-0.5 shrink-0" />
-                      <div>
-                        <p className="text-sm font-medium text-slate-800 group-hover:text-indigo-700 transition-colors">{report.title}</p>
-                        <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
-                          <Calendar className="h-3 w-3" />
-                          {report.period_start} → {report.period_end}
-                        </p>
+              {filteredReports.map(report => {
+                const unread = unreadByReport[report.id] ?? 0
+                return (
+                  <li key={report.id}>
+                    <Link href={`/dashboard/reports/${report.id}`} className="flex items-center justify-between py-3 hover:bg-slate-50 -mx-2 px-2 rounded-lg transition-colors group">
+                      <div className="flex items-start gap-3">
+                        <FileText className="h-4 w-4 text-indigo-400 mt-0.5 shrink-0" />
+                        <div>
+                          <p className="text-sm font-medium text-slate-800 group-hover:text-indigo-700 transition-colors">{report.title}</p>
+                          <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
+                            <Calendar className="h-3 w-3" />
+                            {report.period_start} → {report.period_end}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                        report.status === 'draft' || report.status === 'approved'
-                          ? 'bg-emerald-50 text-emerald-700'
-                          : report.status === 'generating'
-                          ? 'bg-amber-50 text-amber-700'
-                          : report.status === 'failed'
-                          ? 'bg-rose-50 text-rose-600'
-                          : 'bg-slate-100 text-slate-500'
-                      }`}>
-                        {report.status}
-                      </span>
-                      <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-slate-500 transition-colors" />
-                    </div>
-                  </Link>
-                </li>
-              ))}
+                      <div className="flex items-center gap-2">
+                        {unread > 0 && (
+                          <span
+                            className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-600"
+                            title={`${unread} unresolved comment${unread === 1 ? '' : 's'}`}
+                          >
+                            <MessageSquare className="h-3 w-3" />
+                            {unread}
+                          </span>
+                        )}
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                          report.status === 'draft' || report.status === 'approved'
+                            ? 'bg-emerald-50 text-emerald-700'
+                            : report.status === 'generating'
+                            ? 'bg-amber-50 text-amber-700'
+                            : report.status === 'failed'
+                            ? 'bg-rose-50 text-rose-600'
+                            : 'bg-slate-100 text-slate-500'
+                        }`}>
+                          {report.status}
+                        </span>
+                        <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-slate-500 transition-colors" />
+                      </div>
+                    </Link>
+                  </li>
+                )
+              })}
             </ul>
           )}
         </CardContent>

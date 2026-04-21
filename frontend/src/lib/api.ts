@@ -799,9 +799,16 @@ export interface UnreadCommentsByReport {
   last_comment_at:   string | null
 }
 
+export interface UnreadCommentsByClient {
+  client_id:         string
+  unresolved_count:  number
+  last_comment_at:   string | null
+}
+
 export interface UnreadCommentsResponse {
   total:     number
   by_report: UnreadCommentsByReport[]
+  by_client: UnreadCommentsByClient[]
 }
 
 /** Public comment endpoints — no auth token attached. */

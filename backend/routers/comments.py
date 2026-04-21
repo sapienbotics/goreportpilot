@@ -367,13 +367,19 @@ async def list_unread_comments(
     user_id: str = Depends(get_current_user_id),
 ) -> dict:
     """
-    Return unresolved-comment counts grouped by report plus a grand total.
+    Return unresolved-comment counts grouped by report AND by client plus a
+    grand total. Clients page + client detail page use `by_client`/`by_report`
+    to render per-row badges without N extra fetches.
 
     Response shape:
         {
           "total": 7,
           "by_report": [
             { "report_id": "...", "unresolved_count": 3, "last_comment_at": "..." },
+            ...
+          ],
+          "by_client": [
+            { "client_id": "...", "unresolved_count": 5, "last_comment_at": "..." },
             ...
           ]
         }
@@ -390,21 +396,59 @@ async def list_unread_comments(
     )
     rows = res.data or []
 
-    buckets: dict[str, dict] = {}
+    # Group by report first.
+    by_report_map: dict[str, dict] = {}
     for r in rows:
         rid = r["report_id"]
-        entry = buckets.setdefault(rid, {"report_id": rid, "unresolved_count": 0, "last_comment_at": r["created_at"]})
+        entry = by_report_map.setdefault(
+            rid,
+            {"report_id": rid, "unresolved_count": 0, "last_comment_at": r["created_at"]},
+        )
         entry["unresolved_count"] += 1
-        # rows ordered desc by created_at → the first one we see per report is the latest
         if not entry.get("last_comment_at") or r["created_at"] > entry["last_comment_at"]:
             entry["last_comment_at"] = r["created_at"]
 
+    # Batch-resolve report_id → client_id so we can fold counts up to the client.
+    report_to_client: dict[str, str] = {}
+    if by_report_map:
+        reports_res = (
+            supabase.table("reports")
+            .select("id,client_id")
+            .in_("id", list(by_report_map.keys()))
+            .eq("user_id", user_id)
+            .execute()
+        )
+        for rep in (reports_res.data or []):
+            if rep.get("id") and rep.get("client_id"):
+                report_to_client[rep["id"]] = rep["client_id"]
+
+    by_client_map: dict[str, dict] = {}
+    for rid, entry in by_report_map.items():
+        cid = report_to_client.get(rid)
+        if not cid:
+            continue
+        bucket = by_client_map.setdefault(
+            cid,
+            {"client_id": cid, "unresolved_count": 0, "last_comment_at": entry["last_comment_at"]},
+        )
+        bucket["unresolved_count"] += entry["unresolved_count"]
+        if (
+            not bucket.get("last_comment_at")
+            or (entry.get("last_comment_at") or "") > (bucket.get("last_comment_at") or "")
+        ):
+            bucket["last_comment_at"] = entry["last_comment_at"]
+
     by_report = sorted(
-        buckets.values(),
+        by_report_map.values(),
         key=lambda x: x.get("last_comment_at") or "",
         reverse=True,
     )
-    return {"total": len(rows), "by_report": by_report}
+    by_client = sorted(
+        by_client_map.values(),
+        key=lambda x: x.get("last_comment_at") or "",
+        reverse=True,
+    )
+    return {"total": len(rows), "by_report": by_report, "by_client": by_client}
 
 
 # ---------------------------------------------------------------------------

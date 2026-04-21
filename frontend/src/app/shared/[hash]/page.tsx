@@ -448,8 +448,9 @@ export default function SharedReportPage() {
   const [loading,    setLoading]    = useState(true)
   const [expired,    setExpired]    = useState(false)
 
-  // Track page load time so we can send duration on unload
-  const startTimeRef = useRef<number>(Date.now())
+  // Sticky flag — we only want ONE view row per page visit. Without this,
+  // React double-invokes the effect in Strict Mode and we'd double-count.
+  const viewLoggedRef = useRef<boolean>(false)
 
   // On mount: fetch link metadata (GET /api/shared/{hash})
   useEffect(() => {
@@ -493,27 +494,32 @@ export default function SharedReportPage() {
     fetchMeta()
   }, [hash, apiBase])
 
-  // Log view once report data is available
+  // Log view once report data is available.
+  //
+  // The backend endpoint expects a JSON body (ViewLogRequest). Prior versions
+  // of this page sent no body, which caused FastAPI to 422 and the .catch()
+  // swallowed the error — hence View Analytics always read 0.
+  //
+  // We log exactly once per page visit (viewLoggedRef). The earlier
+  // beforeunload/sendBeacon path used text/plain Content-Type (sendBeacon's
+  // default for strings) which also failed JSON parsing AND produced a second
+  // row per visit — so it's been removed. Duration tracking will return in a
+  // future pass once we have a heartbeat / update endpoint.
   useEffect(() => {
-    if (!reportData) return
-    fetch(`${apiBase}/api/shared/${hash}/view`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-    }).catch(() => { /* fire-and-forget */ })
-  }, [reportData, hash, apiBase])
+    if (!reportData || viewLoggedRef.current) return
+    viewLoggedRef.current = true
 
-  // Send time-on-page via sendBeacon on unload
-  useEffect(() => {
-    if (!reportData) return
-    const handleUnload = () => {
-      const duration = Math.round((Date.now() - startTimeRef.current) / 1000)
-      navigator.sendBeacon(
-        `${apiBase}/api/shared/${hash}/view`,
-        JSON.stringify({ duration_seconds: duration }),
-      )
-    }
-    window.addEventListener('beforeunload', handleUnload)
-    return () => window.removeEventListener('beforeunload', handleUnload)
+    const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
+    const deviceType =
+      /Mobi|Android|iPhone|iPod/i.test(ua) ? 'mobile' :
+      /iPad|Tablet/i.test(ua)              ? 'tablet' :
+                                             'desktop'
+
+    fetch(`${apiBase}/api/shared/${hash}/view`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ device_type: deviceType }),
+    }).catch(() => { /* fire-and-forget */ })
   }, [reportData, hash, apiBase])
 
   // ── Loading skeleton ──────────────────────────────────────────────────────
