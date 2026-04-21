@@ -356,3 +356,133 @@ def build_goal_alert_email_html(
   </table>
 </body>
 </html>"""
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 — new-comment notification email
+# ---------------------------------------------------------------------------
+
+async def send_plain_email(
+    *,
+    to_emails: list[str],
+    subject: str,
+    html_body: str,
+    sender_name: str = "GoReportPilot",
+    reply_to: Optional[str] = None,
+) -> dict:
+    """Send a plain transactional email (no attachments) via Resend."""
+    if not settings.RESEND_API_KEY:
+        raise ValueError("RESEND_API_KEY is not configured.")
+
+    from_address = f"{sender_name} <reports@{settings.EMAIL_FROM_DOMAIN}>"
+    payload: dict = {
+        "from":    from_address,
+        "to":      to_emails,
+        "subject": subject,
+        "html":    html_body,
+    }
+    if reply_to:
+        payload["reply_to"] = reply_to
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {settings.RESEND_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        )
+        response.raise_for_status()
+        result = response.json()
+
+    logger.info("Plain email sent via Resend. ID: %s", result.get("id"))
+    return result
+
+
+def _escape_html(text: str) -> str:
+    """Minimal HTML escaping for user-submitted text in email bodies."""
+    return (
+        (text or "")
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
+def build_comment_notification_email_html(
+    *,
+    client_name: str,
+    report_title: str,
+    commenter_name: str,
+    commenter_email: str,
+    comment_text: str,
+    target_label: str,          # e.g. "Slide 4", "Section: executive_summary", "General feedback"
+    comments_url: str,          # deep-link to the agency comments view
+) -> str:
+    """Build the HTML body for a new-comment notification sent to the agency."""
+    safe_name    = _escape_html(commenter_name)
+    safe_email   = _escape_html(commenter_email)
+    safe_client  = _escape_html(client_name)
+    safe_title   = _escape_html(report_title)
+    safe_target  = _escape_html(target_label)
+    safe_comment = _escape_html(comment_text).replace("\n", "<br/>")
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><title>New comment on {safe_title}</title></head>
+<body style="margin:0;padding:0;background:#F8FAFC;font-family:Inter,Segoe UI,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#F8FAFC;">
+    <tr><td align="center" style="padding:32px 16px;">
+      <table width="600" cellpadding="0" cellspacing="0" role="presentation"
+             style="background:#ffffff;border-radius:12px;overflow:hidden;
+                    box-shadow:0 1px 3px rgba(0,0,0,0.08);max-width:600px;width:100%;">
+        <tr><td style="background:#4338CA;padding:24px 32px;">
+          <p style="margin:0;color:#C7D2FE;font-size:11px;font-weight:700;
+                    letter-spacing:0.08em;text-transform:uppercase;">
+            New comment &middot; {safe_client}
+          </p>
+          <h1 style="margin:6px 0 0 0;color:#ffffff;font-size:22px;font-weight:700;line-height:1.3;">
+            {safe_title}
+          </h1>
+        </td></tr>
+        <tr><td style="padding:28px 32px;">
+          <p style="margin:0 0 6px 0;color:#64748B;font-size:11px;font-weight:700;
+                    text-transform:uppercase;letter-spacing:0.06em;">
+            From
+          </p>
+          <p style="margin:0 0 16px 0;color:#0F172A;font-size:14px;">
+            <strong>{safe_name}</strong> &lt;{safe_email}&gt;
+          </p>
+          <p style="margin:0 0 6px 0;color:#64748B;font-size:11px;font-weight:700;
+                    text-transform:uppercase;letter-spacing:0.06em;">
+            On
+          </p>
+          <p style="margin:0 0 20px 0;color:#0F172A;font-size:14px;">{safe_target}</p>
+
+          <div style="padding:16px 20px;background:#F8FAFC;border-radius:8px;
+                      border-left:3px solid #4338CA;">
+            <p style="margin:0;color:#334155;font-size:14px;line-height:1.6;">
+              {safe_comment}
+            </p>
+          </div>
+
+          <p style="margin:24px 0 0 0;text-align:center;">
+            <a href="{comments_url}" style="display:inline-block;padding:12px 24px;
+               background:#4338CA;color:#ffffff;font-size:14px;font-weight:700;
+               text-decoration:none;border-radius:8px;">
+              View &amp; reply in dashboard
+            </a>
+          </p>
+        </td></tr>
+        <tr><td style="padding:16px 32px 24px;border-top:1px solid #F1F5F9;">
+          <p style="margin:0;font-size:11px;color:#94A3B8;line-height:1.5;">
+            You can mute these notifications from Settings &rarr; Notifications.
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>"""

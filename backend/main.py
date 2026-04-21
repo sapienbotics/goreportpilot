@@ -147,6 +147,7 @@ from routers import auth, clients, connections, reports, settings as settings_ro
 from routers import csv_upload  # noqa: E402
 from routers import admin_analytics  # noqa: E402
 from routers import goals as goals_router  # noqa: E402  # Phase 6
+from routers import comments as comments_module  # noqa: E402  # Phase 5
 from routers.shared import reports_router as shared_reports_router, public_router as shared_public_router  # noqa: E402
 
 # Create custom_sections static dir if not exists
@@ -171,3 +172,8 @@ app.include_router(shared_public_router,      prefix="/api/shared",             
 # Phase 6 — Goals & Alerts. Routes in goals.py carry absolute segments
 # (/goals/metrics, /clients/{id}/goals/...) so we mount once at /api.
 app.include_router(goals_router.router,       prefix="/api",                    tags=["goals"])
+# Phase 5 — Client comments on shared reports.
+#   public_router  → /api/shares/{token}/comments (no auth, rate-limited)
+#   agency_router  → /api/comments/*              (Supabase JWT required)
+app.include_router(comments_module.public_router, prefix="/api/shares",   tags=["comments-public"])
+app.include_router(comments_module.agency_router, prefix="/api/comments", tags=["comments"])
