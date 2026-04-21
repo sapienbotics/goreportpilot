@@ -4,9 +4,9 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { FileText, Calendar, Building2, ChevronRight, Download, Search, X as XIcon } from 'lucide-react'
+import { FileText, Calendar, Building2, ChevronRight, Download, Search, X as XIcon, MessageSquare } from 'lucide-react'
 import { toast } from 'sonner'
-import { reportsApi, downloadFileWithAuth } from '@/lib/api'
+import { reportsApi, commentsApi, downloadFileWithAuth } from '@/lib/api'
 import type { Report } from '@/types'
 
 function StatusBadge({ status }: { status: string }) {
@@ -27,6 +27,7 @@ export default function ReportsPage() {
   const [loading, setLoading]   = useState(true)
   const [error,   setError]     = useState<string | null>(null)
   const [dlId,    setDlId]      = useState<string | null>(null)
+  const [unreadByReport, setUnreadByReport] = useState<Record<string, number>>({})
 
   // Filters
   const [filterSearch,  setFilterSearch]  = useState('')
@@ -69,6 +70,13 @@ export default function ReportsPage() {
       }
     }
     fetch()
+    commentsApi.unread()
+      .then((res) => {
+        const map: Record<string, number> = {}
+        for (const row of res.by_report) map[row.report_id] = row.unresolved_count
+        setUnreadByReport(map)
+      })
+      .catch(() => { /* non-fatal */ })
   }, [])
 
   const handleDownloadPdf = async (report: Report, e: React.MouseEvent) => {
@@ -243,7 +251,9 @@ export default function ReportsPage() {
                   </td>
                 </tr>
               )}
-              {filtered.map((report) => (
+              {filtered.map((report) => {
+                const unread = unreadByReport[report.id] ?? 0
+                return (
                 <tr
                   key={report.id}
                   className="hover:bg-slate-50/60 transition-colors group"
@@ -258,6 +268,15 @@ export default function ReportsPage() {
                       <span className="font-medium text-slate-800 group-hover:text-indigo-700 transition-colors line-clamp-1">
                         {report.title}
                       </span>
+                      {unread > 0 && (
+                        <span
+                          className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-600 shrink-0"
+                          title={`${unread} unresolved comment${unread === 1 ? '' : 's'}`}
+                        >
+                          <MessageSquare className="h-3 w-3" />
+                          {unread}
+                        </span>
+                      )}
                     </Link>
                   </td>
 
@@ -307,7 +326,8 @@ export default function ReportsPage() {
                     </div>
                   </td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
         </div>
