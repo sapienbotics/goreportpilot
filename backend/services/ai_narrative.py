@@ -8,6 +8,7 @@ from typing import Dict, Any, Optional
 
 from openai import AsyncOpenAI
 from config import settings
+from services.top_movers import compute_top_movers, format_movers_for_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,37 @@ Rules:
 - Keep paragraphs short (2-3 sentences max)
 - Use plain English, not marketing jargon
 - Structure: Lead with the headline insight, support with data, close with recommendation
+
+DIAGNOSTIC STANDARD (Phase 4 — the WHY rule):
+You will receive a TOP MOVERS block naming specific campaigns, traffic
+sources, pages, and search queries that drove this period's headline
+numbers. When a metric moved meaningfully (up OR down), you MUST
+attribute the movement to at least ONE named entity from TOP MOVERS.
+
+  Weak  (rejected): "Paid advertising improved this month."
+  Weak  (rejected): "Organic traffic grew 23% — likely SEO improvements."
+  Good  (required): "Paid spend grew 18% driven almost entirely by
+                     'Q2 Summer Sale' (ROAS 4.2x, 32% of total budget)
+                     which outperformed the account average of 2.8x."
+  Good  (required): "Organic traffic grew 23% largely on the query
+                     'best video editor for startups' (1,240 clicks,
+                     CTR 8.1%, avg position 4.2)."
+
+Rule: if you can't cite a named entity from TOP MOVERS for a claim
+about a moving metric, either (a) don't make the claim, or (b) say
+"data doesn't show a single dominant driver" and list the top 3
+contributors. Never write vague causal filler like "due to seasonal
+trends" or "likely from SEO improvements" — those are lazy and the
+client will notice.
+
+RECOMMENDATION STANDARD (Phase 4):
+In ``next_steps``, every recommendation must cite the specific data
+point that motivated it. Generic tips are rejected.
+
+  Weak  (rejected): "Focus more budget on high-performing campaigns."
+  Good  (required): "Shift 20% of 'Brand Awareness Broad' spend
+                     ($850 of $4,200) to 'Q2 Summer Sale' which
+                     delivers 3.7x higher ROAS at similar volume."
 
 EXECUTIVE SUMMARY STRUCTURE (SCQA — McKinsey's Pyramid Principle):
 When writing the executive_summary, follow the SCQA framework so the narrative
@@ -161,18 +193,18 @@ FALLBACK_NARRATIVE: Dict[str, str] = {
 _SECTION_INSTRUCTIONS: Dict[str, str] = {
     # SCQA-structured executive summary: Situation → Complication → Question → Answer.
     # Rendered as flowing prose, not labelled sections. 150-word cap.
-    "executive_summary":  '"{key}" — 150 words max, structured as SCQA (Situation, Complication, implied Question, Answer) in flowing prose, NOT labelled',
-    "website_performance": '"{key}" — 2-3 paragraphs analyzing website traffic and engagement',
-    "paid_advertising":   '"{key}" — 2-3 paragraphs analyzing Meta Ads performance',
+    "executive_summary":  '"{key}" — 150 words max, structured as SCQA (Situation, Complication, implied Question, Answer) in flowing prose, NOT labelled. The Complication beat MUST cite at least one named entity from TOP MOVERS as the driver.',
+    "website_performance": '"{key}" — 2-3 diagnostic paragraphs. Name the specific traffic sources driving the change (from TOP MOVERS > ga4.top_sources) and the specific pages where users land most (from ga4.top_pages). No generic "traffic grew due to SEO efforts" — cite the source or page by name.',
+    "paid_advertising":   '"{key}" — 2-3 diagnostic paragraphs analyzing Meta Ads. Name the specific campaigns (TOP MOVERS > meta_ads) that delivered results and those that bled budget. Compare each cited campaign to the account average ROAS. Avoid vague "ads performed well this month".',
     # Content-count enforcement (3+3+3): every report should land with exactly
     # 3 wins, 3 concerns, and 3 next steps in the canonical structure.
-    "key_wins":           '"{key}" — EXACTLY 3 bullet points. Each must reference a specific metric with numbers. Start each with "\u2713 "',
-    "concerns":           '"{key}" — EXACTLY 3 bullet points. Each must state an observation, a likely cause, and a specific recommendation. Start each with "\u26A0 "',
-    "next_steps":         '"{key}" — EXACTLY 3 numbered items. Each MUST follow the pattern: "Next month we will [action] on [channel], based on [data point], to achieve [expected outcome]."',
-    "google_ads_performance": '"{key}" — 2-3 paragraphs analyzing Google Ads search campaign performance',
-    "seo_performance": '"{key}" — 2-3 paragraphs analyzing organic search performance from Google Search Console',
+    "key_wins":           '"{key}" — EXACTLY 3 bullet points. Each must name a specific entity from TOP MOVERS (campaign, page, query, or traffic source) and the metric it moved. Start each with "\u2713 "',
+    "concerns":           '"{key}" — EXACTLY 3 bullet points. Each must (a) name a specific entity from TOP MOVERS, (b) state its underperformance with numbers, (c) give a concrete fix tied to that entity. Start each with "\u26A0 "',
+    "next_steps":         '"{key}" — EXACTLY 3 numbered items. Each MUST cite a specific data point from TOP MOVERS and follow the pattern: "Next month we will [action] on [specific campaign/page/source from TOP MOVERS], based on [cited metric], to achieve [expected outcome with a number]."',
+    "google_ads_performance": '"{key}" — 2-3 diagnostic paragraphs. Name specific Google Ads campaigns (TOP MOVERS > google_ads) that delivered vs underperformed. Cite CTR, cost-per-conversion, and spend share per named campaign.',
+    "seo_performance": '"{key}" — 2-3 diagnostic paragraphs. Name specific organic queries (TOP MOVERS > search_console.top_queries) and landing pages driving clicks. Cite position, CTR, and impression volume per named query.',
     "csv_performance": '"{key}" — 2 paragraphs summarizing the custom data source metrics',
-    "engagement_analysis": '"{key}" — 1-2 paragraphs analyzing website engagement: device breakdown (mobile vs desktop vs tablet), top pages by views/engagement, and user behavior insights',
+    "engagement_analysis": '"{key}" — 1-2 diagnostic paragraphs. Cite device-level bounce rates from TOP MOVERS > ga4.device_split and name the specific top pages. If a device underperforms, say "Mobile bounce is 62% vs Desktop 34%" not "engagement varies across devices".',
 }
 
 
@@ -319,6 +351,26 @@ async def generate_narrative(
     search_console = data.get("search_console", {}).get("summary", {})
     csv_sources = data.get("csv_sources", [])
 
+    # Phase 4 — compute the top-movers diagnostic context and serialize for
+    # the prompt. This is the new data the AI uses to cite named entities
+    # as drivers instead of writing vague causal filler. Safe on partial data.
+    _movers = compute_top_movers(data)
+    _movers_block = format_movers_for_prompt(_movers, currency_symbol=cur_sym)
+    if _movers:
+        _dim_counts = {
+            platform: len([k for k in dims if isinstance(dims, dict)])
+            for platform, dims in _movers.items()
+        }
+        logger.info(
+            "Phase 4 — top movers for %s: platforms=%s",
+            client_name, list(_movers.keys()),
+        )
+    else:
+        logger.info(
+            "Phase 4 — no top movers computed for %s (insufficient data)",
+            client_name,
+        )
+
     user_prompt = f"""CLIENT CONTEXT:
 Name: {client_name}
 Goals: {client_goals or 'Not specified'}
@@ -357,6 +409,8 @@ CTR: {search_console.get('ctr', 'N/A')}% | Avg Position: {search_console.get('av
 
 CSV SOURCES: {len(csv_sources)} additional data source(s) connected
 
+{_movers_block}
+
 TONE: {tone_modifier}
 
 IMPORTANT — CURRENCY: All monetary amounts for Meta Ads must use the {currency_code} currency symbol ({cur_sym}). \
@@ -386,8 +440,17 @@ Return ONLY valid JSON, no markdown code blocks, no explanation outside the JSON
                 {"role": "system", "content": SYSTEM_PROMPT + language_instruction + _bad_month_clause},
                 {"role": "user", "content": user_prompt},
             ],
-            temperature=0.7,
-            max_tokens=2000,
+            # Slightly lower temperature for more grounded/diagnostic output —
+            # Phase 4 aims to reduce generic filler; less creativity helps the
+            # model stick to cited entities rather than invent plausible-sounding
+            # causes.
+            temperature=0.6,
+            # Raised from 2000 → 3500 to accommodate the richer TOP MOVERS
+            # context + up to 9 narrative sections with specific named-entity
+            # citations. Empirical: Phase 4 prompt adds ~800-1200 input tokens,
+            # and each section's output grows ~15-20% from citing concrete
+            # drivers instead of generic phrasing.
+            max_tokens=3500,
             response_format={"type": "json_object"},
         )
 
