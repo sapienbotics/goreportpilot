@@ -9,7 +9,7 @@ import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import { toast } from 'sonner'
 import {
   LayoutDashboard, Link2, FileText, Clock, Settings,
-  Building2, Image as ImageIcon,
+  Building2, Image as ImageIcon, Target,
 } from 'lucide-react'
 import { clientsApi, reportsApi, connectionsApi, authApi, scheduledReportsApi, uploadClientLogo, customSectionApi } from '@/lib/api'
 import type { ScheduledReport, ScheduledReportPayload } from '@/lib/api'
@@ -26,6 +26,7 @@ import ReportsTab       from '@/components/clients/tabs/ReportsTab'
 import SchedulesTab     from '@/components/clients/tabs/SchedulesTab'
 import SettingsTab      from '@/components/clients/tabs/SettingsTab'
 import DesignTab            from '@/components/clients/tabs/DesignTab'
+import GoalsTab            from '@/components/clients/tabs/GoalsTab'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -33,7 +34,7 @@ interface Props {
   params: { clientId: string }
 }
 
-type TabId = 'overview' | 'integrations' | 'reports' | 'schedules' | 'design' | 'settings'
+type TabId = 'overview' | 'integrations' | 'reports' | 'schedules' | 'design' | 'goals' | 'settings'
 
 const TABS: { id: TabId; label: string; icon: React.FC<{ className?: string }> }[] = [
   { id: 'overview',      label: 'Overview',     icon: LayoutDashboard },
@@ -41,6 +42,7 @@ const TABS: { id: TabId; label: string; icon: React.FC<{ className?: string }> }
   { id: 'reports',       label: 'Reports',      icon: FileText },
   { id: 'schedules',     label: 'Schedules',    icon: Clock },
   { id: 'design',        label: 'Design',       icon: ImageIcon },
+  { id: 'goals',         label: 'Goals',        icon: Target },
   { id: 'settings',      label: 'Settings',     icon: Settings },
 ]
 
@@ -527,6 +529,10 @@ export default function ClientDetailPage({ params }: Props) {
             setEditValues(updated)
           }}
         />
+      )}
+
+      {activeTab === 'goals' && (
+        <GoalsTab clientId={clientId} />
       )}
 
       {activeTab === 'settings' && (

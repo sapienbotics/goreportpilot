@@ -101,12 +101,25 @@ def can_create_client(user_id: str) -> tuple[bool, str]:
     return True, ""
 
 
+def effective_goal_limit(sub: dict) -> int:
+    """
+    Phase 6 — resolve the goal limit for a subscription, accounting for trial.
+    Trial users (status == 'trialing') get the Pro-equivalent limit (3) during
+    their 14 days so they can evaluate Goals & Alerts properly; this drops to
+    the plan's configured limit the moment they convert or the trial expires.
+    """
+    if sub.get("status") == "trialing":
+        return get_goal_limit("pro")
+    return get_goal_limit(sub.get("plan", "trial"))
+
+
 def can_create_goal(user_id: str, client_id: str) -> tuple[bool, str]:
     """
     Phase 6 — enforce per-client goal limits.
-    Starter = 1, Pro = 3, Agency = unlimited (999).
-    Count is scoped per client (not per user), so upgrading a client's
-    plan doesn't retroactively affect a different client's quota.
+    Starter = 1, Pro = 3, Agency = unlimited (999). Trial users get Pro's
+    limit of 3 during the 14-day trial (see effective_goal_limit).
+    Count is scoped per client (not per user), so one client's goals don't
+    eat into another client's quota.
     """
     supabase = get_supabase_admin()
     sub = get_user_subscription(user_id)
@@ -114,8 +127,8 @@ def can_create_goal(user_id: str, client_id: str) -> tuple[bool, str]:
     if sub.get("status") in ("expired", "cancelled"):
         return False, "Your subscription has expired. Please upgrade to continue."
 
-    plan = sub.get("plan", "trial")
-    limit = get_goal_limit(plan)
+    limit = effective_goal_limit(sub)
+    plan  = sub.get("plan", "trial")
 
     count_result = (
         supabase.table("goals")
@@ -127,8 +140,9 @@ def can_create_goal(user_id: str, client_id: str) -> tuple[bool, str]:
     current_count = count_result.count or 0
 
     if current_count >= limit:
+        is_trial = sub.get("status") == "trialing"
         plan_cfg = get_plan(plan)
-        display  = plan_cfg.get("display_name", plan.capitalize())
+        display  = "Trial" if is_trial else plan_cfg.get("display_name", plan.capitalize())
         return (
             False,
             f"You've reached the {display} plan's goal limit "

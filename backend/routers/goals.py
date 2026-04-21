@@ -13,7 +13,11 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from middleware.auth import get_current_user_id
-from middleware.plan_enforcement import can_create_goal, get_user_subscription
+from middleware.plan_enforcement import (
+    can_create_goal,
+    effective_goal_limit,
+    get_user_subscription,
+)
 from models.schemas import GoalCreate, GoalUpdate, GoalResponse, GoalListResponse
 from services.goal_checker import (
     METRIC_REGISTRY,
@@ -114,10 +118,22 @@ async def list_client_goals(
     evaluations = {e["goal_id"]: e for e in evaluate_goals_for_client(supabase, client_id)}
     goals = [_row_to_response(r, evaluations.get(r["id"])) for r in rows]
 
-    sub = get_user_subscription(user_id)
-    limit = get_goal_limit(sub.get("plan", "trial"))
+    sub      = get_user_subscription(user_id)
+    plan     = sub.get("plan", "trial")
+    is_trial = sub.get("status") == "trialing"
+    limit    = effective_goal_limit(sub)
 
-    return GoalListResponse(goals=goals, total=len(goals), limit=limit)
+    return GoalListResponse(
+        goals=goals,
+        total=len(goals),
+        limit=limit,
+        plan=plan,
+        is_trial=is_trial,
+        # When on trial, expose what the limit will drop to post-trial so the
+        # UI can render a heads-up banner like "Trial: 3 available, drops to
+        # 1 after trial". When on a paid plan, plan_goal_limit == limit.
+        plan_goal_limit=get_goal_limit(plan),
+    )
 
 
 # ---------------------------------------------------------------------------

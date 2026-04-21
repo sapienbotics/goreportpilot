@@ -696,3 +696,83 @@ export const adminApi = {
   getInactiveUsers: async () => { const { data } = await api.get('/api/admin/gdpr/inactive-users'); return data },
   getConsentRecords: async () => { const { data } = await api.get('/api/admin/gdpr/consent-records'); return data },
 }
+
+// ---------------------------------------------------------------------------
+// Goals & Alerts (Phase 6)
+// ---------------------------------------------------------------------------
+
+export type GoalComparison = 'gte' | 'lte' | 'eq'
+export type GoalPeriod     = 'weekly' | 'monthly'
+export type GoalStatus     = 'on_track' | 'at_risk' | 'missed' | 'no_data'
+
+export interface GoalMetric {
+  key: string          // e.g. "ga4.sessions"
+  label: string        // "Sessions"
+  platform: string     // "ga4" | "meta_ads" | "google_ads" | "search_console"
+  unit: string         // "int" | "percent" | "currency" | "ratio"
+  direction: 'higher_is_better' | 'lower_is_better'
+}
+
+export interface Goal {
+  id: string
+  client_id: string
+  user_id: string
+  metric: string
+  metric_label: string | null
+  comparison: GoalComparison
+  target_value: number
+  tolerance_pct: number
+  period: GoalPeriod
+  is_active: boolean
+  alert_emails: string[]
+  last_evaluated_at: string | null
+  // Computed at read time by the backend.
+  current_value: number | null
+  status: GoalStatus | null
+  period_key: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface GoalListResponse {
+  goals: Goal[]
+  total: number
+  limit: number            // effective limit (accounts for trial override)
+  plan: string             // 'trial' | 'starter' | 'pro' | 'agency'
+  is_trial: boolean
+  plan_goal_limit: number  // what the limit drops to AFTER trial ends
+}
+
+export interface GoalCreatePayload {
+  metric: string
+  comparison?: GoalComparison
+  target_value: number
+  tolerance_pct?: number
+  period?: GoalPeriod
+  is_active?: boolean
+  alert_emails?: string[]
+}
+
+export type GoalUpdatePayload = Partial<GoalCreatePayload>
+
+export const goalsApi = {
+  listMetrics: async (): Promise<GoalMetric[]> => {
+    const { data } = await api.get('/api/goals/metrics')
+    return data
+  },
+  listByClient: async (clientId: string): Promise<GoalListResponse> => {
+    const { data } = await api.get(`/api/clients/${clientId}/goals`)
+    return data
+  },
+  create: async (clientId: string, payload: GoalCreatePayload): Promise<Goal> => {
+    const { data } = await api.post(`/api/clients/${clientId}/goals`, payload)
+    return data
+  },
+  update: async (clientId: string, goalId: string, payload: GoalUpdatePayload): Promise<Goal> => {
+    const { data } = await api.patch(`/api/clients/${clientId}/goals/${goalId}`, payload)
+    return data
+  },
+  delete: async (clientId: string, goalId: string): Promise<void> => {
+    await api.delete(`/api/clients/${clientId}/goals/${goalId}`)
+  },
+}

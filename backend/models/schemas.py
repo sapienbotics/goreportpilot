@@ -514,4 +514,7 @@ class GoalResponse(BaseModel):
 class GoalListResponse(BaseModel):
     goals: list[GoalResponse]
     total: int
-    limit: int   # plan limit so the UI can render "X/Y goals used"
+    limit: int   # effective limit (accounts for trial override)
+    plan: str    # plan name e.g. 'starter', 'pro', 'agency', 'trial'
+    is_trial: bool = False
+    plan_goal_limit: int | None = None  # what the limit will be AFTER trial ends
