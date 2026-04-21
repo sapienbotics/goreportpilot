@@ -265,6 +265,7 @@ export default function SettingsPage() {
               reportGenerated={bool('notification_report_generated')}
               connectionExpired={bool('notification_connection_expired')}
               paymentFailed={bool('notification_payment_failed')}
+              commentPosted={bool('comment_notifications_enabled')}
               onSave={(fields) => save(fields)}
               saving={saving}
             />
@@ -593,15 +594,17 @@ function AITab({
 // ── Notifications tab ───────────────────────────────────────────────────────
 
 function NotificationsTab({
-  reportGenerated, connectionExpired, paymentFailed,
+  reportGenerated, connectionExpired, paymentFailed, commentPosted,
   onSave, saving,
 }: {
   reportGenerated: boolean; connectionExpired: boolean; paymentFailed: boolean
+  commentPosted: boolean
   onSave: (f: Record<string, unknown>) => void; saving: boolean
 }) {
   const [repGen,  setRepGen]  = useState(reportGenerated)
   const [connExp, setConnExp] = useState(connectionExpired)
   const [payFail, setPayFail] = useState(paymentFailed)
+  const [comment, setComment] = useState(commentPosted)
 
   return (
     <div className="space-y-5">
@@ -609,9 +612,10 @@ function NotificationsTab({
 
       <div className="space-y-3">
         {[
-          { label: 'Email me when a report is generated', value: repGen, set: setRepGen, key: 'notification_report_generated' },
-          { label: 'Email me when a platform connection expires', value: connExp, set: setConnExp, key: 'notification_connection_expired' },
-          { label: 'Email me when a payment fails', value: payFail, set: setPayFail, key: 'notification_payment_failed' },
+          { label: 'Email me when a report is generated', value: repGen, set: setRepGen },
+          { label: 'Email me when a platform connection expires', value: connExp, set: setConnExp },
+          { label: 'Email me when a payment fails', value: payFail, set: setPayFail },
+          { label: 'Email me when a client posts a comment on a shared report', value: comment, set: setComment },
         ].map(({ label, value, set }) => (
           <label key={label} className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3 cursor-pointer hover:bg-slate-50 transition-colors">
             <span className="text-sm text-slate-700">{label}</span>
@@ -627,9 +631,10 @@ function NotificationsTab({
 
       <SaveButton
         onClick={() => onSave({
-          notification_report_generated:  repGen,
+          notification_report_generated:   repGen,
           notification_connection_expired: connExp,
           notification_payment_failed:     payFail,
+          comment_notifications_enabled:   comment,
         })}
         saving={saving}
         label="Save Notification Preferences"

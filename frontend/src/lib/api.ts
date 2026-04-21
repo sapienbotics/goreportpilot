@@ -762,6 +762,97 @@ export interface GoalCreatePayload {
 
 export type GoalUpdatePayload = Partial<GoalCreatePayload>
 
+// ---------------------------------------------------------------------------
+// Comments API (Phase 5)
+// ---------------------------------------------------------------------------
+
+export interface ReportComment {
+  id:             string
+  share_id:       string
+  report_id:      string
+  client_name:    string
+  client_email:   string
+  slide_number:   number | null
+  section_key:    string | null
+  comment_text:   string
+  is_resolved:    boolean
+  resolved_at:    string | null
+  created_at:     string
+}
+
+export interface CommentListResponse {
+  comments: ReportComment[]
+  total:    number
+}
+
+export interface CommentCreatePayload {
+  client_name:  string
+  client_email: string
+  comment_text: string
+  slide_number?: number | null
+  section_key?:  string | null
+}
+
+export interface UnreadCommentsByReport {
+  report_id:         string
+  unresolved_count:  number
+  last_comment_at:   string | null
+}
+
+export interface UnreadCommentsResponse {
+  total:     number
+  by_report: UnreadCommentsByReport[]
+}
+
+/** Public comment endpoints — no auth token attached. */
+export const publicCommentsApi = {
+  list: async (shareToken: string): Promise<CommentListResponse> => {
+    const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+    const res  = await fetch(`${base}/api/shares/${shareToken}/comments`, {
+      headers: { 'Content-Type': 'application/json' },
+    })
+    if (!res.ok) throw new Error(`Failed to load comments (${res.status})`)
+    return res.json()
+  },
+
+  create: async (shareToken: string, payload: CommentCreatePayload): Promise<ReportComment> => {
+    const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+    const res  = await fetch(`${base}/api/shares/${shareToken}/comments`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(payload),
+    })
+    if (res.status === 429) {
+      throw new Error('Too many comments from this device. Please wait an hour before trying again.')
+    }
+    if (!res.ok) {
+      let detail = ''
+      try { detail = (await res.json())?.detail || '' } catch { /* ignore */ }
+      throw new Error(detail || `Failed to post comment (${res.status})`)
+    }
+    return res.json()
+  },
+}
+
+/** Agency-scoped comment endpoints — Supabase JWT attached by the axios interceptor. */
+export const commentsApi = {
+  unread: async (): Promise<UnreadCommentsResponse> => {
+    const { data } = await api.get('/api/comments/unread')
+    return data
+  },
+  listByReport: async (reportId: string): Promise<CommentListResponse> => {
+    const { data } = await api.get(`/api/comments/report/${reportId}`)
+    return data
+  },
+  resolve: async (commentId: string, isResolved: boolean): Promise<ReportComment> => {
+    const { data } = await api.patch(`/api/comments/${commentId}/resolve`, { is_resolved: isResolved })
+    return data
+  },
+  delete: async (commentId: string): Promise<void> => {
+    await api.delete(`/api/comments/${commentId}`)
+  },
+}
+
 export const goalsApi = {
   listMetrics: async (): Promise<GoalMetric[]> => {
     const { data } = await api.get('/api/goals/metrics')

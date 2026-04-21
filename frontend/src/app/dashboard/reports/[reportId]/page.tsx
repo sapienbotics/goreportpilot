@@ -20,6 +20,7 @@ import { usePlanFeatures } from '@/hooks/usePlanFeatures'
 import { UpgradeBadge } from '@/components/ui/upgrade-badge'
 import ShareReportDialog from '@/components/reports/ShareReportDialog'
 import ViewAnalytics from '@/components/reports/ViewAnalytics'
+import CommentsSection from '@/components/reports/CommentsSection'
 
 // ── Currency symbol lookup ──────────────────────────────────────────────────
 const CURRENCY_SYMBOLS: Record<string, string> = {
@@ -812,6 +813,11 @@ export default function ReportDetailPage() {
 
       {/* ── View Analytics ─────────────────────────────────────────────────── */}
       <ViewAnalytics reportId={report.id} />
+
+      {/* ── Client Comments (Phase 5) ──────────────────────────────────────── */}
+      <div id="comments">
+        <CommentsSection reportId={report.id} />
+      </div>
 
     </div>
   )

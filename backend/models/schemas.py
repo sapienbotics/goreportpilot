@@ -374,6 +374,7 @@ class ProfileUpdate(BaseModel):
     notification_report_generated: bool | None = None
     notification_connection_expired: bool | None = None
     notification_payment_failed: bool | None = None
+    comment_notifications_enabled: bool | None = None  # Phase 5
 
 
 # ---------------------------------------------------------------------------

@@ -7,6 +7,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { TrendingUp, TrendingDown, Minus, Loader2, Lock } from 'lucide-react'
+import {
+  CommentsProvider,
+  CommentsDrawer,
+  CommentButton,
+  FloatingCommentFAB,
+} from '@/components/shared/CommentsPanel'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -340,7 +346,10 @@ function ReportView({ data }: { data: SharedReportData }) {
         {/* Executive Summary */}
         {narrative['executive_summary'] && (
           <div className="rounded-xl bg-white border border-slate-100 p-5 shadow-sm space-y-3">
-            <h2 className="text-base font-semibold text-indigo-700">Executive Summary</h2>
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-base font-semibold text-indigo-700">Executive Summary</h2>
+              <CommentButton sectionKey="executive_summary" sectionLabel="Executive Summary" />
+            </div>
             <NarrativeSection content={narrative['executive_summary']} />
           </div>
         )}
@@ -349,13 +358,19 @@ function ReportView({ data }: { data: SharedReportData }) {
         <div className="grid md:grid-cols-2 gap-4">
           {narrative['website_performance'] && (
             <div className="rounded-xl bg-white border border-slate-100 p-5 shadow-sm space-y-3">
-              <h2 className="text-base font-semibold text-slate-700">Website Performance</h2>
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-base font-semibold text-slate-700">Website Performance</h2>
+                <CommentButton sectionKey="website_performance" sectionLabel="Website Performance" />
+              </div>
               <NarrativeSection content={narrative['website_performance']} />
             </div>
           )}
           {narrative['paid_advertising'] && (
             <div className="rounded-xl bg-white border border-slate-100 p-5 shadow-sm space-y-3">
-              <h2 className="text-base font-semibold text-slate-700">Paid Advertising</h2>
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-base font-semibold text-slate-700">Paid Advertising</h2>
+                <CommentButton sectionKey="paid_advertising" sectionLabel="Paid Advertising" />
+              </div>
               <NarrativeSection content={narrative['paid_advertising']} />
             </div>
           )}
@@ -365,24 +380,37 @@ function ReportView({ data }: { data: SharedReportData }) {
         <div className="grid md:grid-cols-3 gap-4">
           {narrative['key_wins'] && (
             <div className="rounded-xl bg-white border border-emerald-100 p-5 shadow-sm space-y-3">
-              <h2 className="text-base font-semibold text-emerald-700">Key Wins</h2>
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-base font-semibold text-emerald-700">Key Wins</h2>
+                <CommentButton sectionKey="key_wins" sectionLabel="Key Wins" />
+              </div>
               <BulletSection content={narrative['key_wins']} color="emerald" />
             </div>
           )}
           {narrative['concerns'] && (
             <div className="rounded-xl bg-white border border-amber-100 p-5 shadow-sm space-y-3">
-              <h2 className="text-base font-semibold text-amber-700">Concerns</h2>
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-base font-semibold text-amber-700">Concerns</h2>
+                <CommentButton sectionKey="concerns" sectionLabel="Concerns" />
+              </div>
               <BulletSection content={narrative['concerns']} color="amber" />
             </div>
           )}
           {narrative['next_steps'] && (
             <div className="rounded-xl bg-white border border-indigo-100 p-5 shadow-sm space-y-3">
-              <h2 className="text-base font-semibold text-indigo-700">Next Steps</h2>
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-base font-semibold text-indigo-700">Next Steps</h2>
+                <CommentButton sectionKey="next_steps" sectionLabel="Next Steps" />
+              </div>
               <BulletSection content={narrative['next_steps']} color="indigo" />
             </div>
           )}
         </div>
       </main>
+
+      {/* Comments — floating general feedback FAB + slide-in drawer */}
+      <FloatingCommentFAB />
+      <CommentsDrawer />
 
       {/* ── Footer ─────────────────────────────────────────────────────────── */}
       <footer className="border-t border-slate-200 bg-white mt-12">
@@ -518,7 +546,11 @@ export default function SharedReportPage() {
 
   // ── Full report ───────────────────────────────────────────────────────────
   if (reportData) {
-    return <ReportView data={reportData} />
+    return (
+      <CommentsProvider shareToken={hash}>
+        <ReportView data={reportData} />
+      </CommentsProvider>
+    )
   }
 
   // Fallback (should not reach here)

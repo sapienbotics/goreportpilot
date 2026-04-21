@@ -2,9 +2,11 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useEffect, useState } from 'react'
 import { LayoutDashboard, Users, FileText, Link2, Settings, CreditCard, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Logo } from '@/components/ui/Logo'
+import { commentsApi } from '@/lib/api'
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -21,6 +23,22 @@ interface SidebarProps {
 
 export function Sidebar({ onClose }: SidebarProps) {
   const pathname = usePathname()
+
+  // Poll unread-comment count so the Reports nav item shows a badge.
+  // Refresh on mount + every 60s + whenever the pathname changes.
+  const [unreadComments, setUnreadComments] = useState<number>(0)
+  useEffect(() => {
+    let active = true
+    const load = async () => {
+      try {
+        const res = await commentsApi.unread()
+        if (active) setUnreadComments(res.total)
+      } catch { /* ignore — logged-out / transient */ }
+    }
+    load()
+    const id = window.setInterval(load, 60_000)
+    return () => { active = false; window.clearInterval(id) }
+  }, [pathname])
 
   return (
     <aside className="w-64 shrink-0 border-r border-slate-200 bg-white flex flex-col h-full">
@@ -42,6 +60,7 @@ export function Sidebar({ onClose }: SidebarProps) {
             href === '/dashboard'
               ? pathname === '/dashboard'
               : pathname.startsWith(href)
+          const showBadge = href === '/dashboard/reports' && unreadComments > 0
 
           return (
             <Link
@@ -56,7 +75,12 @@ export function Sidebar({ onClose }: SidebarProps) {
               )}
             >
               <Icon className="h-4 w-4 shrink-0" />
-              {label}
+              <span className="flex-1">{label}</span>
+              {showBadge && (
+                <span className="inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-rose-500 text-[10px] font-bold text-white">
+                  {unreadComments > 99 ? '99+' : unreadComments}
+                </span>
+              )}
             </Link>
           )
         })}
