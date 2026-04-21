@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import Link from 'next/link'
 import {
   FileText, Sparkles, Calendar, ChevronRight, Settings2,
@@ -9,9 +9,9 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { usePlanFeatures } from '@/hooks/usePlanFeatures'
+import { useUnreadComments } from '@/hooks/useUnreadComments'
 import RichTextEditor from '@/components/clients/RichTextEditor'
 import CSVUploadForReport, { type ParsedCSV } from '@/components/reports/CSVUploadForReport'
-import { commentsApi } from '@/lib/api'
 import type { Report, ReportConfig } from '@/types'
 
 type TemplateValue = 'full' | 'summary' | 'brief'
@@ -67,17 +67,8 @@ export default function ReportsTab({
   const [historyDateFrom,   setHistoryDateFrom]   = useState('')
   const [historyDateTo,     setHistoryDateTo]     = useState('')
 
-  // Unread-comment counts per report — loaded once, merged into each row.
-  const [unreadByReport, setUnreadByReport] = useState<Record<string, number>>({})
-  useEffect(() => {
-    commentsApi.unread()
-      .then((res) => {
-        const map: Record<string, number> = {}
-        for (const row of res.by_report) map[row.report_id] = row.unresolved_count
-        setUnreadByReport(map)
-      })
-      .catch(() => { /* non-fatal */ })
-  }, [])
+  // Unread-comment counts per report — shared provider keeps these live.
+  const { byReport: unreadByReport } = useUnreadComments()
 
   const filteredReports = useMemo(() => {
     return reports.filter(r => {

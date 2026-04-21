@@ -2,11 +2,10 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useEffect, useState } from 'react'
 import { LayoutDashboard, Users, FileText, Link2, Settings, CreditCard, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Logo } from '@/components/ui/Logo'
-import { commentsApi } from '@/lib/api'
+import { useUnreadComments } from '@/hooks/useUnreadComments'
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -23,22 +22,7 @@ interface SidebarProps {
 
 export function Sidebar({ onClose }: SidebarProps) {
   const pathname = usePathname()
-
-  // Poll unread-comment count so the Reports nav item shows a badge.
-  // Refresh on mount + every 60s + whenever the pathname changes.
-  const [unreadComments, setUnreadComments] = useState<number>(0)
-  useEffect(() => {
-    let active = true
-    const load = async () => {
-      try {
-        const res = await commentsApi.unread()
-        if (active) setUnreadComments(res.total)
-      } catch { /* ignore — logged-out / transient */ }
-    }
-    load()
-    const id = window.setInterval(load, 60_000)
-    return () => { active = false; window.clearInterval(id) }
-  }, [pathname])
+  const { total: unreadComments } = useUnreadComments()
 
   return (
     <aside className="w-64 shrink-0 border-r border-slate-200 bg-white flex flex-col h-full">

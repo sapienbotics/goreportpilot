@@ -9,6 +9,7 @@ import { MessageSquare, Loader2, Check, RotateCcw, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { commentsApi, type ReportComment } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { useUnreadComments } from '@/hooks/useUnreadComments'
 
 type Filter = 'unresolved' | 'all'
 
@@ -35,6 +36,7 @@ export default function CommentsSection({ reportId }: { reportId: string }) {
   const [loading,  setLoading]  = useState(true)
   const [filter,   setFilter]   = useState<Filter>('unresolved')
   const [busyId,   setBusyId]   = useState<string | null>(null)
+  const { refetch: refetchUnread } = useUnreadComments()
 
   const fetchComments = useCallback(async () => {
     setLoading(true)
@@ -67,6 +69,7 @@ export default function CommentsSection({ reportId }: { reportId: string }) {
     try {
       const updated = await commentsApi.resolve(c.id, !c.is_resolved)
       setComments((prev) => prev.map((x) => (x.id === c.id ? updated : x)))
+      void refetchUnread()
     } catch {
       toast.error('Failed to update comment.')
     } finally {
@@ -81,6 +84,7 @@ export default function CommentsSection({ reportId }: { reportId: string }) {
       await commentsApi.delete(c.id)
       setComments((prev) => prev.filter((x) => x.id !== c.id))
       toast.success('Comment deleted')
+      void refetchUnread()
     } catch {
       toast.error('Failed to delete comment.')
     } finally {

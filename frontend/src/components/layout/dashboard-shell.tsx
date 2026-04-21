@@ -8,6 +8,7 @@ import { Menu } from 'lucide-react'
 import { Sidebar } from './sidebar'
 import { SignOutButton } from './sign-out-button'
 import { ExpiredTrialBanner } from './expired-trial-banner'
+import { UnreadCommentsProvider } from '@/hooks/useUnreadComments'
 
 interface DashboardShellProps {
   email: string
@@ -19,6 +20,7 @@ export function DashboardShell({ email, agencyName, children }: DashboardShellPr
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
 
   return (
+    <UnreadCommentsProvider>
     <div className="flex h-screen bg-slate-50 overflow-hidden">
       {/* Desktop sidebar — always visible */}
       <div className="hidden md:flex md:flex-col">
@@ -70,5 +72,6 @@ export function DashboardShell({ email, agencyName, children }: DashboardShellPr
         </main>
       </div>
     </div>
+    </UnreadCommentsProvider>
   )
 }

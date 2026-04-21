@@ -6,9 +6,10 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Plus, Globe, Mail, Building2, MessageSquare } from 'lucide-react'
-import { clientsApi, commentsApi } from '@/lib/api'
+import { clientsApi } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import AddClientDialog from '@/components/clients/add-client-dialog'
+import { useUnreadComments } from '@/hooks/useUnreadComments'
 import type { Client } from '@/types'
 
 export default function ClientsPage() {
@@ -16,7 +17,7 @@ export default function ClientsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [unreadByClient, setUnreadByClient] = useState<Record<string, number>>({})
+  const { byClient: unreadByClient } = useUnreadComments()
 
   const fetchClients = async () => {
     try {
@@ -31,13 +32,6 @@ export default function ClientsPage() {
 
   useEffect(() => {
     fetchClients()
-    commentsApi.unread()
-      .then((res) => {
-        const map: Record<string, number> = {}
-        for (const row of res.by_client) map[row.client_id] = row.unresolved_count
-        setUnreadByClient(map)
-      })
-      .catch(() => { /* non-fatal */ })
   }, [])
 
   const handleClientAdded = (newClient: Client) => {

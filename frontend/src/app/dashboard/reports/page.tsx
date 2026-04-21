@@ -6,7 +6,8 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { FileText, Calendar, Building2, ChevronRight, Download, Search, X as XIcon, MessageSquare } from 'lucide-react'
 import { toast } from 'sonner'
-import { reportsApi, commentsApi, downloadFileWithAuth } from '@/lib/api'
+import { reportsApi, downloadFileWithAuth } from '@/lib/api'
+import { useUnreadComments } from '@/hooks/useUnreadComments'
 import type { Report } from '@/types'
 
 function StatusBadge({ status }: { status: string }) {
@@ -27,7 +28,7 @@ export default function ReportsPage() {
   const [loading, setLoading]   = useState(true)
   const [error,   setError]     = useState<string | null>(null)
   const [dlId,    setDlId]      = useState<string | null>(null)
-  const [unreadByReport, setUnreadByReport] = useState<Record<string, number>>({})
+  const { byReport: unreadByReport } = useUnreadComments()
 
   // Filters
   const [filterSearch,  setFilterSearch]  = useState('')
@@ -70,13 +71,6 @@ export default function ReportsPage() {
       }
     }
     fetch()
-    commentsApi.unread()
-      .then((res) => {
-        const map: Record<string, number> = {}
-        for (const row of res.by_report) map[row.report_id] = row.unresolved_count
-        setUnreadByReport(map)
-      })
-      .catch(() => { /* non-fatal */ })
   }, [])
 
   const handleDownloadPdf = async (report: Report, e: React.MouseEvent) => {
