@@ -166,7 +166,7 @@ export default function PricingPage() {
             <Logo size="md" />
           </Link>
           <div className="hidden md:flex items-center gap-8">
-            <Link href="/#features" className="text-sm text-slate-600 hover:text-slate-900 transition-colors">
+            <Link href="/features" className="text-sm text-slate-600 hover:text-slate-900 transition-colors">
               Features
             </Link>
             <Link href="/pricing" className="text-sm font-semibold text-indigo-700">

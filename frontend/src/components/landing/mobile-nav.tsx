@@ -19,20 +19,20 @@ export default function MobileNav() {
 
       {open && (
         <div className="absolute left-0 right-0 top-16 bg-white border-b border-slate-100 shadow-lg z-50 px-6 py-4 space-y-1">
-          <a
-            href="#features"
+          <Link
+            href="/features"
             onClick={() => setOpen(false)}
             className="block rounded-md px-3 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors"
           >
             Features
-          </a>
-          <a
-            href="#pricing"
+          </Link>
+          <Link
+            href="/pricing"
             onClick={() => setOpen(false)}
             className="block rounded-md px-3 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors"
           >
             Pricing
-          </a>
+          </Link>
           <Link
             href="/login"
             onClick={() => setOpen(false)}

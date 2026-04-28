@@ -27,6 +27,7 @@ import PricingToggle from '@/components/landing/pricing-toggle'
 import FaqAccordion from '@/components/landing/faq-accordion'
 import CurrencyPrice from '@/components/landing/CurrencyPrice'
 import HeroCTA from '@/components/landing/HeroCTA'
+import ComparisonTable from '@/components/landing/ComparisonTable'
 
 export default function LandingPage() {
   return (
@@ -39,12 +40,12 @@ export default function LandingPage() {
           <Logo size="md" />
 
           <div className="hidden md:flex items-center gap-8">
-            <a href="#features" className="text-sm text-slate-600 hover:text-slate-900 transition-colors">
+            <Link href="/features" className="text-sm text-slate-600 hover:text-slate-900 transition-colors">
               Features
-            </a>
-            <a href="#pricing" className="text-sm text-slate-600 hover:text-slate-900 transition-colors">
+            </Link>
+            <Link href="/pricing" className="text-sm text-slate-600 hover:text-slate-900 transition-colors">
               Pricing
-            </a>
+            </Link>
             <Link href="/login" className="text-sm text-slate-600 hover:text-slate-900 transition-colors">
               Sign In
             </Link>
@@ -444,54 +445,7 @@ export default function LandingPage() {
               </h2>
             </div>
 
-            <div className="overflow-x-auto rounded-xl border border-slate-100 shadow-sm">
-              <table className="w-full min-w-[760px] text-sm">
-                <thead>
-                  <tr className="border-b border-slate-100">
-                    <th className="text-left py-4 px-6 text-slate-400 font-medium text-xs uppercase tracking-wide w-[30%]">
-                      Feature
-                    </th>
-                    <th className="text-center py-4 px-3 text-slate-400 font-medium text-xs uppercase tracking-wide">
-                      AgencyAnalytics
-                    </th>
-                    <th className="text-center py-4 px-3 text-slate-400 font-medium text-xs uppercase tracking-wide">
-                      Whatagraph
-                    </th>
-                    <th className="text-center py-4 px-3 text-slate-400 font-medium text-xs uppercase tracking-wide">
-                      Looker Studio
-                    </th>
-                    <th className="text-center py-4 px-3 bg-indigo-50 text-indigo-700 font-bold text-xs uppercase tracking-wide">
-                      GoReportPilot
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[
-                    ['Price (15 clients)',       '$179–239/mo',    '$249–999/mo',     'Free (DIY)',      '$39/mo ✓'],
-                    ['AI multi-para narrative',  'Add-on only',    'Short summaries', 'None',            'Included ✓'],
-                    ['Editable PPTX export',     '✗ (PDF only)',   '✗ (PDF only)',    '✗',               'Yes ✓'],
-                    ['Pricing model',            'Per client',     'Per data src',    'Free / DIY setup','Per client (flat) ✓'],
-                    ['White-label',              'Higher tiers',   'Yes',             'DIY only',        'Pro+ ✓'],
-                    ['13-language reports',      '✗',              '✗',               'DIY templates',   'Yes ✓'],
-                    ['CSV upload (any source)',  '✗',              'Limited',         'DIY',             'Yes ✓'],
-                    ['Time to first report',     '30+ min setup',  '1+ hour',         'Days (DIY)',      '<5 min ✓'],
-                  ].map(([feature, aa, wg, ls, rp], i) => (
-                    <tr
-                      key={feature}
-                      className={`border-b border-slate-50 last:border-0 ${i % 2 === 0 ? '' : 'bg-slate-50/40'}`}
-                    >
-                      <td className="py-3.5 px-6 text-slate-700 font-medium text-sm">{feature}</td>
-                      <td className="py-3.5 px-3 text-center text-slate-400 text-sm">{aa}</td>
-                      <td className="py-3.5 px-3 text-center text-slate-400 text-sm">{wg}</td>
-                      <td className="py-3.5 px-3 text-center text-slate-400 text-sm">{ls}</td>
-                      <td className="py-3.5 px-3 text-center bg-indigo-50 text-indigo-700 font-semibold text-sm">
-                        {rp}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ComparisonTable />
           </div>
         </section>
 
@@ -572,16 +526,16 @@ export default function LandingPage() {
               <p className="text-white font-semibold text-sm mb-4">Product</p>
               <ul className="space-y-2.5">
                 {[
-                  { label: 'Features', href: '#features' },
-                  { label: 'Pricing', href: '#pricing' },
+                  { label: 'Features', href: '/features' },
+                  { label: 'Pricing', href: '/pricing' },
                 ].map(({ label, href }) => (
                   <li key={label}>
-                    <a
+                    <Link
                       href={href}
                       className="text-slate-400 text-sm hover:text-white transition-colors"
                     >
                       {label}
-                    </a>
+                    </Link>
                   </li>
                 ))}
               </ul>
