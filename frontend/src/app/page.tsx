@@ -16,6 +16,10 @@ import {
   Globe2,
   Upload,
   BarChart3,
+  MessageSquare,
+  Image as ImageIcon,
+  Activity,
+  BookOpen,
 } from 'lucide-react'
 import { Logo } from '@/components/ui/Logo'
 import MobileNav from '@/components/landing/mobile-nav'
@@ -73,8 +77,9 @@ export default function LandingPage() {
                   <span className="text-indigo-700">written by AI.</span>
                 </h1>
                 <p className="mt-6 text-lg text-slate-500 leading-relaxed">
-                  GoReportPilot connects GA4, Meta Ads, Google Ads, and Search Console, writes the
-                  narrative, and delivers a white-label PPTX + PDF — in under 5 minutes.
+                  Multi-paragraph narrative explaining what changed and why — not one-line summaries.
+                  White-label PPTX you can edit, plus PDF. Connects GA4, Meta Ads, Google Ads,
+                  Search Console + CSVs.
                 </p>
                 <div className="mt-8 flex flex-wrap gap-3">
                   <HeroCTA />
@@ -324,13 +329,13 @@ export default function LandingPage() {
                   Icon: Brain,
                   title: 'AI Writes the Commentary',
                   body:
-                    "Stop spending hours writing what happened. GoReportPilot's AI analyzes every metric and writes multi-paragraph narrative your clients actually want to read — in 13 languages.",
+                    "Stop spending hours writing what happened. GoReportPilot's AI writes multi-paragraph narrative that explains what changed and why — citing the specific campaigns, pages, and channels that drove it. Not vague summaries. In 13 languages.",
                 },
                 {
                   Icon: FileText,
                   title: 'Present in PowerPoint',
                   body:
-                    'Get a branded, editable PPTX deck your clients can open in PowerPoint — plus a PDF for quick sharing. Six visual templates to match any brand.',
+                    'Get a branded, editable PPTX deck your clients can open in PowerPoint — plus a PDF for quick sharing. Six visual templates to match any brand. Available on Pro and Agency.',
                 },
                 {
                   Icon: BadgeDollarSign,
@@ -362,13 +367,13 @@ export default function LandingPage() {
                   Icon: Calendar,
                   title: 'Reports That Send Themselves',
                   body:
-                    'Schedule weekly, biweekly, or monthly reports with timezone-aware delivery. Auto-generate and email to clients as PDF, PPTX, or both.',
+                    'Schedule weekly, biweekly, or monthly reports with timezone-aware delivery. Auto-generate and email to clients as PDF, PPTX, or both. Available on Pro and Agency.',
                 },
                 {
                   Icon: Globe2,
                   title: 'Reports in 13 Languages',
                   body:
-                    'Serve global clients without translation. AI writes narrative in English, Spanish, French, German, Hindi, Japanese, and 7 more — natively, not machine-translated.',
+                    'Serve global clients without translation. AI writes narrative natively in 13 languages — not machine-translated English. Slide titles, KPI labels, chart axes, and footer text translate automatically to match.',
                 },
                 {
                   Icon: Upload,
@@ -381,6 +386,30 @@ export default function LandingPage() {
                   title: 'Charts That Tell the Story',
                   body:
                     'AI-titled charts explain what happened — not just "Sessions Over Time" but "Sessions surged 23% as organic recovered." Sparklines on every KPI card. Color-blind-safe palette.',
+                },
+                {
+                  Icon: MessageSquare,
+                  title: 'Clients Comment on Reports',
+                  body:
+                    'Your clients can leave comments directly on shared report links — no login required. You see unread badges across the dashboard, get notified, reply, and resolve. Reports become a conversation, not a one-way deliverable.',
+                },
+                {
+                  Icon: ImageIcon,
+                  title: 'Custom Cover per Client',
+                  body:
+                    'Design a unique cover page for each client. Your headline, your subtitle, hero image, your colors. Live preview before you generate. Available on Pro and Agency.',
+                },
+                {
+                  Icon: Activity,
+                  title: 'Connection Health Monitor',
+                  body:
+                    "We probe your data connections before every report runs. Broken integration? Expiring token? You'll know before the report fails — not after the client wonders why their numbers are missing.",
+                },
+                {
+                  Icon: BookOpen,
+                  title: 'Per-Client Business Context',
+                  body:
+                    "Tell GoReportPilot what each client cares about: their goals, their seasonality, their key channels. The AI weaves that context into every narrative — so the report sounds like you wrote it for them, because it kind of did.",
                 },
               ].map(({ Icon, title, body }) => (
                 <div
@@ -416,41 +445,46 @@ export default function LandingPage() {
             </div>
 
             <div className="overflow-x-auto rounded-xl border border-slate-100 shadow-sm">
-              <table className="w-full min-w-[560px] text-sm">
+              <table className="w-full min-w-[760px] text-sm">
                 <thead>
                   <tr className="border-b border-slate-100">
-                    <th className="text-left py-4 px-6 text-slate-400 font-medium text-xs uppercase tracking-wide w-2/5">
+                    <th className="text-left py-4 px-6 text-slate-400 font-medium text-xs uppercase tracking-wide w-[30%]">
                       Feature
                     </th>
-                    <th className="text-center py-4 px-4 text-slate-400 font-medium text-xs uppercase tracking-wide">
+                    <th className="text-center py-4 px-3 text-slate-400 font-medium text-xs uppercase tracking-wide">
                       AgencyAnalytics
                     </th>
-                    <th className="text-center py-4 px-4 text-slate-400 font-medium text-xs uppercase tracking-wide">
-                      DashThis
+                    <th className="text-center py-4 px-3 text-slate-400 font-medium text-xs uppercase tracking-wide">
+                      Whatagraph
                     </th>
-                    <th className="text-center py-4 px-4 bg-indigo-50 text-indigo-700 font-bold text-xs uppercase tracking-wide">
+                    <th className="text-center py-4 px-3 text-slate-400 font-medium text-xs uppercase tracking-wide">
+                      Looker Studio
+                    </th>
+                    <th className="text-center py-4 px-3 bg-indigo-50 text-indigo-700 font-bold text-xs uppercase tracking-wide">
                       GoReportPilot
                     </th>
                   </tr>
                 </thead>
                 <tbody>
                   {[
-                    ['Price (15 clients)', '$179–239/mo', '$139/mo', '$39/mo ✓'],
-                    ['AI Narrative Insights', 'Add-on only', 'Add-on ($19/mo)', 'Included ✓'],
-                    ['PowerPoint Export', '✗', '✗', 'Yes ✓'],
-                    ['Flat Pricing', 'No (per-client)', 'No (per-dashboard)', 'Yes ✓'],
-                    ['White-Label', 'Higher tiers', 'Yes', 'Pro+ ✓'],
-                    ['Multi-language Reports', '✗', '✗', '13 languages ✓'],
-                    ['CSV Upload (Any Source)', '✗', '✗', 'Yes ✓'],
-                  ].map(([feature, aa, dt, rp], i) => (
+                    ['Price (15 clients)',       '$179–239/mo',    '$249–999/mo',     'Free (DIY)',      '$39/mo ✓'],
+                    ['AI multi-para narrative',  'Add-on only',    'Short summaries', 'None',            'Included ✓'],
+                    ['Editable PPTX export',     '✗ (PDF only)',   '✗ (PDF only)',    '✗',               'Yes ✓'],
+                    ['Pricing model',            'Per client',     'Per data src',    'Free / DIY setup','Per client (flat) ✓'],
+                    ['White-label',              'Higher tiers',   'Yes',             'DIY only',        'Pro+ ✓'],
+                    ['13-language reports',      '✗',              '✗',               'DIY templates',   'Yes ✓'],
+                    ['CSV upload (any source)',  '✗',              'Limited',         'DIY',             'Yes ✓'],
+                    ['Time to first report',     '30+ min setup',  '1+ hour',         'Days (DIY)',      '<5 min ✓'],
+                  ].map(([feature, aa, wg, ls, rp], i) => (
                     <tr
                       key={feature}
                       className={`border-b border-slate-50 last:border-0 ${i % 2 === 0 ? '' : 'bg-slate-50/40'}`}
                     >
                       <td className="py-3.5 px-6 text-slate-700 font-medium text-sm">{feature}</td>
-                      <td className="py-3.5 px-4 text-center text-slate-400 text-sm">{aa}</td>
-                      <td className="py-3.5 px-4 text-center text-slate-400 text-sm">{dt}</td>
-                      <td className="py-3.5 px-4 text-center bg-indigo-50 text-indigo-700 font-semibold text-sm">
+                      <td className="py-3.5 px-3 text-center text-slate-400 text-sm">{aa}</td>
+                      <td className="py-3.5 px-3 text-center text-slate-400 text-sm">{wg}</td>
+                      <td className="py-3.5 px-3 text-center text-slate-400 text-sm">{ls}</td>
+                      <td className="py-3.5 px-3 text-center bg-indigo-50 text-indigo-700 font-semibold text-sm">
                         {rp}
                       </td>
                     </tr>
