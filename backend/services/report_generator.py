@@ -1173,6 +1173,20 @@ def _embed_logos(prs: Any, branding: dict | None) -> None:
                         pic_left = sw - fit_w - _RIGHT_MARGIN
                         pic_top = Inches(0.3)
 
+            # Defensive right-edge bounds check — when the agency uploads a
+            # very wide logo (e.g. wordmark) and the layout-box centering
+            # branch (theme fallback) places it left-of-center, the picture
+            # can still overflow the slide's right edge. Clamp width here
+            # so nothing renders past the canvas, preserving aspect ratio.
+            _MIN_LOGO_W = Inches(0.5)
+            _SAFETY_PAD = Inches(0.1)
+            if pic_left + fit_w > sw - _SAFETY_PAD:
+                _max_safe_w = max(_MIN_LOGO_W, sw - pic_left - _SAFETY_PAD)
+                if _max_safe_w < fit_w:
+                    _ratio = float(_max_safe_w) / float(fit_w)
+                    fit_w = int(_max_safe_w)
+                    fit_h = int(fit_h * _ratio)
+
             # Logo renders directly on the indigo header with no background
             # pad — agencies are expected to upload a logo that works on
             # dark backgrounds (most already do).

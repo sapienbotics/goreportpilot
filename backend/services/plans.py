@@ -15,7 +15,10 @@ PLANS = {
             "scheduling": True,
             "ai_tones": ["professional", "conversational", "executive", "data_heavy"],
             "templates": ["full", "summary", "brief"],
-            "visual_templates": ["modern_clean", "dark_executive", "colorful_agency"],
+            "visual_templates": [
+                "modern_clean", "dark_executive", "colorful_agency",
+                "bold_geometric", "minimal_elegant", "gradient_modern",
+            ],
             "powered_by_badge": True,  # Shows "Powered by ReportPilot"
         },
         "trial_days": 14,
@@ -55,7 +58,10 @@ PLANS = {
             "scheduling_frequencies": ["weekly", "biweekly", "monthly"],
             "ai_tones": ["professional", "conversational", "executive", "data_heavy"],
             "templates": ["full", "summary", "brief"],
-            "visual_templates": ["modern_clean", "dark_executive", "colorful_agency"],
+            "visual_templates": [
+                "modern_clean", "dark_executive", "colorful_agency",
+                "bold_geometric", "minimal_elegant", "gradient_modern",
+            ],
             "powered_by_badge": False,
         },
     },
@@ -75,7 +81,10 @@ PLANS = {
             "scheduling_frequencies": ["weekly", "biweekly", "monthly"],
             "ai_tones": ["professional", "conversational", "executive", "data_heavy"],
             "templates": ["full", "summary", "brief"],
-            "visual_templates": ["modern_clean", "dark_executive", "colorful_agency"],
+            "visual_templates": [
+                "modern_clean", "dark_executive", "colorful_agency",
+                "bold_geometric", "minimal_elegant", "gradient_modern",
+            ],
             "powered_by_badge": False,
         },
     },

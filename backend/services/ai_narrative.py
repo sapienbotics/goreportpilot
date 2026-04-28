@@ -298,6 +298,28 @@ async def generate_narrative(
     campaigns = data.get("meta_ads", {}).get("campaigns", [])
     traffic_sources = data.get("ga4", {}).get("traffic_sources", [])
 
+    # Normalize GA4 source/channel labels before serializing into the prompt
+    # so the AI cites "Direct", "Organic", "Referral" — matching what renders
+    # on the chart — instead of mixing "(direct)" / "organic" lowercase. Maps
+    # the same sentinels chart_generator._clean_source_label handles, kept
+    # inline here to avoid creating an import dependency on chart_generator.
+    _SRC_MAP = {
+        "(none)": "Direct", "(direct)": "Direct", "direct": "Direct",
+        "(not set)": "Other", "(not provided)": "Other",
+    }
+    def _clean_src(label: object) -> str:
+        if not label:
+            return "Other"
+        key = str(label).strip().lower()
+        return _SRC_MAP.get(key) or str(label).title()
+
+    if isinstance(traffic_sources, list):
+        traffic_sources = [
+            {**s, "source": _clean_src(s.get("source"))}
+            if isinstance(s, dict) else s
+            for s in traffic_sources
+        ]
+
     # Determine currency for the Meta Ads section so the AI uses the right symbol
     _currency_symbols: Dict[str, str] = {
         "USD": "$",    "EUR": "€",    "GBP": "£",    "INR": "₹",

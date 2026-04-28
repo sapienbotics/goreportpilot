@@ -292,20 +292,26 @@ def plot_sparkline(
     if len(clean) < 3:
         return None
 
-    fig, ax = plt.subplots(figsize=(2.0, 0.35))
-    fig.patch.set_alpha(0.0)         # transparent background — PNG alpha
+    # Slightly larger figure (2.0 × 0.40 vs 0.35) + thicker line (1.6 vs 1.2)
+    # so the sparkline reads clearly against any KPI card background.
+    # Fix (April 2026): user-reported "sparklines not appearing" — probable
+    # root causes were (a) opaque axes patch occluding the line on some
+    # PowerPoint render paths, and (b) too-thin line at small zoom.
+    fig, ax = plt.subplots(figsize=(2.0, 0.40))
+    fig.patch.set_alpha(0.0)         # figure background fully transparent
     ax.set_facecolor("none")
+    ax.patch.set_visible(False)      # belt-and-suspenders: axes patch invisible
     ax.plot(range(len(clean)), clean,
-            color=color, linewidth=1.2, solid_capstyle="round")
+            color=color, linewidth=1.6, solid_capstyle="round", zorder=2)
     # Dot on the most recent value so the reader sees "current position".
     ax.plot(len(clean) - 1, clean[-1],
-            marker="o", markersize=3.0, color=color, zorder=3)
+            marker="o", markersize=3.5, color=color, zorder=3)
     # Strip every chart decoration — a sparkline has no axes.
     ax.set_xticks([])
     ax.set_yticks([])
     for side in ("top", "right", "bottom", "left"):
         ax.spines[side].set_visible(False)
-    # Tight margins so the line uses the entire 2" × 0.35" area.
+    # Tight margins so the line uses the entire 2" × 0.40" area.
     ax.margins(x=0.02, y=0.25)
     fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
     try:
@@ -612,23 +618,32 @@ def generate_campaign_performance_chart(
         ticker.FuncFormatter(lambda x, _: f"{currency_symbol}{int(x):,}")
     )
 
+    # Pre-compute max conversions BEFORE plotting so we can suppress the
+    # legend entry, ylabel, and right spine when every campaign has zero
+    # conversions. Without this, matplotlib renders an empty "Conversions"
+    # legend swatch and "-0.04" auto-scaled tick labels — both read like
+    # bugs to clients.
+    _max_conv = max(conversions) if conversions else 0
+    _conv_has_data = _max_conv > 0
+
     ax2 = ax1.twinx()
     ax2.set_facecolor(theme["axes_bg"])
     ax2.bar([i + width / 2 for i in x], conversions, width,
-            label="Conversions",
+            label=("Conversions" if _conv_has_data else None),
             color=conv_bar_colors, edgecolor="none", alpha=0.9)
-    ax2.set_ylabel("Conversions", color=colors["secondary"])
-    ax2.tick_params(axis="y", labelcolor=colors["secondary"])
-    ax2.spines["right"].set_visible(True)
-
-    # When every campaign has zero conversions, matplotlib auto-scales the
-    # secondary axis to tiny fractional labels like "-0.04". Force a clean
-    # 0..1 range and show only the "0" tick so "no conversions yet" reads
-    # honestly.
-    _max_conv = max(conversions) if conversions else 0
-    if _max_conv == 0:
+    if _conv_has_data:
+        ax2.set_ylabel("Conversions", color=colors["secondary"])
+        ax2.tick_params(axis="y", labelcolor=colors["secondary"])
+        ax2.spines["right"].set_visible(True)
+    else:
+        # No conversions to show — hide the entire secondary axis so the
+        # chart reads as a clean spend-only bar chart instead of a broken
+        # dual-axis chart.
+        ax2.set_ylabel("")
+        ax2.set_yticks([])
+        ax2.tick_params(axis="y", left=False, right=False, labelright=False)
+        ax2.spines["right"].set_visible(False)
         ax2.set_ylim(0, 1)
-        ax2.set_yticks([0])
     ax2.spines["right"].set_color(theme["spine_color"])
 
     ax1.set_xticks(list(x))
