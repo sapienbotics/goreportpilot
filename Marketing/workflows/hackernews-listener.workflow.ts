@@ -1,19 +1,22 @@
-// Canonical source for n8n workflow: GRP - Reddit HN Listener (2x Daily)
+// Canonical source for n8n workflow: WF5 — Hacker News Listener (2x Daily)
 // Workflow ID: lYCSDKm6vTw7W9wi
-// Active version verified: 40adaf83-c8e5-4ed5-846f-2d1194ff570b (2026-04-27 — text-mode + try/catch JSON.parse fix)
 //
-// IMPORTANT: Fetch HN + Reddit uses responseFormat='text' (not 'json'). Reasoning:
-// n8n HTTP Request v4.4 throws on JSON parse failure BEFORE applying neverError,
-// so a Reddit anti-bot HTML response would crash the run. With text mode the body
-// arrives as a string in $json.body, and Normalize Results JSON.parses it inside
-// try/catch — non-JSON sources (Reddit blocks) become empty results and increment
-// parse_failures, surfaced in the Listener-Log errors column.
+// Reddit DROPPED (Nov 2025): Reddit Responsible Builder Policy requires manual
+// app approval; rejection rate is high for indie projects. HN via Algolia API
+// covers the B2B SaaS marketing audience sufficiently and needs no OAuth.
 //
-// Twice daily (08:00 + 19:00 IST = 02:30 + 13:30 UTC). Searches HN Algolia + Reddit
-// JSON across 8 ICP keywords × (HN + 7-subreddit multi-search) = 16 HTTP requests.
-// Combines + dedupes, batch-scores via gpt-4o-mini in ONE call (cost optimization),
-// filters score >= 7, saves each qualifying post as a .txt comment-draft in the
-// Engage folder, logs run summary to Listener-Log.
+// HN-only flow: Algolia search_by_date API (no auth), 8 ICP keywords, 8 HTTP
+// requests per run. Combines + dedupes, batch-scores via gpt-4o-mini in ONE
+// call (cost optimisation), filters score >= 7, saves each qualifying post as
+// a .txt comment-draft in the Engage folder, logs run summary to Listener-Log.
+//
+// Fetch uses responseFormat='text' (not 'json'). Reasoning: n8n HTTP Request
+// v4.4 throws on JSON parse failure BEFORE applying neverError, so an Algolia
+// error response would crash the run. With text mode the body arrives as a
+// string in $json.body and Normalize Results JSON.parses inside try/catch —
+// non-JSON responses become empty results and increment parse_failures.
+//
+// Twice daily (08:00 + 19:00 IST = 02:30 + 13:30 UTC).
 //
 // To deploy:
 //   1. update_workflow(workflowId='lYCSDKm6vTw7W9wi', code=<this file>)
@@ -42,14 +45,11 @@ const buildSearchList = node({
         "  'client reporting', 'looker studio alternative', 'AgencyAnalytics', 'Whatagraph',\n" +
         "  'automate reports', 'white label report', 'agency reporting tool', 'marketing report automation'\n" +
         "];\n" +
-        "const subs = ['digital_marketing','PPC','AgencyGrowth','SaaS','SEO','marketing','Entrepreneur'].join('+');\n" +
         "const cutoff = Math.floor(Date.now() / 1000) - 43200;\n" +
         "const out = [];\n" +
         "for (const k of keywords) {\n" +
         "  out.push({ json: { source: 'hn', keyword: k, cutoff: cutoff,\n" +
         "    url: 'http://hn.algolia.com/api/v1/search_by_date?query=' + encodeURIComponent(k) + '&tags=story,comment&numericFilters=created_at_i>' + cutoff } });\n" +
-        "  out.push({ json: { source: 'reddit', keyword: k, cutoff: cutoff,\n" +
-        "    url: 'https://www.reddit.com/r/' + subs + '/search.json?q=' + encodeURIComponent(k) + '&sort=new&restrict_sr=1&t=day&limit=10' } });\n" +
         "}\n" +
         "return out;"
     },
@@ -62,7 +62,7 @@ const fetchAll = node({
   type: 'n8n-nodes-base.httpRequest',
   version: 4.4,
   config: {
-    name: 'Fetch HN + Reddit',
+    name: 'Fetch HN Posts',
     parameters: {
       method: 'GET',
       url: expr('{{ $json.url }}'),
@@ -70,7 +70,7 @@ const fetchAll = node({
       specifyHeaders: 'keypair',
       headerParameters: {
         parameters: [
-          { name: 'User-Agent', value: 'GoReportPilot-Monitor/1.0 (by /u/sapienbotics)' },
+          { name: 'User-Agent', value: 'GoReportPilot-Monitor/1.0' },
           { name: 'Accept', value: 'application/json' }
         ]
       },
@@ -100,7 +100,6 @@ const normalize = node({
         "const all = [];\n" +
         "const seen = new Set();\n" +
         "let hn_count = 0;\n" +
-        "let reddit_count = 0;\n" +
         "let parse_failures = 0;\n" +
         "for (let i = 0; i < responses.length && i < inputs.length; i++) {\n" +
         "  const meta = (inputs[i] && inputs[i].json) ? inputs[i].json : {};\n" +
@@ -131,44 +130,21 @@ const normalize = node({
         "        title: String(h.title || h.story_title || (h.comment_text || '').slice(0, 100)).slice(0, 200),\n" +
         "        author: String(h.author || ''),\n" +
         "        snippet: String((h.story_text || h.comment_text || '')).replace(/<[^>]+>/g, ' ').replace(/\\s+/g, ' ').slice(0, 500),\n" +
-        "        subreddit: '',\n" +
         "        points: h.points || 0,\n" +
         "        num_comments: h.num_comments || 0,\n" +
         "        created_at: h.created_at || ''\n" +
-        "      });\n" +
-        "    }\n" +
-        "  } else if (meta.source === 'reddit') {\n" +
-        "    const children = (body && body.data && Array.isArray(body.data.children)) ? body.data.children : [];\n" +
-        "    for (const c of children) {\n" +
-        "      const d = (c && c.data) ? c.data : {};\n" +
-        "      const url = 'https://reddit.com' + (d.permalink || '');\n" +
-        "      if (seen.has(url) || !d.permalink) continue;\n" +
-        "      seen.add(url);\n" +
-        "      reddit_count++;\n" +
-        "      all.push({\n" +
-        "        id: 'reddit-' + (d.id || ''),\n" +
-        "        source: 'reddit',\n" +
-        "        keyword: meta.keyword,\n" +
-        "        url: url,\n" +
-        "        title: String(d.title || '').slice(0, 200),\n" +
-        "        author: String(d.author || ''),\n" +
-        "        snippet: String(d.selftext || '').replace(/\\s+/g, ' ').slice(0, 500),\n" +
-        "        subreddit: String(d.subreddit || ''),\n" +
-        "        points: d.score || 0,\n" +
-        "        num_comments: d.num_comments || 0,\n" +
-        "        created_at: d.created_utc ? new Date(d.created_utc * 1000).toISOString() : ''\n" +
         "      });\n" +
         "    }\n" +
         "  }\n" +
         "}\n" +
         "all.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));\n" +
         "const top = all.slice(0, 50);\n" +
-        "if (top.length === 0) return [{ json: { _no_posts: true, hn_count: 0, reddit_count: 0, total: 0, posts: [], parse_failures: parse_failures } }];\n" +
-        "return [{ json: { _no_posts: false, hn_count: hn_count, reddit_count: reddit_count, total: top.length, posts: top, parse_failures: parse_failures } }];"
+        "if (top.length === 0) return [{ json: { _no_posts: true, hn_count: 0, total: 0, posts: [], parse_failures: parse_failures } }];\n" +
+        "return [{ json: { _no_posts: false, hn_count: hn_count, total: top.length, posts: top, parse_failures: parse_failures } }];"
     },
     position: [840, 300]
   },
-  output: [{ _no_posts: false, hn_count: 5, reddit_count: 8, total: 13, parse_failures: 0, posts: [{ id: 'hn-1', source: 'hn', keyword: 'client reporting', url: 'https://news.ycombinator.com/item?id=1', title: 'Best client reporting tool?', author: 'pm123', snippet: 'Looking for...', subreddit: '', points: 5, num_comments: 12, created_at: '2026-04-26T01:00:00Z' }] }]
+  output: [{ _no_posts: false, hn_count: 5, total: 5, parse_failures: 0, posts: [{ id: 'hn-1', source: 'hn', keyword: 'client reporting', url: 'https://news.ycombinator.com/item?id=1', title: 'Best client reporting tool?', author: 'pm123', snippet: 'Looking for...', points: 5, num_comments: 12, created_at: '2026-04-26T01:00:00Z' }] }]
 });
 
 const hasPosts = ifElse({
@@ -205,7 +181,7 @@ const scoreAll = node({
           {
             type: 'text',
             role: 'system',
-            content: "You evaluate social media posts for engagement potential for GoReportPilot, a B2B SaaS reporting tool for digital marketing agencies (GA4 + Meta Ads + Google Ads + Search Console -> narrated PPTX/PDF reports). For each post in the input array, score 1-10 based on: relevance to agency reporting pain, buying intent signals, engagement potential (recent, active thread), fit to our ICP (agency owners, NOT freelancers/enterprises). Output ONLY a JSON ARRAY: [{\"id\": <post id verbatim>, \"score\": <1-10 integer>, \"reason\": <1 sentence why this score>, \"draft_comment\": <30-60 word value-first reply>}]. For draft_comment: write 30-60 words that ANSWER their question or add value. NEVER pitch GoReportPilot in the opening sentence. Only mention GoReportPilot if directly relevant — phrased as 'I'm building X for this exact problem'. Sound human, not corporate. Disclose founder status if mentioning the product."
+            content: "You evaluate Hacker News posts for engagement potential for GoReportPilot, a B2B SaaS reporting tool for digital marketing agencies (GA4 + Meta Ads + Google Ads + Search Console -> narrated PPTX/PDF reports). For each post in the input array, score 1-10 based on: relevance to agency reporting pain, buying intent signals, engagement potential (recent, active thread), fit to our ICP (agency owners, NOT freelancers/enterprises). Output ONLY a JSON ARRAY: [{\"id\": <post id verbatim>, \"score\": <1-10 integer>, \"reason\": <1 sentence why this score>, \"draft_comment\": <30-60 word value-first reply>}]. For draft_comment: write 30-60 words that ANSWER their question or add value. NEVER pitch GoReportPilot in the opening sentence. Only mention GoReportPilot if directly relevant — phrased as 'I'm building X for this exact problem'. Sound human, not corporate. Disclose founder status if mentioning the product."
           },
           {
             type: 'text',
@@ -271,7 +247,6 @@ const parseScores = node({
         "const qualified = enriched.filter(p => p.score >= 7);\n" +
         "return [{ json: {\n" +
         "  hn_count: meta.hn_count || 0,\n" +
-        "  reddit_count: meta.reddit_count || 0,\n" +
         "  total_scored: enriched.length,\n" +
         "  qualified_count: qualified.length,\n" +
         "  qualified: qualified,\n" +
@@ -280,7 +255,7 @@ const parseScores = node({
     },
     position: [1440, 400]
   },
-  output: [{ hn_count: 5, reddit_count: 8, total_scored: 13, qualified_count: 2, _none_qualified: false, qualified: [{ id: 'hn-1', score: 8, reason: 'Direct match', draft_comment: 'For 5+ clients...', source: 'hn', url: 'https://...', title: 'Best client reporting tool?', keyword: 'client reporting', author: 'pm123', snippet: 'Looking...', subreddit: '', points: 5, num_comments: 12, created_at: '2026-04-26T01:00:00Z' }] }]
+  output: [{ hn_count: 5, total_scored: 5, qualified_count: 2, _none_qualified: false, qualified: [{ id: 'hn-1', score: 8, reason: 'Direct match', draft_comment: 'For 5+ clients...', source: 'hn', url: 'https://...', title: 'Best client reporting tool?', keyword: 'client reporting', author: 'pm123', snippet: 'Looking...', points: 5, num_comments: 12, created_at: '2026-04-26T01:00:00Z' }] }]
 });
 
 const hasQualified = ifElse({
@@ -339,13 +314,11 @@ const shapeDoc = node({
         "const ist = new Date(d.getTime() + (5.5 * 60 * 60 * 1000));\n" +
         "const dateStr = ist.toISOString().slice(0, 10);\n" +
         "const titleSlug = String(j.title || 'untitled').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);\n" +
-        "const sourceLabel = j.source === 'reddit' ? ('reddit-' + (j.subreddit || 'x')) : 'hn';\n" +
-        "const doc_name = dateStr + '-' + sourceLabel + '-' + titleSlug + '.txt';\n" +
-        "const content = 'Source: ' + (j.source || '') + '\\n' +\n" +
+        "const doc_name = dateStr + '-hn-' + titleSlug + '.txt';\n" +
+        "const content = 'Source: hn\\n' +\n" +
         "  'URL: ' + (j.url || '') + '\\n' +\n" +
         "  'Title: ' + (j.title || '') + '\\n' +\n" +
         "  'Author: ' + (j.author || '') + '\\n' +\n" +
-        "  (j.subreddit ? 'Subreddit: r/' + j.subreddit + '\\n' : '') +\n" +
         "  'Keyword: ' + (j.keyword || '') + '\\n' +\n" +
         "  'Points: ' + (j.points || 0) + ' | Comments: ' + (j.num_comments || 0) + '\\n' +\n" +
         "  'Created: ' + (j.created_at || '') + '\\n' +\n" +
@@ -404,11 +377,11 @@ const shapeRunLog = node({
         "let status = 'success';\n" +
         "if (noPosts) status = 'no_posts_found';\n" +
         "else if (qualifiedCount === 0) status = 'none_qualified';\n" +
-        "const errors = parseFails > 0 ? (parseFails + ' source(s) returned non-JSON (likely Reddit rate limit/HTML block)') : '';\n" +
+        "const errors = parseFails > 0 ? (parseFails + ' HN API request(s) returned non-JSON') : '';\n" +
         "return [{ json: {\n" +
         "  date: new Date().toISOString(),\n" +
+        "  source: 'hn',\n" +
         "  hn_posts_found: String(norm.hn_count || 0),\n" +
-        "  reddit_posts_found: String(norm.reddit_count || 0),\n" +
         "  total_scored: String(totalScored),\n" +
         "  qualified_count: String(qualifiedCount),\n" +
         "  drafts_created: String(draftsCreated),\n" +
@@ -419,7 +392,7 @@ const shapeRunLog = node({
     },
     position: [2640, 700]
   },
-  output: [{ date: '2026-04-26T02:30:00Z', hn_posts_found: '5', reddit_posts_found: '8', total_scored: '13', qualified_count: '2', drafts_created: '2', openai_cost_usd: '0.0500', errors: '', status: 'success' }]
+  output: [{ date: '2026-04-26T02:30:00Z', source: 'hn', hn_posts_found: '5', total_scored: '5', qualified_count: '2', drafts_created: '2', openai_cost_usd: '0.0500', errors: '', status: 'success' }]
 });
 
 const logRun = node({
@@ -441,7 +414,7 @@ const logRun = node({
   output: [{ ok: true }]
 });
 
-export default workflow('grp-reddit-hn-listener', 'GRP - Reddit HN Listener (2x Daily)')
+export default workflow('grp-hackernews-listener', 'WF5 — Hacker News Listener (2x Daily)')
   .add(trig)
   .to(buildSearchList)
   .to(fetchAll)

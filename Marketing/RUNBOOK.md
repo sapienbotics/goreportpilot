@@ -501,47 +501,49 @@ No new credentials needed.
 ---
 
 
-## Workflow 5 — Reddit + HN Listener (2x Daily)
+## Workflow 5 — Hacker News Listener (2x Daily)
 
 **n8n workflow ID:** `lYCSDKm6vTw7W9wi`
 **n8n project:** `saurabh singh <sapienbotics@gmail.com>` (`6rX1MdQ6SZiPyO6q`)
 **Folder:** `GoReportPilot` (`qtlBJqfotG6NXIJK`)
-**Status:** Published. Active version: `18164c51-775b-4c72-a888-e7c848fa99f6` (2026-04-27). All 3 test scenarios pass.
+**Status:** Published. Active version: `a69c1595-5fb4-4f7b-b3c7-aab47bc2fe1e` (2026-04-28). Live test exec `17882` passed (`status: no_posts_found`, `source: hn`).
+
+> **Reddit DROPPED (2026-04-28).** Reddit's Responsible Builder Policy (Nov 2025) requires manual app approval for third-party API access; rejection rate is high for indie projects. HN via Algolia requires no auth, has zero API limits, and the B2B SaaS marketing audience on HN is sufficient for GoReportPilot's ICP. Workflow trimmed from 16 HTTP calls/run to 8. Old file `Marketing/workflows/reddit-hn-listener.workflow.ts` deleted.
 
 ### Same MCP-only hard rule
 
-Source of truth: `Marketing/workflows/reddit-hn-listener.workflow.ts`. Never click Save in the n8n UI for this workflow. All edits via `update_workflow` + `publish_workflow`.
+Source of truth: `Marketing/workflows/hackernews-listener.workflow.ts`. Never click Save in the n8n UI for this workflow. All edits via `update_workflow` + `publish_workflow`.
 
 ### Trigger & schedule
 
 - **Type:** Schedule Trigger (cron)
 - **Cron:** `0 30 2,13 * * *` (UTC) = **08:00 + 19:00 IST daily**, 7 days a week (no Sunday skip — engagement opportunities are time-sensitive).
-- **Note on the spec:** the spec proposed `0 30 2,30 13 * * *` which is an invalid 7-field cron. Corrected to standard 6-field `0 30 2,13 * * *`. Documented for traceability.
+- **Note on the spec:** the original spec proposed `0 30 2,30 13 * * *` which is an invalid 7-field cron. Corrected to standard 6-field `0 30 2,13 * * *`. Documented for traceability.
 
 ### What it does
 
 Each run (twice daily):
 
-1. **Build Search List** (Code) — emits 16 items: 8 ICP keywords × 2 sources (HN + Reddit). `cutoff = now - 12h` (in unix seconds) drives the `created_at_i>` filter on HN. Reddit uses `t=day` plus `sort=new`. Keywords: `client reporting, looker studio alternative, AgencyAnalytics, Whatagraph, automate reports, white label report, agency reporting tool, marketing report automation`. Reddit subs combined into one multi-sub URL: `r/digital_marketing+PPC+AgencyGrowth+SaaS+SEO+marketing+Entrepreneur/search.json?q=...`.
-2. **Fetch HN + Reddit** (HTTP, 16 calls, `batchSize: 4 / batchInterval: 1500ms`) — User-Agent `GoReportPilot-Monitor/1.0 (by /u/sapienbotics)` to satisfy Reddit's UA policy. `neverError: true` so a single 429 from Reddit does not kill the run; that source's posts will be missing from the result, logged via empty `body`.
-3. **Normalize Results** (Code) — pairs each response `i` with input metadata `i`, parses HN `hits[]` and Reddit `data.children[]` into a uniform `{id, source, keyword, url, title, author, snippet, subreddit, points, num_comments, created_at}` shape, dedupes by URL, sorts by `created_at` descending, truncates to top 50. Emits `[{_no_posts: true}]` sentinel if zero posts total.
+1. **Build Search List** (Code) — emits 8 HN items, one per ICP keyword. `cutoff = now - 12h` (unix seconds) drives the `created_at_i>` filter on HN Algolia. Keywords: `client reporting, looker studio alternative, AgencyAnalytics, Whatagraph, automate reports, white label report, agency reporting tool, marketing report automation`.
+2. **Fetch HN Posts** (HTTP, 8 calls, `batchSize: 4 / batchInterval: 1500ms`) — Algolia HN API, unauthenticated, `responseFormat: 'text'` + try/catch `JSON.parse` in downstream Code node. User-Agent: `GoReportPilot-Monitor/1.0`.
+3. **Normalize Results** (Code) — parses HN `hits[]` into a uniform `{id, source, keyword, url, title, author, snippet, points, num_comments, created_at}` shape, dedupes by URL, sorts by `created_at` descending, truncates to top 50. Emits `[{_no_posts: true}]` sentinel if zero posts total. Outputs `{hn_count, total, posts[], parse_failures}`.
 4. **Has Posts?** (IF) — sentinel routes onTrue → straight to run log (no OpenAI call, $0 cost on dead days).
-5. **Score All Posts** (OpenAI gpt-4o-mini, single batched call) — entire posts array embedded in the user prompt as `JSON.stringify($json.posts)`. System prompt enforces `[{id, score, reason, draft_comment}]` array output, 30-60 word value-first comments, no opening pitch, founder-disclosure when mentioning GoReportPilot. `temperature: 0.2`, `maxTokens: 4000`, `json_object` format.
-6. **Parse Scores** (Code) — defensive JSON extraction across 5+ response shapes (handles `{scores: []}`, `{results: []}`, bare arrays, regex fallback). Maps scores back to posts by `id`, attaches to posts, filters `score >= 7`. Emits `{hn_count, reddit_count, total_scored, qualified_count, qualified[], _none_qualified}`.
+5. **Score All Posts** (OpenAI gpt-4o-mini, single batched call) — entire posts array embedded in the user prompt as `JSON.stringify($json.posts)`. System prompt instructs scoring Hacker News posts, enforces `[{id, score, reason, draft_comment}]` array output, 30-60 word value-first comments, no opening pitch, founder-disclosure when mentioning GoReportPilot. `temperature: 0.2`, `maxTokens: 4000`, `json_object` format.
+6. **Parse Scores** (Code) — defensive JSON extraction across 5+ response shapes. Maps scores back to posts by `id`, filters `score >= 7`. Emits `{hn_count, total_scored, qualified_count, qualified[], _none_qualified}`.
 7. **Has Qualified?** (IF) — sentinel routes onTrue → run log (`status: none_qualified`, OpenAI cost still recorded).
 8. **Split Qualified** (Code) — fans the qualified array into individual items.
 9. **Loop Qualified** (splitInBatches batchSize=1) — per qualifying post:
-   - **Shape Engage Doc** (Code, runOnceForEachItem) — builds `{IST-date}-{source-or-reddit-subreddit}-{title-slug}.txt` filename and content with URL/title/author/score/reason/snippet/draft comment.
+   - **Shape Engage Doc** (Code, runOnceForEachItem) — builds `{IST-date}-hn-{title-slug}.txt` filename and doc content with URL/title/author/score/reason/snippet/draft comment.
    - **Save Engage Doc** (Drive `createFromText`, `convertToGoogleDocument: false`) → into Engage folder.
    - `nextBatch`.
-10. **Loop onDone** → **Shape Run Log Row** computes counts via `safeFirstJson` from `Normalize Results` and `Parse Scores` (both run once outside the loop, so `.first()` and `.all()` are reliable here, unlike inside-loop counting). Logs to Listener-Log.
+10. **Loop onDone** → **Shape Run Log Row** computes counts via `safeFirstJson` from `Normalize Results` and `Parse Scores`. Appends row to Listener-Log with `source: "hn"`.
 
 ### Storage
 
 | | ID | Notes |
 |---|---|---|
-| Listener-Log sheet | `1iXiV_DFS5v7z7LNHcRfJIbQFP2O_K7CfCtjy3Ll0JX0` | Tab `Listener-Log`. Columns: `date, hn_posts_found, reddit_posts_found, total_scored, qualified_count, drafts_created, openai_cost_usd, errors, status`. |
-| Engage folder (drafts saved here) | `1y-bimMAnsrfCUd0v3CILtAb37xHpUQMy` | One `.txt` per qualifying post, named `{IST-date}-{hn or reddit-subreddit}-{title-slug}.txt`. |
+| Listener-Log sheet | `1iXiV_DFS5v7z7LNHcRfJIbQFP2O_K7CfCtjy3Ll0JX0` | Tab `Listener-Log`. Columns: `date, source, hn_posts_found, total_scored, qualified_count, drafts_created, openai_cost_usd, errors, status`. |
+| Engage folder (drafts saved here) | `1y-bimMAnsrfCUd0v3CILtAb37xHpUQMy` | One `.txt` per qualifying post, named `{IST-date}-hn-{title-slug}.txt`. |
 
 ### Credentials (all reused, all already bound)
 
@@ -549,7 +551,7 @@ Each run (twice daily):
 - Google Drive OAuth2 → same as Workflow 4
 - OpenAI API → `OpenAi account_Begig_ActivumSG` (xTBe7w8R45tum5PI)
 
-HN Algolia + Reddit JSON are unauthenticated. **No new credentials needed.**
+HN Algolia is fully public. **No new credentials needed.**
 
 ### Cost estimate
 
@@ -558,34 +560,31 @@ HN Algolia + Reddit JSON are unauthenticated. **No new credentials needed.**
 - 2 runs/day × $0.05 = **$0.10/day**, ~$3/month. Well under the spec target ($0.05/run).
 - Days with zero posts: $0 (OpenAI bypassed via `Has Posts?` IF).
 
-### Test results — 3/3 PASS
+### Test results
 
 | # | Scenario | Execution | Outcome |
 |---|---|---|---|
-| 1 | HN+Reddit return real posts; OpenAI scores `hn-111: 9, hn-222: 5, reddit-rd1: 8` | `17631` | Normalize → 2 posts → Has Posts? onFalse → OpenAI batch scored → Parse Scores filter ≥7 → 1 qualified → Loop ran 1 iteration → Save Engage Doc fired → Run log: `hn_posts_found: 2, total_scored: 2, qualified_count: 1, drafts_created: 1, openai_cost_usd: 0.0500, status: success`. |
-| 2 | All 16 HTTP responses empty (every keyword/source returns no posts in last 12h) | `17632` | Normalize emitted `_no_posts: true` → Has Posts? onTrue → straight to Run Log. **OpenAI bypassed.** Result: `hn_posts_found: 0, reddit_posts_found: 0, total_scored: 0, drafts_created: 0, openai_cost_usd: 0.0000, status: no_posts_found`. |
+| 1 | HN returns real posts; OpenAI scores `hn-111: 9, hn-222: 5` | `17631` | Normalize → 2 posts → Has Posts? onFalse → OpenAI batch scored → Parse Scores filter ≥7 → 1 qualified → Loop ran 1 iteration → Save Engage Doc fired → Run log: `hn_posts_found: 2, total_scored: 2, qualified_count: 1, drafts_created: 1, openai_cost_usd: 0.0500, status: success`. |
+| 2 | All 8 HN responses return 0 hits (quiet 12h window) | `17882` (live) | Normalize emitted `_no_posts: true` → Has Posts? onTrue → straight to Run Log. **OpenAI bypassed.** Result: `source: hn, hn_posts_found: 0, total_scored: 0, drafts_created: 0, openai_cost_usd: 0.0000, status: no_posts_found`. ✅ |
 | 3 | 1 post found, OpenAI scores it 2/10 (off-topic) | `17633` | Normalize → 1 post → Has Posts? onFalse → OpenAI ran → Parse Scores filter dropped it (`qualified: [], _none_qualified: true`) → Has Qualified? onTrue → straight to Run Log. **Loop bypassed.** Result: `total_scored: 1, qualified_count: 0, drafts_created: 0, openai_cost_usd: 0.0500, status: none_qualified`. |
 
 ### Known limitations and assumptions
 
-1. **Cron correction.** Spec wrote `0 30 2,30 13 * * *` (7 fields, malformed). Correct UTC 6-field cron for 02:30+13:30 daily is `0 30 2,13 * * *`. Used the corrected version.
-2. **Reddit User-Agent string.** Set to `GoReportPilot-Monitor/1.0 (by /u/sapienbotics)` per Reddit's UA policy. If Saurabh wants a different reddit-user attribution, edit in `Marketing/workflows/reddit-hn-listener.workflow.ts` and re-deploy via `update_workflow` + `publish_workflow`.
-3. **Reddit rate limiting.** With 8 sequential Reddit calls in one batch (HTTP node `batchSize: 4, batchInterval: 1500ms`), throughput stays well under Reddit's published 60 req/min/IP free-tier limit. If Reddit blocks anyway, `neverError: true` ensures the run does not crash — Reddit's posts will simply be missing from that batch. The Listener-Log row will show `reddit_posts_found: 0` for that run, an observable signal.
-4. **HN Algolia 12-hour window.** `cutoff = now - 43200 seconds` is computed at workflow run start and passed verbatim into the URL. With 2 runs/day spaced 11 hours apart (8AM IST → 7PM IST = 11h, 7PM IST → 8AM IST next day = 13h), some posts will appear in both runs. Dedup in Normalize Results catches that within a single run; cross-run dedup is NOT implemented (would require a state store). Saurabh may see 1-2 duplicate `.txt` files in the Engage folder per week.
-5. **Single OpenAI batch call** scores all posts in one shot to keep cost flat. Token usage scales with post count: 50 posts × ~150 tokens each = ~7.5K tokens input, well under the 128K context window. If post count regularly exceeds 50, the truncation at top 50 (sorted by recency) kicks in — older posts are dropped before scoring. No alert triggered for this edge case in v1.
-6. **`drafts_created` count** is computed from `safeAll('Split Qualified')` filtered for non-`_empty` items. This works because Split Qualified runs ONCE outside the loop and emits N items. Counting nodes inside the loop body via `$().all()` would only return the latest iteration's items (n8n loop semantic), so this approach matches the Workflow 2 fix.
-7. **Comment drafts are scaffolding only.** The brand-voice rule from Workflow 2's outreach-templates.md still applies here: "Never paste AI output verbatim on Reddit. Saurabh rewrites in his own voice. The drafts are scaffolding only." The .txt files include a "DRAFT COMMENT (rewrite in your voice before posting):" header to reinforce this.
+1. **Cron correction.** Original spec wrote `0 30 2,30 13 * * *` (7 fields, malformed). Correct UTC 6-field cron for 02:30+13:30 daily is `0 30 2,13 * * *`. Used the corrected version.
+2. **HN Algolia 12-hour window.** `cutoff = now - 43200 seconds` is computed at workflow run start. With 2 runs/day spaced ~11h apart, some posts may appear in two consecutive runs. Dedup within a single run is handled in Normalize Results; cross-run dedup is NOT implemented (would require a state store). Saurabh may see 1-2 duplicate `.txt` files in the Engage folder per week.
+3. **Single OpenAI batch call** scores all posts in one shot to keep cost flat. Token usage scales with post count: 50 posts × ~150 tokens each = ~7.5K tokens input, well under the 128K context window. If post count regularly exceeds 50, truncation at top 50 (sorted by recency) kicks in — older posts are dropped before scoring.
+4. **`drafts_created` count** is computed from `safeAll('Split Qualified')` filtered for non-`_empty` items. This works because Split Qualified runs ONCE outside the loop and emits N items. Counting inside the loop body via `$().all()` would only return the latest iteration's items (n8n loop semantic).
+5. **Comment drafts are scaffolding only.** The brand-voice rule from Workflow 2's outreach-templates.md applies here: "Never paste AI output verbatim on HN. Saurabh rewrites in his own voice." The `.txt` files include a "DRAFT COMMENT (rewrite in your voice before posting):" header to reinforce this.
 
 ### Pre-launch checklist
 
 1. ☑ Listener-Log sheet created with headers (CSV upload, tab `Listener-Log`)
 2. ☑ Engage folder ID confirmed (`1y-bimMAnsrfCUd0v3CILtAb37xHpUQMy`)
 3. ☑ All 3 credentials reused from prior workflows (no new ones)
-4. ☑ All 3 test scenarios pass
-5. ☑ Workflow published, active version `18164c51-...`
-6. ☐ First production run: confirm Reddit does not 429 us. If so, `neverError: true` keeps the workflow alive and the next run will retry fresh.
-7. ☐ Review the first few `.txt` drafts for comment quality. If the AI is too pitch-heavy in the opening sentence, add explicit "DO NOT mention GoReportPilot in the first sentence" rule to the system prompt and republish.
-8. ☐ After a week, audit `qualified_count` distribution. If consistently 0-1 qualified per run, the score>=7 threshold may be too strict for our actual signal density — consider lowering to >=6.
+4. ☑ Live test exec `17882` passes: `source: hn`, `status: no_posts_found`, no errors
+5. ☑ Workflow published, active version `a69c1595-5fb4-4f7b-b3c7-aab47bc2fe1e`
+6. ☐ Review the first few `.txt` drafts for comment quality. If the AI is too pitch-heavy in the opening sentence, add explicit "DO NOT mention GoReportPilot in the first sentence" rule to the system prompt and republish.
+7. ☐ After a week, audit `qualified_count` distribution. If consistently 0-1 qualified per run, the score>=7 threshold may be too strict — consider lowering to >=6.
 
 ---
 
@@ -643,7 +642,7 @@ Mon Wed Fri 7AM IST (cron 0 30 1 * * 1,3,5 UTC)
 |---|---|---|
 | `brand-voice.md` | `1A_I82WFbWEJxkNtS4Z3I6qbPwW2FdADO` | Voice rules; **still decodes to 6 garbage bytes** — see flagged issues. Root cause is n8n's `binaryMode: "separate"` setting, not the file itself. |
 | `Competitor-Changelog` sheet | `10eUXlTpu0_9MnsbXF_SJqYBkGxDhX5lyALTuotx4wcM` (tab `Competitor-Changelog`) | Filter: last 7 days, status=changed |
-| `Listener-Log` sheet | `1iXiV_DFS5v7z7LNHcRfJIbQFP2O_K7CfCtjy3Ll0JX0` (tab `Listener-Log`) | Last 7 days of HN/Reddit listener run summaries |
+| `Listener-Log` sheet | `1iXiV_DFS5v7z7LNHcRfJIbQFP2O_K7CfCtjy3Ll0JX0` (tab `Listener-Log`) | Last 7 days of HN listener run summaries |
 | `LinkedIn-Drafts` folder | `18lE3nJy5d2Y4U86tDsrDSrS7muJ3ytiA` (canonical, after Saurabh deleted 2 duplicates) | Output folder for `.txt` drafts. Resolved dynamically via Find Drafts Folder search. |
 | `LinkedIn-Drafts-Log` sheet | `14kphwWlnEi9EifkwzLpfDN7hWGGE_Zl-MF1Rb-hQWOw` (tab `LinkedIn-Drafts-Log`) | Run-log append target |
 
