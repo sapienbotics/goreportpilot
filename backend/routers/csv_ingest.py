@@ -14,8 +14,15 @@ reading of the data — it proposes. ``commit`` applies a mapping the user has
 seen and confirmed. A low-confidence guess can therefore never reach a client
 report without a human looking at it first.
 """
-from __future__ import annotations
-
+#
+# NOTE: deliberately no "from __future__ import annotations" in this module.
+# Under PEP 563 every annotation becomes a string, and FastAPI resolves route
+# return annotations to infer a response model. "-> None" on the 204 route then
+# reads as a response body, which trips
+#     AssertionError: Status code 204 must not have a response body
+# at import time — taking the whole app down at startup rather than failing at
+# request time. routers/connections.py uses the same "-> None" pattern safely
+# precisely because it does not have the future import.
 import logging
 from datetime import datetime, timedelta, timezone
 
