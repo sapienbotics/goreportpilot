@@ -75,11 +75,20 @@ def _percent_scale(profile: TableProfile, mapping: ColumnMapping) -> float:
     Meta exports CTR as 0.0047 meaning 0.47%; Google Ads does the same for
     conversion rate. Rendered unscaled that reads "0.0047%" on a client's slide.
 
-    Deliberately narrow: the column must be mapped as a percentage, must have no
-    '%' anywhere in it, and every value must sit in [0, 1]. A column already
-    written as "0.91%" carries the sign and is left alone.
+    Triggers on "percent" OR "ratio" mapping units. Found by the real model:
+    my hand-written stub fixture guessed the model would call Meta's "CTR
+    (all)" column "percent" — it called it "ratio" instead, arguably the more
+    precise reading of a column with no '%' sign in it. _slide_unit() already
+    collapses percent and ratio to the same rendered "%" display; this had a
+    narrower trigger than that and only checked "percent" literally, so a
+    ratio-labelled fraction rendered as "%" without ever being scaled —
+    "0.0047%" instead of "0.47%". Widened to match _slide_unit's grouping.
+
+    Deliberately narrow otherwise: the column must have no '%' anywhere in it,
+    and every value must sit in [0, 1]. A column already written as "0.91%"
+    carries the sign and is left alone.
     """
-    if mapping.unit != "percent":
+    if mapping.unit not in ("percent", "ratio"):
         return 1.0
     for column in profile.columns:
         if column.name == mapping.source_column:
