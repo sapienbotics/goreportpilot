@@ -1,0 +1,99 @@
+{
+  "_comment": [
+    "Hand-authored mappings used by scripts/verify_csv_mapping_ai.py --stub.",
+    "These stand in for GPT-4.1's response so the DETERMINISTIC half of the",
+    "pipeline stays verifiable when the OpenAI account has no credits.",
+    "",
+    "They are what a correct model response looks like. Assertions that depend",
+    "on model judgement (table_shape, unit choice, ambiguity raising, confidence",
+    "calibration) are reported as UNVERIFIED in stub mode, not PASS — a stub",
+    "cannot verify the model, only the code around it.",
+    "",
+    "When credits are restored, run without --stub and diff the real responses",
+    "against these to see where the model actually lands."
+  ],
+
+  "linkedin_ads_export.csv": {
+    "table_shape": "wide_timeseries",
+    "source_label": "LinkedIn Ads",
+    "date_column": {"name": "Start Date (in UTC)", "format": "%Y-%m-%d", "confidence": 0.98},
+    "entity_column": {"name": "Campaign Name", "confidence": 0.95},
+    "columns": [
+      {"source_column": "Impressions", "target_metric": "impressions", "label": "Impressions", "unit": "number", "direction": "higher_is_better", "confidence": 0.98, "reasoning": "exact canonical name"},
+      {"source_column": "Clicks", "target_metric": "clicks", "label": "Clicks", "unit": "number", "direction": "higher_is_better", "confidence": 0.98, "reasoning": "exact canonical name"},
+      {"source_column": "Click Through Rate", "target_metric": "ctr", "label": "Click-Through Rate", "unit": "percent", "direction": "higher_is_better", "confidence": 0.97, "reasoning": "values carry a percent sign"},
+      {"source_column": "Total Spent", "target_metric": "spend", "label": "Total Spent", "unit": "currency", "direction": "lower_is_better", "confidence": 0.96, "reasoning": "monetary total"},
+      {"source_column": "Conversions", "target_metric": "conversions", "label": "Conversions", "unit": "number", "direction": "higher_is_better", "confidence": 0.97, "reasoning": "exact canonical name"},
+      {"source_column": "Cost Per Conversion", "target_metric": "cost_per_conversion", "label": "Cost per Conversion", "unit": "currency", "direction": "lower_is_better", "confidence": 0.95, "reasoning": "per-unit cost"}
+    ],
+    "ignored_columns": [],
+    "ambiguities": []
+  },
+
+  "google_ads_de_export.csv": {
+    "table_shape": "wide_timeseries",
+    "source_label": "Google Ads",
+    "date_column": {"name": "Tag", "format": "%d.%m.%Y", "confidence": 0.96},
+    "entity_column": {"name": "Kampagne", "confidence": 0.94},
+    "columns": [
+      {"source_column": "Impressionen", "target_metric": "impressions", "label": "Impressions", "unit": "number", "direction": "higher_is_better", "confidence": 0.96, "reasoning": "German for impressions"},
+      {"source_column": "Klicks", "target_metric": "clicks", "label": "Clicks", "unit": "number", "direction": "higher_is_better", "confidence": 0.96, "reasoning": "German for clicks"},
+      {"source_column": "Kosten", "target_metric": "spend", "label": "Cost", "unit": "currency", "direction": "lower_is_better", "confidence": 0.95, "reasoning": "German for cost, in an ads export"},
+      {"source_column": "Konversionen", "target_metric": "conversions", "label": "Conversions", "unit": "number", "direction": "higher_is_better", "confidence": 0.95, "reasoning": "German for conversions"},
+      {"source_column": "CTR", "target_metric": "ctr", "label": "Click-Through Rate", "unit": "percent", "direction": "higher_is_better", "confidence": 0.97, "reasoning": "values carry a percent sign"}
+    ],
+    "ignored_columns": [],
+    "ambiguities": []
+  },
+
+  "meta_ads_multisheet.xlsx": {
+    "table_shape": "wide_timeseries",
+    "source_label": "Meta Ads",
+    "date_column": {"name": "Reporting starts", "format": "%Y-%m-%d", "confidence": 0.97},
+    "entity_column": {"name": "Campaign name", "confidence": 0.96},
+    "columns": [
+      {"source_column": "Amount spent (INR)", "target_metric": "spend", "label": "Amount Spent", "unit": "currency", "direction": "lower_is_better", "confidence": 0.97, "reasoning": "currency named in the header"},
+      {"source_column": "Impressions", "target_metric": "impressions", "label": "Impressions", "unit": "number", "direction": "higher_is_better", "confidence": 0.98, "reasoning": "exact canonical name"},
+      {"source_column": "Link clicks", "target_metric": "clicks", "label": "Link Clicks", "unit": "number", "direction": "higher_is_better", "confidence": 0.96, "reasoning": "Meta's name for clicks"},
+      {"source_column": "CTR (all)", "target_metric": "ctr", "label": "CTR", "unit": "percent", "direction": "higher_is_better", "confidence": 0.95, "reasoning": "rate stored as a fraction"},
+      {"source_column": "Results", "target_metric": "results", "label": "Results", "unit": "number", "direction": "higher_is_better", "confidence": 0.9, "reasoning": "Meta's configurable outcome metric"}
+    ],
+    "ignored_columns": [],
+    "ambiguities": []
+  },
+
+  "messy_semrush_export.csv": {
+    "table_shape": "wide_entity",
+    "source_label": "Semrush Position Tracking",
+    "date_column": {"name": "Date", "format": "%Y-%m-%d", "confidence": 0.95},
+    "entity_column": {"name": "Keyword", "confidence": 0.97},
+    "columns": [
+      {"source_column": "Position", "target_metric": "position", "label": "Average Position", "unit": "number", "direction": "lower_is_better", "confidence": 0.94, "reasoning": "search ranking, lower is better"},
+      {"source_column": "Search Volume", "target_metric": "search_volume", "label": "Search Volume", "unit": "number", "direction": "higher_is_better", "confidence": 0.95, "reasoning": "monthly searches"},
+      {"source_column": "Traffic %", "target_metric": "traffic_share", "label": "Traffic Share", "unit": "percent", "direction": "higher_is_better", "confidence": 0.92, "reasoning": "percent named in the header"},
+      {"source_column": "Cost", "target_metric": "cost", "label": "Cost", "unit": "currency", "direction": "lower_is_better", "confidence": 0.45, "reasoning": "could be estimated traffic value or ad spend"},
+      {"source_column": "CPC", "target_metric": "cpc", "label": "Cost per Click", "unit": "currency", "direction": "lower_is_better", "confidence": 0.93, "reasoning": "standard abbreviation"}
+    ],
+    "ignored_columns": [],
+    "ambiguities": [
+      {
+        "column": "Cost",
+        "candidates": ["estimated traffic value", "ad spend"],
+        "question": "Is 'Cost' the estimated value of this organic traffic, or money you actually spent?"
+      }
+    ]
+  },
+
+  "legacy_kpi_format.csv": {
+    "table_shape": "long_kpi",
+    "source_label": "Custom KPIs",
+    "date_column": null,
+    "entity_column": {"name": "metric_name", "confidence": 0.99},
+    "columns": [
+      {"source_column": "current_value", "target_metric": "current_value", "label": "Current", "unit": "number", "direction": "higher_is_better", "confidence": 0.99, "reasoning": "GoReportPilot KPI template column"},
+      {"source_column": "previous_value", "target_metric": "previous_value", "label": "Previous", "unit": "number", "direction": "higher_is_better", "confidence": 0.99, "reasoning": "GoReportPilot KPI template column"}
+    ],
+    "ignored_columns": [{"name": "unit", "reason": "declares the format of the other columns"}],
+    "ambiguities": []
+  }
+}

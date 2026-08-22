@@ -538,15 +538,40 @@ Return ONLY valid JSON, no markdown code blocks, no explanation outside the JSON
         return narrative
 
     except Exception as exc:
-        logger.error("AI narrative generation failed: %s", exc)
-        return {
-            "executive_summary": (
-                f"Report for {client_name} covering {data.get('period_start')} to {data.get('period_end')}. "
-                f"AI narrative generation failed: {exc}. Please try regenerating."
-            ),
-            "website_performance": "Website performance data is available. AI narrative could not be generated.",
-            "paid_advertising": "Paid advertising data is available. AI narrative could not be generated.",
-            "key_wins": "✓ Data collected successfully\n✓ Report file generated",
-            "concerns": "⚠ AI narrative generation encountered an error. Please regenerate.",
-            "next_steps": "1. Regenerate this report to get AI insights",
-        }
+        logger.error("AI narrative generation failed: %s", exc, exc_info=True)
+        return _fallback_narrative(client_name, data, exc)
+
+
+def _fallback_narrative(
+    client_name: str, data: Dict[str, Any], exc: Exception
+) -> Dict[str, Any]:
+    """
+    Neutral placeholder text for when the narrative engine is unavailable.
+
+    This text goes onto a slide in a deck an agency sends to their client, so it
+    must never expose our internals. The previous version interpolated the raw
+    exception into executive_summary — which meant an OpenAI billing error put
+    "You have no credits remaining. Add credits at platform.openai.com/..."
+    on slide 2 of a client-facing report.
+
+    The real error is logged, and ``_narrative_error`` is returned alongside so
+    the dashboard can tell the agency to regenerate. That key is stripped before
+    rendering (see report_generator) and never reaches a slide.
+    """
+    period = f"{data.get('period_start', '')} to {data.get('period_end', '')}".strip()
+    heading = f"Performance summary for {client_name}"
+    if period and period != "to":
+        heading += f", {period}"
+
+    return {
+        "_narrative_error": str(exc)[:300],
+        "executive_summary": (
+            f"{heading}. The figures in this report are complete and accurate. "
+            "Written commentary is being finalised and will be added shortly."
+        ),
+        "website_performance": "Website performance figures are shown in the charts on this slide.",
+        "paid_advertising": "Campaign performance figures are shown in the charts on this slide.",
+        "key_wins": "",
+        "concerns": "",
+        "next_steps": "",
+    }

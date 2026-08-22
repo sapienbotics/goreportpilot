@@ -64,10 +64,22 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS trg_csv_mappings_updated_at ON csv_mappings;
-CREATE TRIGGER trg_csv_mappings_updated_at
-  BEFORE UPDATE ON csv_mappings
-  FOR EACH ROW EXECUTE FUNCTION set_csv_mappings_updated_at();
+-- Created only when absent. Deliberately NOT written as
+-- "DROP TRIGGER IF EXISTS ... ; CREATE TRIGGER ...": this migration contains
+-- no DROP of any kind, so it can be read and approved at a glance without
+-- anyone having to reason about whether a given DROP is safe.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger
+    WHERE tgname = 'trg_csv_mappings_updated_at'
+      AND tgrelid = 'csv_mappings'::regclass
+  ) THEN
+    CREATE TRIGGER trg_csv_mappings_updated_at
+      BEFORE UPDATE ON csv_mappings
+      FOR EACH ROW EXECUTE FUNCTION set_csv_mappings_updated_at();
+  END IF;
+END $$;
 
 
 -- ── csv_mapping_usage ───────────────────────────────────────────────────────
@@ -90,17 +102,31 @@ CREATE INDEX IF NOT EXISTS idx_csv_mapping_usage_user_time
 ALTER TABLE csv_mappings      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE csv_mapping_usage ENABLE ROW LEVEL SECURITY;
 
-DROP POLICY IF EXISTS csv_mappings_owner ON csv_mappings;
-CREATE POLICY csv_mappings_owner ON csv_mappings
-  FOR ALL
-  USING (auth.uid() = user_id)
-  WITH CHECK (auth.uid() = user_id);
+-- Created only when absent, for the same reason as the trigger above.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'csv_mappings'
+      AND policyname = 'csv_mappings_owner'
+  ) THEN
+    CREATE POLICY csv_mappings_owner ON csv_mappings
+      FOR ALL
+      USING (auth.uid() = user_id)
+      WITH CHECK (auth.uid() = user_id);
+  END IF;
 
-DROP POLICY IF EXISTS csv_mapping_usage_owner ON csv_mapping_usage;
-CREATE POLICY csv_mapping_usage_owner ON csv_mapping_usage
-  FOR ALL
-  USING (auth.uid() = user_id)
-  WITH CHECK (auth.uid() = user_id);
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'csv_mapping_usage'
+      AND policyname = 'csv_mapping_usage_owner'
+  ) THEN
+    CREATE POLICY csv_mapping_usage_owner ON csv_mapping_usage
+      FOR ALL
+      USING (auth.uid() = user_id)
+      WITH CHECK (auth.uid() = user_id);
+  END IF;
+END $$;
 
 
 -- ── Housekeeping ────────────────────────────────────────────────────────────

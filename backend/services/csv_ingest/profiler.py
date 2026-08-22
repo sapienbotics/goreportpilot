@@ -85,6 +85,10 @@ class ColumnProfile:
     has_currency_symbol: bool = False
     has_percent_sign: bool = False
     date_format: str | None = None
+    # True when every value sits in [0, 1] and no '%' appears anywhere in the
+    # column. Meta and Google Ads both export rates this way — CTR 0.0047 means
+    # 0.47%. Rendered as-is it reads "0.0047%" on a client's slide.
+    looks_like_fraction: bool = False
 
     def for_prompt(self) -> dict[str, Any]:
         """Compact representation sent to the model — no raw file content beyond samples."""
@@ -103,6 +107,10 @@ class ColumnProfile:
                 out["has_currency_symbol"] = True
             if self.has_percent_sign:
                 out["has_percent_sign"] = True
+            if self.looks_like_fraction:
+                # Told to the model so it labels the column as a rate, and used
+                # deterministically at normalisation time to scale it.
+                out["values_are_fractions_0_to_1"] = True
         if self.date_format:
             out["date_format"] = self.date_format
         return out
@@ -322,18 +330,45 @@ def _detect_header_row(rows: list[list[str]]) -> int:
     return best_index
 
 
+# Totals-row labels. Not English-only: we support 13 report languages and
+# platform exports are localised, so a German "Gesamt" row must be recognised
+# for the same reason an English "Total" row is.
+_TOTALS_LABELS: frozenset[str] = frozenset({
+    "total", "totals", "grand total", "sum", "subtotal", "overall", "all",
+    "gesamt", "gesamtsumme", "summe",              # de
+    "totaal",                                       # nl
+    "totale", "totali",                             # it
+    "totales", "suma",                              # es
+    "somme", "total général",                       # fr
+    "soma",                                         # pt
+    "итого", "всего",                               # ru
+    "合計", "総計",                                  # ja
+    "总计", "合计",                                  # zh
+    "कुल",                                           # hi
+    "—", "-", "--",
+})
+
+
 def _detect_totals_row(
-    rows: list[list[str]], numeric_columns: list[int]
+    rows: list[list[str]],
+    numeric_columns: list[int],
+    marks: dict[int, str] | None = None,
 ) -> int | None:
     """
     Detect a trailing totals row.
 
     A totals row is the last non-blank row whose numeric cells equal the sum of
-    the rows above (within 0.5% to allow for the platform's own rounding), or
-    whose first cell literally says Total / Grand Total / Sum.
+    the rows above (within 0.5% for the platform's own rounding), or whose first
+    cell is a totals label in any of our supported languages.
+
+    ``marks`` carries each column's resolved decimal mark. Without it this
+    comparison is done with locale-naive parsing, which reads German
+    dot-thousands ("12.450") as 12.45 — so the column sums disagree with the
+    totals row, the row survives, and everything downstream is poisoned by it.
     """
     if not rows or not numeric_columns:
         return None
+    marks = marks or {}
 
     last_index = None
     for i in range(len(rows) - 1, -1, -1):
@@ -345,20 +380,21 @@ def _detect_totals_row(
 
     last_row = rows[last_index]
     first_cell = (last_row[0] if last_row else "").strip().lower()
-    if first_cell in ("total", "totals", "grand total", "sum", "overall", "—", "-"):
+    if first_cell in _TOTALS_LABELS:
         return last_index
 
     body = rows[:last_index]
     matches = 0
     checked = 0
     for col in numeric_columns:
-        total = _parse_number(last_row[col]) if col < len(last_row) else None
+        mark = marks.get(col, ".")
+        total = _parse_localized(last_row[col], mark) if col < len(last_row) else None
         if total is None:
             continue
         column_sum = 0.0
         seen = False
         for row in body:
-            value = _parse_number(row[col]) if col < len(row) else None
+            value = _parse_localized(row[col], mark) if col < len(row) else None
             if value is not None:
                 column_sum += value
                 seen = True
@@ -682,30 +718,43 @@ def profile_table(table: RawTable) -> TableProfile:
             f"this file has {len(rows[header_index])}."
         )
 
-    # Find and remove the totals row BEFORE profiling. Leaving it in poisons
-    # everything downstream: it inflates every column's max, it drags a date
-    # column below the parse threshold so the time dimension is never detected,
-    # and it doubles the reported period totals.
     numeric_indices = _likely_numeric_columns(body, len(header))
-    totals_index = _detect_totals_row(body, numeric_indices)
+
+    # Resolve locale FIRST, then find the totals row, then profile.
+    #
+    # The order is load-bearing and was wrong before: totals detection compares
+    # each column's sum against the last row, and doing that with locale-naive
+    # parsing reads German dot-thousands ("12.450") as 12.45. The sums then
+    # disagree, the totals row survives, its "Gesamt" label sits in the date
+    # column, and only 5 of 6 values parse as dates — below the 95% threshold,
+    # so the time dimension is silently lost. One ordering mistake, four
+    # downstream symptoms.
+    column_votes: dict[int, _LocaleVote] = {}
+    file_vote = _LocaleVote()
+    for index in numeric_indices:
+        values = [
+            row[index] for row in body
+            if index < len(row) and row[index].strip()
+        ]
+        vote = _vote_decimal_mark(values)
+        column_votes[index] = vote
+        file_vote.add(vote)
+    marks = {
+        index: _resolve_mark(column_votes[index], file_vote)
+        for index in numeric_indices
+    }
+
+    totals_index = _detect_totals_row(body, numeric_indices, marks)
     data_rows = (
         [r for i, r in enumerate(body) if i != totals_index]
         if totals_index is not None
         else body
     )
 
-    # First pass: read every column's raw values once and pool the locale
-    # evidence across the whole file.
-    raw_by_index: dict[int, list[str]] = {}
-    column_votes: dict[int, _LocaleVote] = {}
-    file_vote = _LocaleVote()
-    for index in range(len(header)):
-        values = [(row[index] if index < len(row) else "") for row in data_rows]
-        raw_by_index[index] = values
-        if index in numeric_indices:
-            vote = _vote_decimal_mark([v for v in values if v.strip()])
-            column_votes[index] = vote
-            file_vote.add(vote)
+    raw_by_index: dict[int, list[str]] = {
+        index: [(row[index] if index < len(row) else "") for row in data_rows]
+        for index in range(len(header))
+    }
 
     columns: list[ColumnProfile] = []
 
@@ -727,8 +776,8 @@ def profile_table(table: RawTable) -> TableProfile:
         )
 
         if inferred == "number":
-            profile.decimal_mark = _resolve_mark(
-                column_votes.get(index) or _vote_decimal_mark(non_empty), file_vote
+            profile.decimal_mark = marks.get(
+                index, _resolve_mark(_vote_decimal_mark(non_empty), file_vote)
             )
             # Min/max must be read with the resolved locale, otherwise a
             # European column reports 3.1 where the real maximum is 3,100.
@@ -744,7 +793,22 @@ def profile_table(table: RawTable) -> TableProfile:
             profile.has_currency_symbol = any(
                 sym in v for v in non_empty[:200] for sym in ("$", "₹", "€", "£", "¥")
             )
-            profile.has_percent_sign = any(v.strip().endswith("%") for v in non_empty[:200])
+            profile.has_percent_sign = any("%" in v for v in non_empty[:200])
+            # A rate stored as a fraction. Requires the whole column to sit in
+            # [0, 1] AND carry no '%' anywhere — a column already written as
+            # "0.91%" is a percentage and must not be scaled again. Integers-only
+            # columns are excluded so a column of zeros and ones (a flag) is not
+            # mistaken for a rate.
+            profile.looks_like_fraction = bool(
+                numbers
+                and not profile.has_percent_sign
+                and not profile.has_currency_symbol
+                and profile.min_value is not None
+                and profile.min_value >= 0.0
+                and profile.max_value is not None
+                and profile.max_value <= 1.0
+                and any(not float(n).is_integer() for n in numbers)
+            )
 
         columns.append(profile)
 

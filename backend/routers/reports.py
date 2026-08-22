@@ -632,6 +632,10 @@ async def _generate_report_internal(
             "failed":          pull.failures,
             "reauth_required": pull.reauth_required,
             "csv_count":       len(csv_sources or []),
+            # Set when the narrative engine was unavailable and placeholder text
+            # was used. The deck still renders with correct figures, but the
+            # agency needs to know to regenerate before sending it on.
+            "narrative_error": (narrative or {}).get("_narrative_error"),
         },
         # Compact raw_data for section regeneration (daily arrays omitted to save space)
         "narrative_data": {

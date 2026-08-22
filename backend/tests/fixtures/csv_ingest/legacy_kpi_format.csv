@@ -1,0 +1,6 @@
+metric_name,current_value,previous_value,unit
+Revenue,"$48,320.50","$41,905.75",currency
+Conversion Rate,24.8%,21.3%,percent
+Impressions,12.4K,10.8K,number
+Clicks,1340,1100,number
+Unsubscribes,42,58,number

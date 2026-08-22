@@ -68,6 +68,25 @@ def _decimal_mark(profile: TableProfile, name: str) -> str:
     return "."
 
 
+def _percent_scale(profile: TableProfile, mapping: ColumnMapping) -> float:
+    """
+    Return 100 when a percent-mapped column is stored as a fraction, else 1.
+
+    Meta exports CTR as 0.0047 meaning 0.47%; Google Ads does the same for
+    conversion rate. Rendered unscaled that reads "0.0047%" on a client's slide.
+
+    Deliberately narrow: the column must be mapped as a percentage, must have no
+    '%' anywhere in it, and every value must sit in [0, 1]. A column already
+    written as "0.91%" carries the sign and is left alone.
+    """
+    if mapping.unit != "percent":
+        return 1.0
+    for column in profile.columns:
+        if column.name == mapping.source_column:
+            return 100.0 if column.looks_like_fraction else 1.0
+    return 1.0
+
+
 def _is_rate(mapping: ColumnMapping) -> bool:
     """
     Rates and ratios must be averaged across rows, never summed.
@@ -140,15 +159,19 @@ def normalize(
         if date_index is not None:
             dates.append(_to_iso_date(row[date_index] if date_index < len(row) else "", date_format))
 
+    scaled_columns: list[str] = []
     for column_mapping in mappings:
         index = _column_index(profile, column_mapping.source_column)
         if index is None:
             continue
         mark = _decimal_mark(profile, column_mapping.source_column)
+        scale = _percent_scale(profile, column_mapping)
+        if scale != 1.0:
+            scaled_columns.append(column_mapping.label or column_mapping.source_column)
         values: list[float] = []
         for row in rows:
             value = _parse_localized(row[index] if index < len(row) else "", mark)
-            values.append(value if value is not None else float("nan"))
+            values.append(value * scale if value is not None else float("nan"))
         columns[column_mapping.target_metric] = values
 
     # ── Split into current vs previous period ────────────────────────────────
@@ -204,6 +227,14 @@ def normalize(
         "mapped_at":   datetime.utcnow().isoformat(),
         "row_count":   len(rows),
     }
+
+    # Surface the scaling rather than doing it silently — the user should be
+    # able to see why 0.0047 became 0.47%.
+    if scaled_columns:
+        result["warnings"] = [
+            f"{', '.join(scaled_columns)} was stored as a decimal fraction "
+            "(0.0047) and has been converted to a percentage (0.47%)."
+        ]
 
     # ── Daily series, when the table is dated ────────────────────────────────
     if dated:
@@ -454,11 +485,15 @@ def preview_rows(
             if index is None:
                 continue
             raw = row[index] if index < len(row) else ""
+            parsed = _parse_localized(
+                raw, _decimal_mark(profile, column_mapping.source_column)
+            )
+            # The preview must show the value the report will actually use,
+            # scaling included — that is the whole point of showing it.
+            scale = _percent_scale(profile, column_mapping)
             rendered[column_mapping.source_column] = {
                 "raw": raw,
-                "parsed": _parse_localized(
-                    raw, _decimal_mark(profile, column_mapping.source_column)
-                ),
+                "parsed": round(parsed * scale, 6) if parsed is not None else None,
             }
         out.append(rendered)
     return out
