@@ -1525,11 +1525,27 @@ def _populate_csv_slide(
     Populate ONE CSV template slide with data from *csv_src*.
 
     - Replaces all {{csv_source_name}}, {{csv_kpi_N_label/value/change}} tokens.
-    - Embeds the matching CSV chart image, respecting the KPI-card clearance
-      rule (chart starts at ≥ 4.30" to avoid overlapping KPI values).
+    - Embeds the matching CSV chart image below the last KPI row.
     - When no chart image exists the placeholder shape is silently deleted.
     """
     source_name = csv_src.get("source_name", csv_src.get("name", "Custom Data"))
+
+    # Capture the last KPI row's actual bottom edge BEFORE the token replacement
+    # pass overwrites its text, so the chart can be clamped clear of it.
+    #
+    # The doc comment used to claim "chart starts at >= 4.30in", but that never
+    # matched any actual template: modern_clean's chart placeholder sits at
+    # 4.00in while the last KPI row (kpi_4/kpi_5) ends at 4.20in -- a 0.20in
+    # overlap that clips the bottom of "37" and "$43" on any 5-6 metric CSV
+    # source. dark_executive overlaps by 0.13in; colorful_agency and
+    # bold_geometric clear it by only 0.02in, too tight to trust across font
+    # rendering differences. Fixed once here rather than in six binary files.
+    _last_row_bottom_emu = 0
+    for shape in slide.shapes:
+        if not shape.has_text_frame:
+            continue
+        if shape.text_frame.text.strip() in ("{{csv_kpi_4_value}}", "{{csv_kpi_5_value}}"):
+            _last_row_bottom_emu = max(_last_row_bottom_emu, shape.top + shape.height)
 
     # ── Build per-source replacement dict ────────────────────────────────────
     src_repl: dict[str, str] = {"{{csv_source_name}}": source_name}
@@ -1584,6 +1600,8 @@ def _populate_csv_slide(
 
     _SLIDE_WIDTH_EMU = int(13.33 * 914400)   # standard widescreen width
     _MAX_CHART_W_EMU = int(8.0 * 914400)    # max chart width for bar charts
+    _CLEARANCE_EMU = int(0.15 * 914400)     # minimum gap below the last KPI row
+    _MIN_CHART_H_EMU = int(1.5 * 914400)    # never shrink the chart below this
 
     for shape in list(slide.shapes):
         if not shape.has_text_frame:
@@ -1591,23 +1609,49 @@ def _populate_csv_slide(
         text = shape.text_frame.text.strip()
         if "{{chart_csv_data}}" in text or text.startswith("{{chart_csv_"):
             if chart_path and os.path.exists(chart_path):
-                # Template placeholder gives us the correct top and height
-                # (Phase 2 positioned it 0.20" below the last KPI card).
-                # Override width to max 8.0" and center horizontally so the
-                # comparison bar chart maintains a readable ~2:1 aspect ratio
-                # instead of being squeezed across the full 11.70" placeholder.
+                # Template placeholder gives the intended top/height, but on
+                # some templates that top sits above the actual KPI row bottom
+                # (see the clearance comment above). Clamp it down when needed
+                # and shrink the height by the same amount so the chart's
+                # bottom edge — and the footer below it — never move.
+                original_top, original_height = shape.top, shape.height
+                chart_bottom_emu = original_top + original_height
+                safe_top = max(original_top, _last_row_bottom_emu + _CLEARANCE_EMU)
+                chart_h = max(_MIN_CHART_H_EMU, chart_bottom_emu - safe_top)
                 chart_w = min(shape.width, _MAX_CHART_W_EMU)
                 chart_l = (_SLIDE_WIDTH_EMU - chart_w) // 2
                 slide.shapes.add_picture(
                     chart_path,
                     chart_l,
-                    shape.top,
+                    safe_top,
                     chart_w,
-                    shape.height,
+                    chart_h,
                 )
                 for para in shape.text_frame.paragraphs:
                     for run in para.runs:
                         run.text = ""
+
+                # The placeholder text lives in one shape, but templates also
+                # carry undecorated background/card shapes co-positioned with
+                # it purely for visual framing (modern_clean has two — one is
+                # this placeholder itself, one is a plain duplicate). Clearing
+                # this shape's text does not move it, and any sibling card
+                # shape is untouched entirely, so without this every such
+                # shape keeps sitting at the template's original top/height —
+                # which is exactly the position the clearance clamp just
+                # moved the picture away from, leaving a visible blank card
+                # hanging over the KPI row the picture no longer overlaps.
+                # Re-align anything sharing the placeholder's original bounds.
+                for sibling in list(slide.shapes):
+                    if (
+                        sibling is not shape
+                        and sibling.shape_type != 13  # not the picture just added
+                        and sibling.top == original_top
+                        and sibling.height == original_height
+                    ):
+                        sibling.top = safe_top
+                        sibling.height = chart_h
+                shape.top, shape.height = safe_top, chart_h
             else:
                 _delete_shape(slide, shape)
             break
