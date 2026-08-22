@@ -264,7 +264,11 @@ def _parse_number(val: str) -> Optional[float]:
     try:
         return float(s) * multiplier
     except ValueError:
-        logger.warning("Could not parse numeric value: %r (cleaned: %r)", val, s)
+        # Only warn when the value *looked* like it should be a number. The
+        # universal-ingest profiler calls this on every cell of every column to
+        # classify them, so warning on plain text would emit one line per cell.
+        if any(ch.isdigit() for ch in s):
+            logger.warning("Could not parse numeric value: %r (cleaned: %r)", val, s)
         return None
 
 

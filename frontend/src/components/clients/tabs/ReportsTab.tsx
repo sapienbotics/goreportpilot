@@ -11,7 +11,8 @@ import { Input } from '@/components/ui/input'
 import { usePlanFeatures } from '@/hooks/usePlanFeatures'
 import { useUnreadComments } from '@/hooks/useUnreadComments'
 import RichTextEditor from '@/components/clients/RichTextEditor'
-import CSVUploadForReport, { type ParsedCSV } from '@/components/reports/CSVUploadForReport'
+import CSVMappingDialog from '@/components/clients/CSVMappingDialog'
+import type { AttachedCSVSource } from '@/components/clients/csv-source'
 import type { Report, ReportConfig } from '@/types'
 
 type TemplateValue = 'full' | 'summary' | 'brief'
@@ -34,8 +35,8 @@ interface Props {
   configSaved: boolean
   customImgInputRef: React.RefObject<HTMLInputElement>
   customImgUploading: boolean
-  csvFiles: ParsedCSV[]
-  setCsvFiles: React.Dispatch<React.SetStateAction<ParsedCSV[]>>
+  csvFiles: AttachedCSVSource[]
+  setCsvFiles: React.Dispatch<React.SetStateAction<AttachedCSVSource[]>>
   handleGenerate: () => void
   handleSaveConfig: () => void
   handleCustomSectionImageUpload: (e: React.ChangeEvent<HTMLInputElement>) => void
@@ -146,7 +147,7 @@ export default function ReportsTab({
                   Additional Data Sources <span className="normal-case font-normal">(optional)</span>
                 </label>
                 <p className="text-xs text-slate-400 mb-2">
-                  Upload CSVs for platforms not directly integrated — LinkedIn Ads, TikTok, Shopify, Mailchimp, etc.
+                  Import any CSV or Excel export — LinkedIn Ads, TikTok, Semrush, anything. We read the columns for you.
                 </p>
                 {csvFiles.length > 0 && (
                   <ul className="mb-2 space-y-1.5">
@@ -154,8 +155,10 @@ export default function ReportsTab({
                       <li key={i} className="flex items-center justify-between rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2">
                         <div className="flex items-center gap-2 min-w-0">
                           <FileText className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
-                          <span className="text-sm font-medium text-slate-800 truncate">{csv.sourceName}</span>
-                          <span className="text-xs text-slate-400 shrink-0">{csv.metrics.length} metrics</span>
+                          <span className="text-sm font-medium text-slate-800 truncate">{csv.source.source_name}</span>
+                          <span className="text-xs text-slate-400 shrink-0">
+                            {csv.source.metrics.length} metrics{csv.source.daily ? ' · trend' : ''}
+                          </span>
                         </div>
                         <button
                           onClick={() => removeCsv(i)}
@@ -174,7 +177,7 @@ export default function ReportsTab({
                   className="flex items-center justify-center gap-2 w-full rounded-lg border border-dashed border-slate-300 px-3 py-2 text-sm text-slate-500 hover:border-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
                 >
                   <Upload className="h-4 w-4" />
-                  {csvFiles.length === 0 ? 'Add CSV Data Source' : 'Add Another CSV'}
+                  {csvFiles.length === 0 ? 'Import from a file' : 'Import another file'}
                 </button>
               </div>
 
@@ -420,8 +423,9 @@ export default function ReportsTab({
 
       {/* CSV Upload Modal */}
       {showCsvUpload && (
-        <CSVUploadForReport
-          onAdd={(csv) => setCsvFiles(prev => [...prev, csv])}
+        <CSVMappingDialog
+          clientId={clientId}
+          onAdd={(source, fileName) => setCsvFiles(prev => [...prev, { source, fileName }])}
           onClose={() => setShowCsvUpload(false)}
         />
       )}

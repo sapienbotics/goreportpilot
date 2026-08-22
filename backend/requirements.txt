@@ -1,6 +1,10 @@
 # cache bust v3
 setuptools>=69.0.0
 chardet>=5.0,<6.0
+# Universal CSV ingestion reads .xlsx directly (Track A). openpyxl only —
+# deliberately not pandas, whose bulk buys nothing the hand-rolled number and
+# locale parsing in services/csv_parser.py does not already do better here.
+openpyxl>=3.1,<4.0
 fastapi==0.110.0
 uvicorn[standard]==0.27.1
 httpx>=0.24,<0.28

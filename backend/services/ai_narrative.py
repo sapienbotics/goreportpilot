@@ -154,6 +154,58 @@ This is a trust-preserving move. Clients respect transparency; they punish
 sugarcoating. Never hide bad results."""
 
 
+
+def _format_csv_sources(csv_sources: list) -> str:
+    """
+    Render uploaded data sources for the prompt.
+
+    Previously this was a bare count — "CSV SOURCES: 2 additional data source(s)
+    connected" — so the model knew an upload existed but had no idea what was in
+    it, and the csv_performance section could only produce filler. Universal
+    ingestion makes these sources first-class, so they are spelled out like
+    every other platform: named metrics, values, and period-over-period change.
+    """
+    if not csv_sources:
+        return "CSV SOURCES: none"
+
+    lines: list[str] = []
+    for source in csv_sources:
+        name = source.get("source_name") or source.get("name") or "Custom Data"
+        metrics = source.get("metrics") or []
+        if not metrics:
+            continue
+        lines.append(f"\nUPLOADED DATA — {name}:")
+        for metric in metrics[:12]:
+            label = metric.get("name", "Metric")
+            current = metric.get("current_value")
+            previous = metric.get("previous_value")
+            unit = metric.get("unit", "number")
+            suffix = "%" if unit == "percent" else ""
+            change = metric.get("change")
+            change_text = (
+                f", change: {change:+.1f}%" if isinstance(change, (int, float)) else ""
+            )
+            previous_text = (
+                f" (prev: {previous}{suffix}{change_text})"
+                if previous is not None else ""
+            )
+            lines.append(f"  {label}: {current}{suffix}{previous_text}")
+        if source.get("daily"):
+            lines.append(
+                f"  [{len(source['daily'])} days of daily figures are available "
+                "for this source — describe the trend, not just the total]"
+            )
+        breakdown = source.get("breakdown") or []
+        if breakdown:
+            top = ", ".join(str(row.get("name", "")) for row in breakdown[:5] if row.get("name"))
+            if top:
+                lines.append(f"  Top entries: {top}")
+
+    if not lines:
+        return "CSV SOURCES: none"
+    return "\n".join(lines)
+
+
 def _detect_bad_month(data: Dict[str, Any]) -> bool:
     """
     Return True when primary KPIs declined materially this period.
@@ -372,6 +424,7 @@ async def generate_narrative(
     google_ads = data.get("google_ads", {}).get("summary", {})
     search_console = data.get("search_console", {}).get("summary", {})
     csv_sources = data.get("csv_sources", [])
+    _csv_block = _format_csv_sources(csv_sources)
 
     # Phase 4 — compute the top-movers diagnostic context and serialize for
     # the prompt. This is the new data the AI uses to cite named entities
@@ -429,7 +482,7 @@ Clicks: {search_console.get('clicks', 'N/A')} (prev: {search_console.get('prev_c
 Impressions: {search_console.get('impressions', 'N/A')}
 CTR: {search_console.get('ctr', 'N/A')}% | Avg Position: {search_console.get('avg_position', 'N/A')}
 
-CSV SOURCES: {len(csv_sources)} additional data source(s) connected
+{_csv_block}
 
 {_movers_block}
 

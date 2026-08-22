@@ -379,9 +379,18 @@ def select_kpis(data: dict, currency_symbol: str = "$") -> list[dict]:
             if unit == "currency":
                 val_str = _fmt_currency(curr) if isinstance(curr, (int, float)) else str(curr)
             elif unit == "percent":
-                val_str = f"{curr}%"
+                # Trim the float tail: 2.83 stays 2.83, but 15.0 reads as 15%.
+                val_str = (
+                    f"{curr:g}%" if isinstance(curr, (int, float)) else f"{curr}%"
+                )
+            elif isinstance(curr, (int, float)):
+                # Counts come off the CSV parser as floats, so a whole number
+                # would otherwise render as "180,040.0" on a client's slide.
+                val_str = (
+                    f"{int(curr):,}" if float(curr).is_integer() else f"{curr:,.2f}"
+                )
             else:
-                val_str = f"{curr:,}" if isinstance(curr, (int, float)) else str(curr)
+                val_str = str(curr)
             all_kpis.append({
                 "label": metric["name"].upper(),
                 "value": val_str,

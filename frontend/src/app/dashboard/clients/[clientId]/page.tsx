@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 import { clientsApi, reportsApi, connectionsApi, authApi, scheduledReportsApi, uploadClientLogo, customSectionApi } from '@/lib/api'
 import type { ScheduledReport, ScheduledReportPayload } from '@/lib/api'
-import type { ParsedCSV } from '@/components/reports/CSVUploadForReport'
+import type { AttachedCSVSource } from '@/components/clients/csv-source'
 import { cn } from '@/lib/utils'
 import { detectUserTimezone, localTimeToUtc, utcToLocalTime } from '@/lib/timezone-utils'
 import type { Client, Report, Connection, ReportConfig } from '@/types'
@@ -192,7 +192,7 @@ export default function ClientDetailPage({ params }: Props) {
   const [selectedTemplate, setSelectedTemplate] = useState<'full' | 'summary' | 'brief'>('full')
   const [generating,       setGenerating]       = useState(false)
   const [genError,         setGenError]         = useState<string | null>(null)
-  const [csvFiles,         setCsvFiles]         = useState<ParsedCSV[]>([])
+  const [csvFiles,         setCsvFiles]         = useState<AttachedCSVSource[]>([])
 
   const hasDataSources = connections.some(c => c.status === 'active') || csvFiles.length > 0
 
@@ -210,9 +210,9 @@ export default function ClientDetailPage({ params }: Props) {
         period_start:    periodStart,
         period_end:      periodEnd,
         template:        selectedTemplate,
-        csv_sources:     csvFiles.length > 0
-          ? csvFiles.map(c => ({ source_name: c.sourceName, metrics: c.metrics }))
-          : undefined,
+        // Pass the whole mapped payload through — it carries the daily series
+        // and entity breakdown that a mapped upload produces, not just KPIs.
+        csv_sources:     csvFiles.length > 0 ? csvFiles.map(c => c.source) : undefined,
       })
       toast.success('Report generated successfully')
       router.push(`/dashboard/reports/${report.id}`)

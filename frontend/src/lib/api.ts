@@ -114,15 +114,24 @@ export const clientsApi = {
 // Reports API
 // ---------------------------------------------------------------------------
 
+export interface CSVMetricPayload {
+  name: string
+  current_value: number
+  previous_value: number | null
+  unit: string
+  change: number | null
+  /** snake_case canonical key, present on mapped uploads. */
+  metric_key?: string
+  direction?: 'higher_is_better' | 'lower_is_better'
+}
+
 export interface CSVSourcePayload {
   source_name: string
-  metrics: Array<{
-    name: string
-    current_value: number
-    previous_value: number | null
-    unit: string
-    change: number | null
-  }>
+  metrics: CSVMetricPayload[]
+  /** Present when the upload carried a date column — drives a trend chart. */
+  daily?: Array<Record<string, string | number>>
+  breakdown?: Array<Record<string, string | number>>
+  row_count?: number
 }
 
 export interface ReportGeneratePayload {
@@ -486,6 +495,123 @@ export const csvApi = {
   },
   getTemplates: () => `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/connections/csv-templates`,
   getTemplateUrl: (name: string) => `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/connections/csv-templates/${name}`,
+}
+
+// ---------------------------------------------------------------------------
+// Universal CSV/XLSX ingestion  (Track A)
+//
+// Two-step by design: `analyze` proposes a reading of the file and writes
+// nothing; `commit` applies a mapping the user has actually looked at. That
+// split is what stops a low-confidence guess reaching a client report.
+// ---------------------------------------------------------------------------
+
+export type MappingUnit = 'number' | 'currency' | 'percent' | 'ratio' | 'duration'
+export type MappingDirection = 'higher_is_better' | 'lower_is_better'
+
+export interface ColumnProfileInfo {
+  column: string
+  index: number
+  type: 'number' | 'date' | 'text' | 'empty'
+  non_null: number
+  distinct: number
+  samples: string[]
+  min?: number
+  max?: number
+  has_currency_symbol?: boolean
+  has_percent_sign?: boolean
+  date_format?: string
+}
+
+export interface ColumnMapping {
+  source_column: string
+  target_metric: string
+  label: string
+  unit: MappingUnit
+  direction: MappingDirection
+  confidence: number
+  reasoning: string
+}
+
+export interface MappingAmbiguity {
+  column: string
+  candidates: string[]
+  question: string
+}
+
+export interface ColumnMappingProposal {
+  table_shape: 'long_kpi' | 'wide_timeseries' | 'wide_entity' | 'unknown'
+  source_label: string
+  date_column: { name: string; format: string | null; confidence: number } | null
+  entity_column: { name: string; confidence: number } | null
+  columns: ColumnMapping[]
+  ignored_columns: Array<{ name: string; reason: string }>
+  ambiguities: MappingAmbiguity[]
+  sheet_name: string
+  column_fingerprint: string
+  origin: 'ai' | 'saved_template' | 'system_template' | 'manual'
+  warnings: string[]
+}
+
+export interface CSVAnalyzeResponse {
+  analysis_id: string
+  filename: string
+  sheets: string[]
+  active_sheet: string
+  row_count: number
+  columns: ColumnProfileInfo[]
+  mapping: ColumnMappingProposal
+  preview: Array<Record<string, { raw: string; parsed: string | number | null }>>
+  requires_confirmation: boolean
+  confidence_threshold: number
+  warnings: string[]
+  saved_mapping_name: string | null
+}
+
+export interface SavedMapping {
+  id: string
+  name: string
+  column_fingerprint: string
+  is_system: boolean
+  created_at: string
+  updated_at: string
+}
+
+export const csvIngestApi = {
+  analyze: async (file: File, clientId: string, sheet?: string): Promise<CSVAnalyzeResponse> => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('client_id', clientId)
+    if (sheet) form.append('sheet', sheet)
+    const { data } = await api.post<CSVAnalyzeResponse>(
+      '/api/connections/csv/analyze',
+      form,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    )
+    return data
+  },
+
+  commit: async (payload: {
+    analysis_id: string
+    client_id: string
+    mapping: ColumnMappingProposal
+    source_name?: string
+    save_as?: string
+  }): Promise<{ source: CSVSourcePayload; saved_mapping: boolean; column_fingerprint: string }> => {
+    const { data } = await api.post('/api/connections/csv/commit', payload)
+    return data
+  },
+
+  listMappings: async (clientId: string): Promise<SavedMapping[]> => {
+    const { data } = await api.get<{ mappings: SavedMapping[] }>(
+      '/api/connections/csv/mappings',
+      { params: { client_id: clientId } },
+    )
+    return data.mappings
+  },
+
+  deleteMapping: async (id: string): Promise<void> => {
+    await api.delete(`/api/connections/csv/mappings/${id}`)
+  },
 }
 
 // ---------------------------------------------------------------------------

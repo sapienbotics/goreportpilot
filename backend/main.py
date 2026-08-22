@@ -145,6 +145,7 @@ async def health_check():
 
 from routers import auth, clients, connections, reports, settings as settings_router, scheduled_reports, billing, dashboard, admin  # noqa: E402
 from routers import csv_upload  # noqa: E402
+from routers import csv_ingest  # noqa: E402
 from routers import admin_analytics  # noqa: E402
 from routers import goals as goals_router  # noqa: E402  # Phase 6
 from routers import comments as comments_module  # noqa: E402  # Phase 5
@@ -160,6 +161,7 @@ app.include_router(reports.router,            prefix="/api/reports",            
 app.include_router(auth.router,               prefix="/api/auth",               tags=["auth"])
 app.include_router(connections.router,        prefix="/api/connections",        tags=["connections"])
 app.include_router(csv_upload.router,         prefix="/api/connections",        tags=["csv"])
+app.include_router(csv_ingest.router,          prefix="/api/connections",        tags=["csv"])
 app.include_router(settings_router.router,    prefix="/api/settings",           tags=["settings"])
 app.include_router(scheduled_reports.router,  prefix="/api/scheduled-reports",  tags=["scheduled-reports"])
 app.include_router(billing.router,            prefix="/api/billing",            tags=["billing"])

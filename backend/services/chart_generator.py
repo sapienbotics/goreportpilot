@@ -1142,6 +1142,73 @@ def generate_top_queries_chart(
 # CSV data chart
 # ─────────────────────────────────────────────────────────────────────────────
 
+def generate_csv_trend_chart(
+    csv_source: Dict,
+    output_path: str,
+    brand_color: str = "#4338CA",
+    theme_name: str = "light",
+    title_override: str | None = None,
+) -> str | None:
+    """
+    Line chart of an uploaded source's primary metric over time.
+
+    Only reachable for mapped uploads: the legacy 4-column KPI format carries no
+    dates, so this is the first chart type an uploaded file can drive that shows
+    a trend rather than a single before/after comparison.
+
+    Plots the first mapped metric — the one the mapping put first is the one the
+    user cares most about — and falls back to None (so the caller draws the
+    comparison bars instead) when the series is too short to say anything.
+    """
+    series = csv_source.get("daily") or []
+    metrics = csv_source.get("metrics") or []
+    if len(series) < 3 or not metrics:
+        return None
+
+    key = metrics[0].get("metric_key")
+    label = metrics[0].get("name") or "Value"
+    if not key:
+        return None
+
+    points = [(p.get("date"), p.get(key)) for p in series]
+    points = [(d, v) for d, v in points if d and isinstance(v, (int, float))]
+    if len(points) < 3:
+        return None
+
+    theme = CHART_THEMES.get(theme_name, CHART_THEMES["light"])
+    colors = _setup_chart_style(theme, brand_color)
+
+    try:
+        dates = [datetime.strptime(d, "%Y-%m-%d") for d, _ in points]
+    except ValueError:
+        return None
+    values = [v for _, v in points]
+
+    fig, ax = plt.subplots(figsize=_FIGSIZE)
+    ax.set_facecolor(theme["axes_bg"])
+    ax.plot(dates, values,
+            color=colors["primary"], linewidth=2.0,
+            marker="o", markersize=3.5, zorder=3)
+    ax.fill_between(dates, values, alpha=0.12, color=colors["primary"])
+
+    _ti = _truncate_chart_title(title_override)
+    source_label = csv_source.get("source_name") or csv_source.get("name") or "Custom"
+    ax.set_title(_ti or f"{source_label} — {label} Over Time",
+                 loc="left",
+                 fontsize=_ACTION_TITLE_FONTSIZE if _ti else None)
+    ax.set_ylabel(label)
+    ax.yaxis.set_major_formatter(
+        ticker.FuncFormatter(lambda x, _: f"{x:,.0f}" if abs(x) >= 10 else f"{x:,.2f}")
+    )
+
+    ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
+    fig.autofmt_xdate(rotation=30, ha="right")
+
+    fig.tight_layout()
+    return _save_fig(fig, output_path, fig_bg=theme["fig_bg"])
+
+
 def generate_csv_comparison_chart(
     csv_source: Dict,
     output_path: str,
@@ -1417,11 +1484,31 @@ def generate_all_charts(
                  title_override=t(language, "top_organic_queries"))
 
     # ── CSV source charts — one per source ──────────────────────────────────
+    # A mapped upload that carries a date column gets a trend line; everything
+    # else gets the current-vs-previous bars. Same chart key either way, so the
+    # slide template needs no change.
     for csv_source in data.get("csv_sources", []):
-        if csv_source.get("metrics") and len(csv_source["metrics"]) >= 2:
-            safe_name = csv_source.get("source_name", csv_source.get("name", "custom")).lower().replace(" ", "_").replace("/", "_")
+        if not csv_source.get("metrics"):
+            continue
+        safe_name = csv_source.get("source_name", csv_source.get("name", "custom")).lower().replace(" ", "_").replace("/", "_")
+        chart_path = os.path.join(output_dir, f"csv_{safe_name}.png")
+
+        if csv_source.get("daily"):
+            try:
+                rendered = generate_csv_trend_chart(
+                    csv_source, chart_path,
+                    brand_color=brand_color, theme_name=theme_name,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.error("CSV trend chart for %r failed: %s", safe_name, exc)
+                rendered = None
+            if rendered:
+                charts[f"csv_{safe_name}"] = rendered
+                continue
+
+        if len(csv_source["metrics"]) >= 2:
             _try(f"csv_{safe_name}", generate_csv_comparison_chart,
-                 csv_source, os.path.join(output_dir, f"csv_{safe_name}.png"),
+                 csv_source, chart_path,
                  brand_color=brand_color, theme_name=theme_name)
 
     # ── Sparklines — one per KPI that has a daily series ───────────────────
