@@ -7,7 +7,7 @@ Automates pulling data from GA4, Meta Ads, Google Ads, and Search Console, gener
 **Founder:** Saurabh Singh / SapienBotics (Bareilly, Uttar Pradesh, India)
 **Legal Entity:** Sole proprietorship under Richa Singh, trade name Sahaj Bharat (GSTIN: 09CYVPS3328G1ZQ)
 **Brand:** SapienBotics (tech brand), GoReportPilot (product)
-**Stage:** LIVE in production, pre-launch (awaiting Google OAuth verification + Meta App Review)
+**Stage:** LIVE in production. Google OAuth verification **approved** (April 2026). Meta App Review **resubmitted August 2026, awaiting** — not a blocker for any other work.
 
 **Live URLs:**
 - Frontend: https://goreportpilot.com (Vercel)
@@ -52,7 +52,7 @@ Automates pulling data from GA4, Meta Ads, Google Ads, and Search Console, gener
 ## Local Dev Environment
 
 - **OS:** Windows 11
-- **Project root:** `F:\Sapienbotics\ClaudeCode\reportpilot\`
+- **Project root:** `F:\Sapienbotics\ClaudeCode\GoReportPilot\`
 - **Python:** 3.12 (venv at `backend\venv\`)
 - **Node:** 20+
 - **LibreOffice:** `C:\Program Files\LibreOffice\program\soffice.exe`
@@ -264,15 +264,20 @@ Trial: 14 days, Pro-level access, 5-report limit, "Powered by GoReportPilot" bad
 - Navigation progress bar + loading skeletons
 - Rate limiting on public endpoints
 - Legal pages: privacy, terms, refund, contact
+- **Goals & Alerts** — per-client metric targets, on_track/at_risk/missed evaluation, idempotent email alerts (migration 018, `routers/goals.py`, `services/goal_checker.py`). Built and **verified working in production**. Not yet advertised on landing/pricing — see Track E.
+- **Razorpay live mode** — tested end-to-end (checkout → webhook → subscription activation)
+- **Email deliverability** — Zoho MX records resolved; email-confirmation enforcement resolved
 
 ### Pending
-- Google OAuth production verification (submitted, awaiting approval)
-- Meta App Review (submitted, review in progress ~April 18)
+- Meta App Review (resubmitted August 2026, awaiting)
 - Multi-language slide titles/KPI labels/footer (currently English-only — narrative translated)
 - Annual pricing as default display on landing page
 - PPTX fixes: sparkline ordering, agency logo bounding box, traffic label capitalization
 - Demo video polish
 - Marketing outreach launch
+
+### Explicitly dropped
+- **Reddit listener in WF5** — removed under the Responsible Builder Policy. HN-only. Do not reintroduce.
 
 ---
 
@@ -280,12 +285,22 @@ Trial: 14 days, Pro-level access, 5-report limit, "Powered by GoReportPilot" bad
 
 | Platform | Status | Scopes |
 |---|---|---|
-| GA4 | ✅ Production (pending verification) | analytics.readonly |
-| Meta Ads | ✅ Production (pending review) | ads_read, ads_management, business_management, pages_read_engagement, pages_show_list, public_profile |
-| Google Ads | ✅ Production | adwords scope + MCC (815-247-5096) |
-| Search Console | ✅ Production | webmasters.readonly |
+| GA4 | ✅ Production — **verification approved April 2026** | analytics.readonly |
+| Meta Ads | ✅ Production — App Review resubmitted Aug 2026, awaiting | ads_read, ads_management, business_management, pages_read_engagement, pages_show_list, public_profile |
+| Google Ads | ✅ Production — covered by the same approved verification | adwords scope + MCC (815-247-5096) |
+| Search Console | ✅ Production — covered by the same approved verification | webmasters.readonly |
 
 All tokens encrypted with AES-256-GCM. Redirect URIs auto-derived from FRONTEND_URL via config.py.
+
+**⚠️ Consent-screen changes are no longer free.** The Google verification is approved. Adding
+any new sensitive scope (e.g. `yt-analytics.readonly` for YouTube Analytics) requires a fresh
+sensitive-scope submission and review. Never edit the OAuth consent screen as a side effect of
+another change.
+
+**Meta App Review is still required.** Meta's official Ads MCP server (`mcp.facebook.com/ads`)
+uses Business OAuth for end users connecting their *own* accounts; it does not apply to a SaaS
+serving users with no role on our app. Do not re-base the Meta integration on the AI-connector
+path.
 
 ---
 
@@ -351,8 +366,31 @@ Prompts 1-64: Core product build (March-April 2026)
 Prompt 65-69: Marketing video production
 Prompt 70: Trial watermark removal + navigation loading UX
 Prompt 71: Multi-language translation (pending)
+Prompts 72-79: Goals & Alerts, report comments, connection health, cover customization,
+               design system, launch readiness, landing/features/pricing pages (Apr-Aug 2026)
 
 See `docs/HANDOVER-APRIL-11-2026.md` for detailed prompt-by-prompt history.
+
+---
+
+## Current Cycle — Competitive Features (August 2026)
+
+Planning doc: `COMPETITIVE-FEATURES-BLUEPRINT.md` (Phase 0 output, decisions recorded).
+
+Scope this cycle is **~12 days, then stop for customer validation**:
+
+| # | Item | Status |
+|---|---|---|
+| 1 | **D-0** — source-adapter seam, collapse the duplicated pull blocks in `routers/reports.py`, fix the `regenerate_report` bug | in progress |
+| 2 | **Track A** — universal CSV/XLSX ingestion with AI column mapping | next |
+| 3 | **Track C1** — agency theme extraction / brand transplant | queued |
+| 4 | **Track E** — Goals & Alerts marketing copy | queued |
+
+**Deferred until agency feedback:** C2 (certified template upload — this is the moat, not C1),
+Stripe and the remaining connectors, MCP server, YouTube Analytics.
+
+**Not doing:** Shopify this cycle (admin-created custom apps discontinued in 2026; universal CSV
+covers Shopify exports). LinkedIn Ads. Google Business Profile. Integration-count parity.
 
 ---
 
@@ -372,4 +410,4 @@ See `docs/HANDOVER-APRIL-11-2026.md` for detailed prompt-by-prompt history.
 
 ---
 
-*Updated: April 13, 2026. 71 prompts executed.*
+*Updated: August 22, 2026. Phase 0 competitive-features discovery complete; D-0 + Track A in progress.*
