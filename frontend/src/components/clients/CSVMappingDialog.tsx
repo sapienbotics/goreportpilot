@@ -75,18 +75,25 @@ export default function CSVMappingDialog({ clientId, onAdd, onClose }: Props) {
 
   // Confirm is blocked while any low-confidence mapping is untouched or any
   // ambiguity is unanswered. This mirrors the same check on the server.
+  //
+  // Deduped by column name: a column can be both below-threshold AND carry
+  // an open ambiguity (the common case — the ambiguity is usually *why* the
+  // model's confidence was low), and counting it twice made the footer say
+  // "2 columns need your confirmation" for a single column with two
+  // overlapping reasons. canConfirm was never affected by this — it only
+  // checked blockers.length === 0 — so this was a display-only miscount.
   const blockers = useMemo(() => {
     if (!mapping) return [] as string[]
-    const out: string[] = []
+    const out = new Set<string>()
     for (const column of mapping.columns) {
       if (column.confidence < threshold && !resolved.has(column.source_column)) {
-        out.push(column.source_column)
+        out.add(column.source_column)
       }
     }
     for (const ambiguity of mapping.ambiguities) {
-      if (!answered.has(ambiguity.column)) out.push(ambiguity.column)
+      if (!answered.has(ambiguity.column)) out.add(ambiguity.column)
     }
-    return out
+    return Array.from(out)
   }, [mapping, resolved, answered, threshold])
 
   const canConfirm = !!mapping && mapping.columns.length > 0 && blockers.length === 0
@@ -180,11 +187,28 @@ export default function CSVMappingDialog({ clientId, onAdd, onClose }: Props) {
     setError(null)
     try {
       // Anything the user touched is theirs now, so it carries full confidence.
+      //
+      // Ambiguities the user has already answered (via a candidate button or
+      // "Leave it out") are dropped here before anything is saved. Without
+      // this, a saved mapping kept the ORIGINAL unresolved ambiguity forever —
+      // updateColumn() already wrote the chosen target_metric into `columns`,
+      // but the ambiguity entry itself was only tracked in `answered`, which
+      // is local React state that's never sent to the server. Reusing the
+      // saved mapping replayed the stale ambiguity and asked the same
+      // question again on every future upload, even though the column's
+      // resolved answer was sitting right there in `columns`.
+      //
+      // This is a plain filter over `answered` membership, so it handles any
+      // number of ambiguities of any kind without special-casing: whichever
+      // ones the user resolved in this session are gone from what gets
+      // persisted; anything still open (e.g. the user clicked Confirm on a
+      // mapping with zero ambiguities to begin with) is left untouched.
       const finalMapping: ColumnMappingProposal = {
         ...mapping,
         columns: mapping.columns.map((c) =>
           resolved.has(c.source_column) ? { ...c, confidence: 1 } : c,
         ),
+        ambiguities: mapping.ambiguities.filter((a) => !answered.has(a.column)),
       }
       const { source } = await csvIngestApi.commit({
         analysis_id: analysis.analysis_id,
