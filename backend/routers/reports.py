@@ -252,17 +252,29 @@ async def _generate_report_internal(
     visual_template: str = "modern_clean",
     csv_sources: list[dict] | None = None,
     supabase=None,
-) -> dict:
+    report_id: str | None = None,
+) -> tuple[dict, str]:
     """
-    Core report generation pipeline.  Returns the raw DB row dict on success.
+    Core report generation pipeline.  Returns ``(raw DB row, client_name)``.
     Raises HTTPException (or any exception) on failure.
 
     Shared between:
-      • POST /api/reports/generate  (API endpoint)
-      • services/scheduler.py       (automated scheduled reports)
+      • POST /api/reports/generate       (API endpoint)
+      • POST /api/reports/{id}/regenerate (rebuild after file loss)
+      • services/scheduler.py            (automated scheduled reports)
+
+    Pass ``report_id`` to rebuild an existing report in place: the row is
+    UPDATEd rather than INSERTed, stale user edits are cleared, and the trial
+    report-count check is skipped because no new report is being created.
+    Regeneration used to be a separate 480-line copy of this function; the copy
+    had drifted (dropped CSV sources, hardcoded chart theme, skipped white-label
+    enforcement), which is why it is gone.
     """
     if supabase is None:
         supabase = get_supabase_admin()
+
+    is_regeneration = report_id is not None
+    report_id = report_id or str(uuid.uuid4())
 
     # 0 — Subscription status check: block expired/cancelled users
     sub = get_user_subscription(user_id)
@@ -272,8 +284,9 @@ async def _generate_report_internal(
             detail="Your subscription has expired. Please upgrade to continue generating reports.",
         )
 
-    # 0a — Trial report limit (5 reports during free trial)
-    if sub.get("status") == "trialing":
+    # 0a — Trial report limit (5 reports during free trial).
+    # Regeneration rebuilds an existing report, so it does not consume a slot.
+    if sub.get("status") == "trialing" and not is_regeneration:
         report_count_resp = (
             supabase.table("reports")
             .select("id", count="exact")
@@ -349,268 +362,60 @@ async def _generate_report_internal(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=(
                 "One or more platform connections need attention before this "
-                "report can be generated: "
+                "report can be "
+                + ("regenerated" if is_regeneration else "generated")
+                + ": "
                 + ", ".join(detail_lines)
                 + ". Open the Integrations page and reconnect, then try again."
             ),
         )
 
-    # 2 — Pull real data from connected platforms only.
-    # If a platform is NOT connected, its data is None — no mock/fake data.
+    # 2 — Pull every connected source through the adapter registry.
+    # This single call replaces the per-platform boilerplate that used to be
+    # copy-pasted here and again in regenerate_report. A source that fails is
+    # recorded in pull.failures and skipped — never fatal on its own.
+    from services.sources import pull_all_sources  # noqa: PLC0415
 
-    # Check for an active GA4 connection for this client
-    ga4_conn_result = (
-        supabase.table("connections")
-        .select("id,account_id,access_token_encrypted,refresh_token_encrypted,token_expires_at")
-        .eq("client_id", client_id)
-        .eq("platform", "ga4")
-        .eq("status", "active")
-        .limit(1)
-        .execute()
+    pull = await pull_all_sources(
+        supabase=supabase,
+        client_id=client_id,
+        period_start=period_start,
+        period_end=period_end,
     )
-
-    ga4_data = None
-    if ga4_conn_result.data:
-        ga4_conn = ga4_conn_result.data[0]
-        try:
-            from services.google_analytics import pull_ga4_data  # noqa: PLC0415
-            # Parse token_expires_at ISO string → unix timestamp float
-            raw_exp = ga4_conn.get("token_expires_at")
-            token_expires_ts: float | None = None
-            if raw_exp:
-                try:
-                    from datetime import timezone as _tz  # noqa: PLC0415
-                    # Python 3.11+ fromisoformat handles 'Z' and offset suffixes
-                    dt = datetime.fromisoformat(str(raw_exp).replace("Z", "+00:00"))
-                    if dt.tzinfo is None:
-                        dt = dt.replace(tzinfo=_tz.utc)
-                    token_expires_ts = dt.timestamp()
-                except Exception:
-                    pass
-            ga4_data = await pull_ga4_data(
-                access_token_encrypted=ga4_conn["access_token_encrypted"],
-                refresh_token_encrypted=ga4_conn["refresh_token_encrypted"],
-                token_expires_at=token_expires_ts,
-                property_id=ga4_conn["account_id"],
-                period_start=period_start,
-                period_end=period_end,
-                connection_id=ga4_conn["id"],
-                supabase=supabase,
-            )
-            logger.info("Using real GA4 data for client %s", client_id)
-        except Exception:
-            logger.exception(
-                "Real GA4 pull failed for client %s — falling back to mock data",
-                client_id,
-            )
-            ga4_data = None
-
-        # Persist snapshot for multi-period trend analysis (non-fatal).
-        if ga4_data is not None:
-            from services.snapshot_saver import save_snapshot  # noqa: PLC0415
-            save_snapshot(
-                supabase,
-                connection_id=ga4_conn["id"],
-                client_id=client_id,
-                platform="ga4",
-                period_start=period_start,
-                period_end=period_end,
-                metrics=ga4_data,
-            )
-
-    # Check for an active Meta Ads connection for this client
-    meta_conn_result = (
-        supabase.table("connections")
-        .select("id,account_id,currency,access_token_encrypted,refresh_token_encrypted,token_expires_at")
-        .eq("client_id", client_id)
-        .eq("platform", "meta_ads")
-        .eq("status", "active")
-        .limit(1)
-        .execute()
-    )
-
-    meta_data = None
-    meta_currency = "USD"  # default; overridden when a real connection exists
-    if meta_conn_result.data:
-        meta_conn = meta_conn_result.data[0]
-        meta_currency = meta_conn.get("currency", "USD") or "USD"
-        try:
-            from services.meta_ads import pull_meta_ads_data  # noqa: PLC0415
-            meta_data = await pull_meta_ads_data(
-                account_id=meta_conn["account_id"],
-                access_token_encrypted=meta_conn["access_token_encrypted"],
-                period_start=period_start,
-                period_end=period_end,
-                connection_id=meta_conn["id"],
-                currency=meta_currency,
-            )
-            logger.info("Using real Meta Ads data for client %s", client_id)
-        except Exception:
-            logger.exception(
-                "Real Meta Ads pull failed for client %s — falling back to mock data",
-                client_id,
-            )
-            meta_data = None
-
-        # Persist snapshot for multi-period trend analysis (non-fatal).
-        if meta_data is not None:
-            from services.snapshot_saver import save_snapshot  # noqa: PLC0415
-            save_snapshot(
-                supabase,
-                connection_id=meta_conn["id"],
-                client_id=client_id,
-                platform="meta_ads",
-                period_start=period_start,
-                period_end=period_end,
-                metrics=meta_data,
-            )
-
-    # Check for an active Google Ads connection for this client
-    gads_conn_result = (
-        supabase.table("connections")
-        .select("id,account_id,access_token_encrypted,refresh_token_encrypted,token_expires_at")
-        .eq("client_id", client_id)
-        .eq("platform", "google_ads")
-        .eq("status", "active")
-        .limit(1)
-        .execute()
-    )
-
-    google_ads_data = None
-    if gads_conn_result.data:
-        gads_conn = gads_conn_result.data[0]
-        try:
-            from services.google_ads import pull_google_ads_data  # noqa: PLC0415
-            gads_exp_ts: float | None = None
-            gads_raw_exp = gads_conn.get("token_expires_at")
-            if gads_raw_exp:
-                try:
-                    from datetime import timezone as _tz  # noqa: PLC0415
-                    dt = datetime.fromisoformat(str(gads_raw_exp).replace("Z", "+00:00"))
-                    if dt.tzinfo is None:
-                        dt = dt.replace(tzinfo=_tz.utc)
-                    gads_exp_ts = dt.timestamp()
-                except Exception:
-                    pass
-            # pull_google_ads_data is synchronous — run off the event loop.
-            gads_result = await asyncio.to_thread(
-                pull_google_ads_data,
-                access_token_encrypted=gads_conn["access_token_encrypted"],
-                refresh_token_encrypted=gads_conn["refresh_token_encrypted"],
-                customer_id=gads_conn["account_id"],
-                period_start=period_start,
-                period_end=period_end,
-                token_expires_at=gads_exp_ts,
-            )
-            # Service returns {} on failure — normalise to None for the guard.
-            google_ads_data = gads_result if gads_result else None
-            if google_ads_data:
-                logger.info("Using real Google Ads data for client %s", client_id)
-        except Exception:
-            logger.exception("Real Google Ads pull failed for client %s", client_id)
-            google_ads_data = None
-
-        # Persist snapshot for multi-period trend analysis (non-fatal).
-        if google_ads_data is not None:
-            from services.snapshot_saver import save_snapshot  # noqa: PLC0415
-            save_snapshot(
-                supabase,
-                connection_id=gads_conn["id"],
-                client_id=client_id,
-                platform="google_ads",
-                period_start=period_start,
-                period_end=period_end,
-                metrics=google_ads_data,
-            )
-
-    # Check for an active Search Console connection for this client
-    sc_conn_result = (
-        supabase.table("connections")
-        .select("id,account_id,access_token_encrypted,refresh_token_encrypted,token_expires_at")
-        .eq("client_id", client_id)
-        .eq("platform", "search_console")
-        .eq("status", "active")
-        .limit(1)
-        .execute()
-    )
-
-    search_console_data = None
-    if sc_conn_result.data:
-        sc_conn = sc_conn_result.data[0]
-        try:
-            from services.search_console import pull_search_console_data  # noqa: PLC0415
-            sc_exp_ts: float | None = None
-            sc_raw_exp = sc_conn.get("token_expires_at")
-            if sc_raw_exp:
-                try:
-                    from datetime import timezone as _tz  # noqa: PLC0415
-                    dt = datetime.fromisoformat(str(sc_raw_exp).replace("Z", "+00:00"))
-                    if dt.tzinfo is None:
-                        dt = dt.replace(tzinfo=_tz.utc)
-                    sc_exp_ts = dt.timestamp()
-                except Exception:
-                    pass
-            sc_result = await pull_search_console_data(
-                access_token_encrypted=sc_conn["access_token_encrypted"],
-                refresh_token_encrypted=sc_conn["refresh_token_encrypted"],
-                site_url=sc_conn["account_id"],
-                period_start=period_start,
-                period_end=period_end,
-                token_expires_at=sc_exp_ts,
-            )
-            search_console_data = sc_result if sc_result else None
-            if search_console_data:
-                logger.info("Using real Search Console data for client %s", client_id)
-        except Exception:
-            logger.exception("Real Search Console pull failed for client %s", client_id)
-            search_console_data = None
-
-        # Persist snapshot for multi-period trend analysis (non-fatal).
-        if search_console_data is not None:
-            from services.snapshot_saver import save_snapshot  # noqa: PLC0415
-            save_snapshot(
-                supabase,
-                connection_id=sc_conn["id"],
-                client_id=client_id,
-                platform="search_console",
-                period_start=period_start,
-                period_end=period_end,
-                metrics=search_console_data,
-            )
+    meta_currency = pull.currency
 
     # Build raw_data from ONLY real/connected data — no mock data.
     raw_data: dict = {
-        "client_name": client["name"],
+        "client_name":  client["name"],
         "period_start": period_start,
-        "period_end": period_end,
+        "period_end":   period_end,
+        **pull.data,
     }
-    if ga4_data is not None:
-        raw_data["ga4"] = ga4_data
-    if meta_data is not None:
-        raw_data["meta_ads"] = meta_data
-        raw_data["meta_ads"]["currency"] = meta_currency
-    if google_ads_data is not None:
-        raw_data["google_ads"] = google_ads_data
-    if search_console_data is not None:
-        raw_data["search_console"] = search_console_data
 
-    # Inject ad-hoc CSV sources supplied at generation time
+    # Ad-hoc CSV sources supplied with the request, or replayed on regeneration.
     if csv_sources:
         raw_data["csv_sources"] = csv_sources
 
-    # Require at least one data source
-    has_data = (
-        ga4_data is not None
-        or meta_data is not None
-        or google_ads_data is not None
-        or search_console_data is not None
-        or bool(csv_sources)
-    )
-    if not has_data:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="No data sources connected for this client. Connect GA4, Meta Ads, or upload a CSV before generating a report.",
-        )
+    # Require at least one data source.
+    if not (pull.has_data or csv_sources):
+        if pull.failures:
+            detail = (
+                "Every connected data source failed to return data: "
+                + "; ".join(f"{src} ({msg})" for src, msg in pull.failures.items())
+                + "."
+            )
+            if pull.reauth_required:
+                detail += (
+                    " Reconnect "
+                    + ", ".join(pull.reauth_required)
+                    + " on the Integrations page."
+                )
+        else:
+            detail = (
+                "No data sources connected for this client. Connect GA4, Meta Ads, "
+                "or upload a CSV before generating a report."
+            )
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=detail)
 
     # 3 — AI narrative (async I/O)
     # Round all floats before passing to GPT-4o so the AI doesn't copy raw
@@ -625,7 +430,14 @@ async def _generate_report_internal(
         language=client.get("report_language", "en") or "en",
     )
 
-    # 4 — Fetch agency branding first (needed for branded charts + reports)
+    # 4 — Resolve branding and theme BEFORE charts are drawn.
+    #
+    # Ordering matters and used to be wrong: charts were generated from the
+    # request's visual_template and the agency-profile brand colour, while the
+    # deck was rendered from the client's theme and the client's brand-colour
+    # override. The two disagreed on every client that had either override set,
+    # so charts looked pasted in. Everything the renderer needs is now resolved
+    # once, up front, and both charts and deck read the same values.
     profile_result = (
         supabase.table("profiles")
         .select("agency_name,agency_logo_url,brand_color,sender_name,agency_email")
@@ -635,7 +447,7 @@ async def _generate_report_internal(
     )
     _profile = profile_result.data or {}
 
-    # White-label enforcement: Starter plan gets no custom branding
+    # White-label enforcement: Starter plan gets no custom branding.
     has_white_label = plan_features.get("white_label", False)
     branding = {
         "agency_name":     ((_profile.get("agency_name") or "").strip() or "Your Agency") if has_white_label else "Your Agency",
@@ -645,33 +457,9 @@ async def _generate_report_internal(
         "powered_by_badge": show_powered_by,
     }
 
-    # 5 — Generate charts (sync, run in thread pool)
-    report_id = str(uuid.uuid4())
-    charts_dir = os.path.join(REPORTS_BASE_DIR, report_id, "charts")
-
-    # Pass AI-generated per-chart action titles (from the narrative engine)
-    # so charts render with takeaway headlines instead of generic labels.
-    _chart_insights = (narrative or {}).get("chart_insights") or {}
-
-    _report_language = client.get("report_language", "en") or "en"
-
-    from services.chart_generator import generate_all_charts  # noqa: PLC0415
-    charts = await asyncio.to_thread(
-        generate_all_charts, raw_data, charts_dir, branding["brand_color"], visual_template,
-        _chart_insights, _report_language,
-    )
-
-    client_info = {
-        "name":        client["name"],
-        "agency_name": branding["agency_name"],
-    }
-
-    # Cover / report-branding customisation (Phase 3 + fix).
-    # Per-client overrides (brand colour, accent, logo placement) take
-    # precedence over the agency profile defaults. Overriding brand_color
-    # here also drives the chart palette via generate_all_charts below.
-    # Design System (Option F v1) — theme governs the whole deck.
+    # Design System (Option F v1) — the client's theme governs the whole deck.
     # Falls back to modern_clean for clients created before migration 017.
+    # visual_template is a legacy request field kept for API compatibility.
     client_theme = client.get("theme") or "modern_clean"
     if visual_template and visual_template != client_theme:
         logger.warning(
@@ -680,10 +468,19 @@ async def _generate_report_internal(
         )
     visual_template = client_theme
 
-    _client_primary = client.get("cover_brand_primary_color")
+    # Per-client cover overrides take precedence over the agency defaults.
+    # Setting brand_color here (rather than after chart generation, as it was)
+    # is what makes the chart palette match the deck.
+    #
+    # Gated on white_label for the same reason the agency logo and brand colour
+    # are: on Starter these per-client colour overrides were the one branding
+    # channel that bypassed plan enforcement entirely. Cover and charts read the
+    # same resolved values below, so they can no longer disagree.
+    _client_primary = (client.get("cover_brand_primary_color") or "") if has_white_label else ""
+    _client_accent  = (client.get("cover_brand_accent_color")  or "") if has_white_label else ""
     if _client_primary:
         branding["brand_color"] = _client_primary
-    branding["accent_color"]           = client.get("cover_brand_accent_color") or ""
+    branding["accent_color"]           = _client_accent
     branding["agency_logo_position"]   = client.get("cover_agency_logo_position") or "default"
     branding["agency_logo_size"]       = client.get("cover_agency_logo_size")     or "default"
     branding["client_logo_position"]   = client.get("cover_client_logo_position") or "default"
@@ -693,19 +490,42 @@ async def _generate_report_internal(
     # "default" logo position must fall back to theme_layout coordinates.
     branding["_cover_theme"]           = client_theme
 
-    logger.info(
-        "generate[%s] theme=%r brand=%s agency_pos=%r client_pos=%r",
-        client_id, client_theme, branding.get("brand_color"),
-        branding.get("agency_logo_position"), branding.get("client_logo_position"),
-    )
-
     cover_customization = {
         "theme":                client_theme,
         "headline":             client.get("cover_headline"),
         "subtitle":             client.get("cover_subtitle"),
-        "brand_primary_color":  client.get("cover_brand_primary_color"),
-        "accent_color":         client.get("cover_brand_accent_color"),
+        # Resolved (plan-gated) values, so the cover cannot diverge from the
+        # charts and the rest of the deck.
+        "brand_primary_color":  _client_primary or None,
+        "accent_color":         _client_accent or None,
     }
+
+    client_info = {
+        "name":        client["name"],
+        "agency_name": branding["agency_name"],
+    }
+
+    logger.info(
+        "%s[%s] theme=%r brand=%s agency_pos=%r client_pos=%r sources=%s",
+        "regenerate" if is_regeneration else "generate",
+        client_id, client_theme, branding.get("brand_color"),
+        branding.get("agency_logo_position"), branding.get("client_logo_position"),
+        list(pull.data) + (["csv_sources"] if csv_sources else []),
+    )
+
+    # 5 — Generate charts (sync, run in thread pool), themed to match the deck.
+    charts_dir = os.path.join(REPORTS_BASE_DIR, report_id, "charts")
+
+    # Pass AI-generated per-chart action titles (from the narrative engine)
+    # so charts render with takeaway headlines instead of generic labels.
+    _chart_insights = (narrative or {}).get("chart_insights") or {}
+    _report_language = client.get("report_language", "en") or "en"
+
+    from services.chart_generator import generate_all_charts  # noqa: PLC0415
+    charts = await asyncio.to_thread(
+        generate_all_charts, raw_data, charts_dir, branding["brand_color"], client_theme,
+        _chart_insights, _report_language,
+    )
 
     # 6 — Build report files (sync, run in thread pool)
     from services.report_generator import generate_pdf_report, generate_pptx_report  # noqa: PLC0415
@@ -790,35 +610,78 @@ async def _generate_report_internal(
     title = f"{client['name']} — {month_year} Performance Report"
 
     # 9 — Persist report record in Supabase (use actual DB column names)
-    insert_payload = {
-        "id":            report_id,
-        "user_id":       user_id,
-        "client_id":     client_id,
-        "title":         title,
-        "status":        "draft",           # CHECK: generating|draft|approved|sent|failed
-        "period_start":  period_start,
-        "period_end":    period_end,
-        "pptx_file_url": pptx_path,         # actual DB column name
-        "pdf_file_url":  db_pdf_path,       # None when non-Latin + no LibreOffice
-        "ai_narrative":  narrative,         # actual DB column name
-        "sections": {
-            "data_summary":   data_summary,
-            "meta_currency":  meta_currency,
-            "ai_model":       "gpt-4.1",
-            # Compact raw_data for section regeneration (daily arrays omitted to save space)
-            "narrative_data": {
-                "ga4": {k: v for k, v in raw_data.get("ga4", {}).items() if k != "daily"},
-                "meta_ads": {k: v for k, v in raw_data.get("meta_ads", {}).items() if k != "daily"},
-                "period_start": raw_data.get("period_start"),
-                "period_end":   raw_data.get("period_end"),
-            },
+    sections_payload = {
+        "data_summary":   data_summary,
+        "meta_currency":  meta_currency,
+        "ai_model":       "gpt-4.1",
+        # Everything needed to rebuild this exact report later. Report files are
+        # ephemeral on Railway, so regeneration is a normal-path operation — and
+        # it used to lose the CSV sources and the detail level because they were
+        # never recorded anywhere. Stored on the existing `sections` JSONB, so
+        # no migration is required.
+        "generation_settings": {
+            "template":        cfg_template,
+            "visual_template": client_theme,
+            "language":        _report_language,
+            "csv_sources":     csv_sources or [],
+        },
+        # Which sources contributed, and which were connected but failed. Lets
+        # the UI explain a thin report instead of leaving the user guessing.
+        "source_status": {
+            "succeeded":       list(pull.data),
+            "failed":          pull.failures,
+            "reauth_required": pull.reauth_required,
+            "csv_count":       len(csv_sources or []),
+        },
+        # Compact raw_data for section regeneration (daily arrays omitted to save space)
+        "narrative_data": {
+            "ga4": {k: v for k, v in raw_data.get("ga4", {}).items() if k != "daily"},
+            "meta_ads": {k: v for k, v in raw_data.get("meta_ads", {}).items() if k != "daily"},
+            "period_start": raw_data.get("period_start"),
+            "period_end":   raw_data.get("period_end"),
         },
     }
-    result = supabase.table("reports").insert(insert_payload).execute()
+
+    if is_regeneration:
+        update_payload = {
+            "title":         title,
+            "status":        "draft",
+            "pptx_file_url": pptx_path,
+            "pdf_file_url":  db_pdf_path,
+            "ai_narrative":  narrative,
+            "user_edits":    None,   # narrative was rebuilt — stale edits no longer apply
+            "sections":      sections_payload,
+            "updated_at":    datetime.utcnow().isoformat(),
+        }
+        result = (
+            supabase.table("reports")
+            .update(update_payload)
+            .eq("id", report_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
+        failure_detail = "Report regenerated but failed to update database"
+    else:
+        insert_payload = {
+            "id":            report_id,
+            "user_id":       user_id,
+            "client_id":     client_id,
+            "title":         title,
+            "status":        "draft",       # CHECK: generating|draft|approved|sent|failed
+            "period_start":  period_start,
+            "period_end":    period_end,
+            "pptx_file_url": pptx_path,     # actual DB column name
+            "pdf_file_url":  db_pdf_path,   # None when non-Latin + no LibreOffice
+            "ai_narrative":  narrative,     # actual DB column name
+            "sections":      sections_payload,
+        }
+        result = supabase.table("reports").insert(insert_payload).execute()
+        failure_detail = "Report generated but failed to save to database"
+
     if not result.data:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Report generated but failed to save to database",
+            detail=failure_detail,
         )
 
     # Return raw DB row so callers can map it however they need
@@ -1404,20 +1267,27 @@ async def regenerate_report(
     user_id: str = Depends(get_current_user_id),
 ) -> ReportResponse:
     """
-    Re-run the full report generation pipeline for an existing report.
-    Reuses the same report ID — fetches client_id, period_start, period_end,
-    template, and visual_template from the existing record, then overwrites
-    the DB row with fresh files and narrative.
+    Re-run the full pipeline for an existing report, reusing the same report ID.
 
-    Use case: report files were lost after a container redeployment and the
-    user clicks "Regenerate Report" in the frontend.
+    Use case: report files were lost after a container redeployment (Railway
+    storage is ephemeral) and the user clicks "Regenerate Report".
+
+    This is now a thin wrapper. It used to be a ~480-line copy of
+    _generate_report_internal, and the copy had drifted in three ways that all
+    reached production:
+      * CSV sources were silently dropped, so a regenerated report lost every
+        uploaded data source;
+      * the chart theme was hardcoded to "modern_clean" while the deck used the
+        client's theme, so charts and slides disagreed;
+      * white-label plan enforcement was missing, so a Starter user could
+        regenerate their way to a fully branded, badge-free deck.
+    All three are fixed by deleting the copy.
     """
     supabase = get_supabase_admin()
 
-    # Fetch existing report
     existing = (
         supabase.table("reports")
-        .select("*")
+        .select("client_id,period_start,period_end,sections")
         .eq("id", report_id)
         .eq("user_id", user_id)
         .single()
@@ -1427,457 +1297,23 @@ async def regenerate_report(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
 
     row = existing.data
-    client_id    = row["client_id"]
-    period_start = str(row["period_start"])
-    period_end   = str(row["period_end"])
+    client_id = str(row["client_id"])
 
-    # Recover template settings from the sections JSONB if available
-    sections_json = row.get("sections") or {}
-    # The visual_template and template are not stored separately in the DB,
-    # so we use sensible defaults; the user can always generate a new report
-    # with different settings if needed.
+    # Reports generated before generation_settings existed fall back to the
+    # defaults - the same behaviour they had before, so no regression.
+    gen_settings = (row.get("sections") or {}).get("generation_settings") or {}
 
-    # ── Run the same pipeline as generate, but with a FIXED report_id ──
-    # 1 — Verify client ownership
-    client_result = (
-        supabase.table("clients")
-        .select("*")
-        .eq("id", client_id)
-        .eq("user_id", user_id)
-        .eq("is_active", True)
-        .single()
-        .execute()
-    )
-    if not client_result.data:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found or deleted")
-    client = client_result.data
-
-    report_config: dict = client.get("report_config") or {}
-    cfg_sections  = report_config.get("sections", {})
-    cfg_template  = report_config.get("template", "full")
-    cfg_custom    = {
-        "title": report_config.get("custom_section_title", ""),
-        "text":  report_config.get("custom_section_text",  ""),
-    }
-
-    # 1c — Connection health pre-generation gate (Phase 2).
-    unhealthy = (
-        supabase.table("connections")
-        .select("id,platform,health_status")
-        .eq("client_id", client_id)
-        .in_("health_status", ["broken", "expiring_soon"])
-        .execute()
-    )
-    unhealthy_rows = unhealthy.data or []
-    if unhealthy_rows:
-        detail_lines = [
-            f"{row.get('platform')} ({row.get('health_status')})"
-            for row in unhealthy_rows
-        ]
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=(
-                "One or more platform connections need attention before this "
-                "report can be regenerated: "
-                + ", ".join(detail_lines)
-                + ". Open the Integrations page and reconnect, then try again."
-            ),
-        )
-
-    # 2 — Data pull — real connections only, no mock data
-
-    ga4_conn_result = (
-        supabase.table("connections")
-        .select("id,account_id,access_token_encrypted,refresh_token_encrypted,token_expires_at")
-        .eq("client_id", client_id)
-        .eq("platform", "ga4")
-        .eq("status", "active")
-        .limit(1)
-        .execute()
+    row_dict, client_name = await _generate_report_internal(
+        client_id=client_id,
+        user_id=user_id,
+        period_start=str(row["period_start"]),
+        period_end=str(row["period_end"]),
+        template=gen_settings.get("template") or "full",
+        visual_template=gen_settings.get("visual_template") or "modern_clean",
+        csv_sources=gen_settings.get("csv_sources") or None,
+        supabase=supabase,
+        report_id=report_id,
     )
 
-    ga4_data = None
-    if ga4_conn_result.data:
-        ga4_conn = ga4_conn_result.data[0]
-        try:
-            from services.google_analytics import pull_ga4_data  # noqa: PLC0415
-            raw_exp = ga4_conn.get("token_expires_at")
-            token_expires_ts: float | None = None
-            if raw_exp:
-                try:
-                    from datetime import timezone as _tz  # noqa: PLC0415
-                    dt = datetime.fromisoformat(str(raw_exp).replace("Z", "+00:00"))
-                    if dt.tzinfo is None:
-                        dt = dt.replace(tzinfo=_tz.utc)
-                    token_expires_ts = dt.timestamp()
-                except Exception:
-                    pass
-            ga4_data = await pull_ga4_data(
-                access_token_encrypted=ga4_conn["access_token_encrypted"],
-                refresh_token_encrypted=ga4_conn["refresh_token_encrypted"],
-                token_expires_at=token_expires_ts,
-                property_id=ga4_conn["account_id"],
-                period_start=period_start,
-                period_end=period_end,
-                connection_id=ga4_conn["id"],
-                supabase=supabase,
-            )
-        except Exception:
-            logger.exception("GA4 pull failed during regenerate for client %s", client_id)
-
-        # Persist snapshot for multi-period trend analysis (non-fatal).
-        if ga4_data is not None:
-            from services.snapshot_saver import save_snapshot  # noqa: PLC0415
-            save_snapshot(
-                supabase,
-                connection_id=ga4_conn["id"],
-                client_id=client_id,
-                platform="ga4",
-                period_start=period_start,
-                period_end=period_end,
-                metrics=ga4_data,
-            )
-
-    meta_conn_result = (
-        supabase.table("connections")
-        .select("id,account_id,currency,access_token_encrypted,refresh_token_encrypted,token_expires_at")
-        .eq("client_id", client_id)
-        .eq("platform", "meta_ads")
-        .eq("status", "active")
-        .limit(1)
-        .execute()
-    )
-
-    meta_data = None
-    meta_currency = "USD"
-    if meta_conn_result.data:
-        meta_conn = meta_conn_result.data[0]
-        meta_currency = meta_conn.get("currency", "USD") or "USD"
-        try:
-            from services.meta_ads import pull_meta_ads_data  # noqa: PLC0415
-            meta_data = await pull_meta_ads_data(
-                account_id=meta_conn["account_id"],
-                access_token_encrypted=meta_conn["access_token_encrypted"],
-                period_start=period_start,
-                period_end=period_end,
-                connection_id=meta_conn["id"],
-                currency=meta_currency,
-            )
-        except Exception:
-            logger.exception("Meta Ads pull failed during regenerate for client %s", client_id)
-
-        # Persist snapshot for multi-period trend analysis (non-fatal).
-        if meta_data is not None:
-            from services.snapshot_saver import save_snapshot  # noqa: PLC0415
-            save_snapshot(
-                supabase,
-                connection_id=meta_conn["id"],
-                client_id=client_id,
-                platform="meta_ads",
-                period_start=period_start,
-                period_end=period_end,
-                metrics=meta_data,
-            )
-
-    # Google Ads connection
-    gads_conn_result = (
-        supabase.table("connections")
-        .select("id,account_id,access_token_encrypted,refresh_token_encrypted,token_expires_at")
-        .eq("client_id", client_id)
-        .eq("platform", "google_ads")
-        .eq("status", "active")
-        .limit(1)
-        .execute()
-    )
-
-    google_ads_data = None
-    if gads_conn_result.data:
-        gads_conn = gads_conn_result.data[0]
-        try:
-            from services.google_ads import pull_google_ads_data  # noqa: PLC0415
-            gads_exp_ts: float | None = None
-            gads_raw_exp = gads_conn.get("token_expires_at")
-            if gads_raw_exp:
-                try:
-                    from datetime import timezone as _tz  # noqa: PLC0415
-                    dt = datetime.fromisoformat(str(gads_raw_exp).replace("Z", "+00:00"))
-                    if dt.tzinfo is None:
-                        dt = dt.replace(tzinfo=_tz.utc)
-                    gads_exp_ts = dt.timestamp()
-                except Exception:
-                    pass
-            gads_result = await asyncio.to_thread(
-                pull_google_ads_data,
-                access_token_encrypted=gads_conn["access_token_encrypted"],
-                refresh_token_encrypted=gads_conn["refresh_token_encrypted"],
-                customer_id=gads_conn["account_id"],
-                period_start=period_start,
-                period_end=period_end,
-                token_expires_at=gads_exp_ts,
-            )
-            google_ads_data = gads_result if gads_result else None
-        except Exception:
-            logger.exception("Google Ads pull failed during regenerate for client %s", client_id)
-
-        # Persist snapshot for multi-period trend analysis (non-fatal).
-        if google_ads_data is not None:
-            from services.snapshot_saver import save_snapshot  # noqa: PLC0415
-            save_snapshot(
-                supabase,
-                connection_id=gads_conn["id"],
-                client_id=client_id,
-                platform="google_ads",
-                period_start=period_start,
-                period_end=period_end,
-                metrics=google_ads_data,
-            )
-
-    # Search Console connection
-    sc_conn_result = (
-        supabase.table("connections")
-        .select("id,account_id,access_token_encrypted,refresh_token_encrypted,token_expires_at")
-        .eq("client_id", client_id)
-        .eq("platform", "search_console")
-        .eq("status", "active")
-        .limit(1)
-        .execute()
-    )
-
-    search_console_data = None
-    if sc_conn_result.data:
-        sc_conn = sc_conn_result.data[0]
-        try:
-            from services.search_console import pull_search_console_data  # noqa: PLC0415
-            sc_exp_ts: float | None = None
-            sc_raw_exp = sc_conn.get("token_expires_at")
-            if sc_raw_exp:
-                try:
-                    from datetime import timezone as _tz  # noqa: PLC0415
-                    dt = datetime.fromisoformat(str(sc_raw_exp).replace("Z", "+00:00"))
-                    if dt.tzinfo is None:
-                        dt = dt.replace(tzinfo=_tz.utc)
-                    sc_exp_ts = dt.timestamp()
-                except Exception:
-                    pass
-            sc_result = await pull_search_console_data(
-                access_token_encrypted=sc_conn["access_token_encrypted"],
-                refresh_token_encrypted=sc_conn["refresh_token_encrypted"],
-                site_url=sc_conn["account_id"],
-                period_start=period_start,
-                period_end=period_end,
-                token_expires_at=sc_exp_ts,
-            )
-            search_console_data = sc_result if sc_result else None
-        except Exception:
-            logger.exception("Search Console pull failed during regenerate for client %s", client_id)
-
-        # Persist snapshot for multi-period trend analysis (non-fatal).
-        if search_console_data is not None:
-            from services.snapshot_saver import save_snapshot  # noqa: PLC0415
-            save_snapshot(
-                supabase,
-                connection_id=sc_conn["id"],
-                client_id=client_id,
-                platform="search_console",
-                period_start=period_start,
-                period_end=period_end,
-                metrics=search_console_data,
-            )
-
-    raw_data: dict = {
-        "client_name": client["name"],
-        "period_start": period_start,
-        "period_end": period_end,
-    }
-    if ga4_data is not None:
-        raw_data["ga4"] = ga4_data
-    if meta_data is not None:
-        raw_data["meta_ads"] = meta_data
-        raw_data["meta_ads"]["currency"] = meta_currency
-    if google_ads_data is not None:
-        raw_data["google_ads"] = google_ads_data
-    if search_console_data is not None:
-        raw_data["search_console"] = search_console_data
-
-    has_data = (
-        ga4_data is not None
-        or meta_data is not None
-        or google_ads_data is not None
-        or search_console_data is not None
-    )
-    if not has_data:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="No data sources connected. Connect at least one platform to regenerate.",
-        )
-
-    # 3 — AI narrative
-    from services.ai_narrative import generate_narrative  # noqa: PLC0415
-    narrative = await generate_narrative(
-        data=_sanitize_data_for_ai(raw_data),
-        client_name=client["name"],
-        client_goals=client.get("goals_context"),
-        tone=client.get("ai_tone", "professional"),
-        template=cfg_template,
-        language=client.get("report_language", "en") or "en",
-    )
-
-    # 4 — Branding
-    profile_result = (
-        supabase.table("profiles")
-        .select("agency_name,agency_logo_url,brand_color,sender_name,agency_email")
-        .eq("id", user_id)
-        .maybe_single()
-        .execute()
-    )
-    _profile = profile_result.data or {}
-    branding = {
-        "agency_name":     (_profile.get("agency_name") or "").strip() or "Your Agency",
-        "agency_logo_url": _profile.get("agency_logo_url") or "",
-        "brand_color":     _profile.get("brand_color") or "#4338CA",
-        "client_logo_url": client.get("logo_url") or "",
-    }
-
-    # 5 — Charts
-    charts_dir = os.path.join(REPORTS_BASE_DIR, report_id, "charts")
-    _chart_insights = (narrative or {}).get("chart_insights") or {}
-    _report_language2 = client.get("report_language", "en") or "en"
-    from services.chart_generator import generate_all_charts  # noqa: PLC0415
-    charts = await asyncio.to_thread(
-        generate_all_charts, raw_data, charts_dir, branding["brand_color"], "modern_clean",
-        _chart_insights, _report_language2,
-    )
-
-    client_info = {"name": client["name"], "agency_name": branding["agency_name"]}
-
-    # Cover / report-branding customisation (Phase 3 + fix). Picked up from
-    # the current client row so regenerations always reflect the latest
-    # preset choice + per-client brand overrides.
-    _client_primary = client.get("cover_brand_primary_color")
-    if _client_primary:
-        branding["brand_color"] = _client_primary
-    branding["accent_color"]          = client.get("cover_brand_accent_color") or ""
-    branding["agency_logo_position"]  = client.get("cover_agency_logo_position") or "default"
-    branding["agency_logo_size"]      = client.get("cover_agency_logo_size")     or "default"
-    branding["client_logo_position"]  = client.get("cover_client_logo_position") or "default"
-    branding["client_logo_size"]      = client.get("cover_client_logo_size")     or "default"
-
-    # Design System (Option F v1) — regenerate honours the client's theme
-    # at regeneration time (so presentation evolves with design changes).
-    client_theme = client.get("theme") or "modern_clean"
-    branding["_cover_theme"]          = client_theme
-    cover_customization = {
-        "theme":                client_theme,
-        "headline":             client.get("cover_headline"),
-        "subtitle":             client.get("cover_subtitle"),
-        "brand_primary_color":  client.get("cover_brand_primary_color"),
-        "accent_color":         client.get("cover_brand_accent_color"),
-    }
-
-    # 6 — PPTX + PDF (pass theme as the visual_template for both paths)
-    from services.report_generator import generate_pdf_report, generate_pptx_report  # noqa: PLC0415
-    pptx_bytes, pdf_bytes = await asyncio.gather(
-        asyncio.to_thread(
-            generate_pptx_report, raw_data, narrative, charts, client_info,
-            cfg_sections if cfg_sections else None,
-            cfg_template,
-            cfg_custom if cfg_custom.get("title") else None,
-            branding, client_theme,
-            _report_language2,
-            cover_customization,
-        ),
-        asyncio.to_thread(
-            generate_pdf_report, raw_data, narrative, charts, client_info,
-            cfg_sections if cfg_sections else None,
-            cfg_template,
-            cfg_custom if cfg_custom.get("title") else None,
-            branding, client_theme,
-            _report_language2,
-        ),
-    )
-
-    # Save to disk
-    report_dir = os.path.join(REPORTS_BASE_DIR, report_id)
-    os.makedirs(report_dir, exist_ok=True)
-
-    pptx_path = os.path.join(report_dir, "report.pptx")
-    pdf_path  = os.path.join(report_dir, "report.pdf")
-
-    with open(pptx_path, "wb") as f:
-        f.write(pptx_bytes)
-
-    # Subscription check for regenerated reports
-    regen_sub = get_user_subscription(user_id)
-    if regen_sub.get("status") in ("expired", "cancelled"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Your subscription has expired. Please upgrade to continue generating reports.",
-        )
-
-    if pdf_bytes is not None:
-        if not os.path.exists(pdf_path):
-            with open(pdf_path, "wb") as f:
-                f.write(pdf_bytes)
-        db_pdf_path: str | None = pdf_path
-    else:
-        db_pdf_path = None
-
-    # Build data_summary
-    ga4_s  = raw_data.get("ga4", {}).get("summary", {})
-    meta_s = raw_data.get("meta_ads", {}).get("summary", {})
-    data_summary = {
-        "sessions":            ga4_s.get("sessions"),
-        "sessions_change":     ga4_s.get("sessions_change"),
-        "users":               ga4_s.get("users"),
-        "users_change":        ga4_s.get("users_change"),
-        "conversions":         ga4_s.get("conversions"),
-        "conversions_change":  ga4_s.get("conversions_change"),
-        "pageviews":           ga4_s.get("pageviews"),
-        "bounce_rate":         ga4_s.get("bounce_rate"),
-        "avg_session_duration": ga4_s.get("avg_session_duration"),
-        "spend":               meta_s.get("spend"),
-        "spend_change":        meta_s.get("spend_change"),
-        "impressions":         meta_s.get("impressions"),
-        "clicks":              meta_s.get("clicks"),
-        "ctr":                 meta_s.get("ctr"),
-        "cpc":                 meta_s.get("cpc"),
-        "roas":                meta_s.get("roas"),
-        "cost_per_conversion": meta_s.get("cost_per_conversion"),
-    }
-
-    # Update existing report record (not insert)
-    update_payload = {
-        "pptx_file_url": pptx_path,
-        "pdf_file_url":  db_pdf_path,
-        "ai_narrative":  narrative,
-        "user_edits":    None,   # clear stale edits
-        "status":        "draft",
-        "sections": {
-            "data_summary":   data_summary,
-            "meta_currency":  meta_currency,
-            "ai_model":       "gpt-4.1",
-            "narrative_data": {
-                "ga4": {k: v for k, v in raw_data.get("ga4", {}).items() if k != "daily"},
-                "meta_ads": {k: v for k, v in raw_data.get("meta_ads", {}).items() if k != "daily"},
-                "period_start": raw_data.get("period_start"),
-                "period_end":   raw_data.get("period_end"),
-            },
-        },
-        "updated_at": datetime.utcnow().isoformat(),
-    }
-    result = (
-        supabase.table("reports")
-        .update(update_payload)
-        .eq("id", report_id)
-        .eq("user_id", user_id)
-        .execute()
-    )
-    if not result.data:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Report regenerated but failed to update database",
-        )
-
-    client_name = client["name"]
     logger.info("Report %s regenerated for client %s", report_id, client_id)
-    return ReportResponse(**_map_db_row(result.data[0], client_name=client_name))
+    return ReportResponse(**_map_db_row(row_dict, client_name=client_name))
