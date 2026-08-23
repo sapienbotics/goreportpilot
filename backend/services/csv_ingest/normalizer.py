@@ -265,15 +265,31 @@ def normalize(
                 }
             continue
 
-        # The badge compares the period's second half against its first.
+        # A deduplicated metric — and anything derived from one — gets NO
+        # period-over-period change. "Peak daily reach" is a maximum, not a
+        # sum: comparing the highest day of one half against the highest day
+        # of the other is two order statistics, not a trend. A single strong
+        # day early in the period can manufacture a "decline" that never
+        # happened, and unlike the earlier reach-summing bug this one produces
+        # a real, individually-correct number at each end — it is the framing
+        # of the pair as a trend that is false, which is why it survived the
+        # sum fix and had to be caught separately.
+        #
+        # This is not special-cased to reach: it is keyed off the same
+        # is_deduplicated() flag that decided the value itself is a peak, so
+        # any current or future dedup metric — and any rate whose derivation
+        # touches one — is covered by construction rather than by name.
         change = None
-        before = earlier.get(key)
-        after = recent.get(key)
-        if before is not None and after is not None:
-            if before.value not in (None, 0) and after.value is not None:
-                change = round(
-                    (after.value - before.value) / abs(before.value) * 100, 2
-                )
+        before = after = None
+        no_comparison = derivations.is_deduplicated(key)
+        if not no_comparison:
+            before = earlier.get(key)
+            after = recent.get(key)
+            if before is not None and after is not None:
+                if before.value not in (None, 0) and after.value is not None:
+                    change = round(
+                        (after.value - before.value) / abs(before.value) * 100, 2
+                    )
 
         # A figure that is not a period total must not be read as one. The
         # label carries the correction, because the number appears on a slide
@@ -284,6 +300,12 @@ def normalize(
             metric_warnings.append(
                 f"{name} is the highest single day, not a period total — "
                 f"{derived.detail}."
+            )
+            metric_warnings.append(
+                f"{name} has no period-over-period comparison: it is a peak "
+                "value, not a sum, so comparing two maxima would manufacture "
+                "a trend from a single strong or weak day rather than "
+                "measuring one."
             )
 
         metrics.append({
@@ -629,6 +651,12 @@ def _build_entity_breakdown(
             after = derivations.aggregate(metric_keys, units, labels, columns, own_second)
             changes: dict[str, float] = {}
             for key in metric_keys:
+                # Same rule as the period totals, and for the same reason: an
+                # entity's peak day in one half against its peak day in the
+                # other is still two maxima, not a trend, whichever entity it
+                # is. Keyed off is_deduplicated(), not "reach" by name.
+                if derivations.is_deduplicated(key):
+                    continue
                 b, a = before.get(key), after.get(key)
                 if b is None or a is None:
                     continue

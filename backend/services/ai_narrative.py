@@ -4,6 +4,7 @@ See docs/reportpilot-feature-design-blueprint.md Section 7 for prompt architectu
 """
 import json
 import logging
+import re
 from typing import Dict, Any, Optional
 
 from openai import AsyncOpenAI
@@ -11,6 +12,101 @@ from config import settings
 from services.top_movers import compute_top_movers, format_movers_for_prompt
 
 logger = logging.getLogger(__name__)
+
+
+# ── Ungrounded-trend detection ───────────────────────────────────────────────
+# The canonical implementation. Used here to scrub the narrative this module
+# generates, and imported by scripts/verify_csv_mapping_ai.py to check it —
+# one implementation, so the production code and the thing verifying it
+# cannot silently drift into checking two different rules.
+# Base verbs whose REGULAR conjugations (bare, -s, -ed, -ing) are generated
+# below. A prior version listed conjugations by hand and missed "expands" —
+# it had "expanded" and "expanding" but not the bare present-tense form — and
+# that exact gap reached the final rendered deck ("...as reach expands.") on
+# the one generation that happened to phrase it that way. Hand-picking
+# inflections one miss at a time doesn't converge; generating the regular
+# ones does, for every verb in this list at once.
+# "lose" is deliberately absent — its past tense is "lost", not "losed", so
+# it is hand-listed with the other irregulars above instead.
+_REGULAR_TREND_VERBS = (
+    "climb", "gain", "surge", "jump", "increase", "drop", "decline",
+    "decrease", "slip", "improve", "worsen", "expand", "contract", "soar",
+    "plunge", "spike", "boost", "strengthen", "widen", "narrow",
+)
+
+
+def _conjugations(verb: str) -> tuple[str, ...]:
+    if verb.endswith("e"):
+        return (verb, verb + "s", verb + "d", verb[:-1] + "ing")
+    return (verb, verb + "s", verb + "ed", verb + "ing")
+
+
+TREND_WORDS = (
+    # Irregular verbs, listed by hand because there is no formula for them.
+    "rose", "rise", "rises", "risen", "rising",
+    "grew", "grow", "grows", "grown", "growing", "growth",
+    "fell", "fall", "falls", "fallen", "falling",
+    "shrank", "shrunk", "shrink", "shrinks", "shrinking",
+    "slid", "slide", "slides", "sliding",
+    "lost", "lose", "loses", "losing",
+    "up ", "down ",
+    "trend", "trends", "trending",
+) + tuple(word for verb in _REGULAR_TREND_VERBS for word in _conjugations(verb))
+
+# Splits a sentence into clauses. Coarser than real grammar — it cannot tell
+# a subject from an object — but it is what separates "reach peaked, while
+# impressions grew 8.0%" (two clauses, the number belongs to the other one)
+# from "2.2% fewer clicks and 2.0% less reach" (one clause, both figures
+# belong together). Comma and semicolon are the load-bearing splits; the
+# connector words catch the same boundary when a writer skips the comma.
+# The comma alternative excludes a comma immediately followed by a digit —
+# a thousands separator, not a clause boundary. Without that guard, "Post
+# comments dropped 1.9% (1,021 to 1,002) despite higher reach" split into
+# fragments at the comma INSIDE "1,021", severing "1.9%" from "reach" even
+# though both are in the same real clause — a false negative that reached
+# the final rendered deck once already, unrelated to anything the model did.
+_CLAUSE_SPLIT = re.compile(
+    r",(?!\d)|;| while | but | although | whereas | yet | however |—| - "
+)
+
+
+def sentence_claims_trend(sentence: str, subject: str) -> bool:
+    """
+    True if any CLAUSE in *sentence* mentions *subject* alongside a
+    percentage or a trend word.
+
+    Clause-level, not sentence-level, because sentence-level co-occurrence
+    over-fires: "Daily reach peaked at 101,502, reflecting strong visibility,
+    while impressions grew 8.0%" mentions "reach" and contains a "%" in the
+    same sentence, but the percentage belongs to impressions — flagging the
+    sentence would report a correct one. Clause-level keeps that apart while
+    still catching what this exists for: "delivered 2.2% fewer link clicks
+    and 2.0% less reach" has both figures in one clause, joined by "and"
+    rather than a clause boundary, and is flagged correctly either way.
+
+    Both splits are heuristics, not a real parser — deliberately: a split
+    error only makes this MORE likely to flag something, never less, which
+    is the safe direction to be wrong in when the alternative is a
+    fabricated trend reaching a client's deck.
+    """
+    for clause in _CLAUSE_SPLIT.split(sentence):
+        low = clause.lower()
+        if subject not in low:
+            continue
+        has_percent = bool(re.search(r"\d[\d,]*\.?\d*\s*%", clause))
+        has_trend_word = any(word in low for word in TREND_WORDS)
+        if has_percent or has_trend_word:
+            return True
+    return False
+
+
+def find_ungrounded_trend_sentences(text: str, subject: str) -> list[str]:
+    """Every full sentence in *text* containing a clause that violates the rule."""
+    return [
+        sentence.strip()
+        for sentence in re.split(r"(?<=[.!?])\s+", text)
+        if sentence.strip() and sentence_claims_trend(sentence, subject)
+    ]
 
 _client: Optional[AsyncOpenAI] = None
 
@@ -211,6 +307,110 @@ _ENTITY_METRIC_LIMIT = 6
 _ENTITY_LIMIT = 6
 
 
+def _withheld_subjects(csv_sources: list) -> list[str]:
+    """
+    Words the narrative must never attach a trend to: the core noun of every
+    peak-day (deduplicated) metric's label across all uploaded sources, e.g.
+    "reach" from "Peak daily reach".
+    """
+    subjects: set[str] = set()
+    for source in csv_sources or []:
+        for metric in source.get("metrics") or []:
+            if metric.get("value_basis") != "peak_daily":
+                continue
+            label = str(metric.get("name") or "").strip().lower()
+            core = label
+            if core.startswith("peak daily "):
+                core = core[len("peak daily "):]
+            core = core.strip()
+            if core:
+                subjects.add(core)
+    return sorted(subjects)
+
+
+def _scrub_text(text: str, subjects: list[str]) -> str:
+    """
+    Drop any sentence that ungroundedly frames a withheld subject as trending.
+
+    Whole-sentence granularity, not clause-level: excising a mid-sentence
+    clause risks a dangling connector ("...but CTR declined...") with no
+    grammatical lead-in, which can read as more obviously broken than the
+    fabricated claim it replaced. A whole sentence removed joins cleanly to
+    its neighbours.
+    """
+    if not subjects or not text:
+        return text
+    kept = [
+        sentence for sentence in re.split(r"(?<=[.!?])\s+", text)
+        if sentence.strip()
+        and not any(sentence_claims_trend(sentence, s) for s in subjects)
+    ]
+    return " ".join(kept).strip()
+
+
+def _scrub_narrative(narrative: dict, csv_sources: list) -> dict:
+    """
+    Deterministic backstop: strip any sentence anywhere in the narrative —
+    including chart_insights captions, which render on a slide the same as
+    any other text — that frames a deduplicated metric (reach, most
+    commonly) as rising, falling, improving, or declining.
+
+    Exists because instructing the model was not enough, across two
+    escalating attempts. The first supplied reach's real peak value with an
+    explicit "do not describe this as trending" instruction; a live 5-run
+    check still caught the model substituting a different metric's change
+    for it. The second withheld the topic from the prompt entirely; a live
+    5-run check still caught the model using ordinary marketing vocabulary
+    ("improved reach", "expanded reach") with zero numeric grounding — in a
+    slide caption, not narrative prose, the one place neither prior fix had
+    reached. "Reach" is common enough English that an instruction not to use
+    it is not reliable; removing it after the fact is. See CLAUDE.md rule 15.
+    """
+    subjects = _withheld_subjects(csv_sources)
+    if not subjects:
+        return narrative
+
+    scrubbed = 0
+    for key, value in list(narrative.items()):
+        if key == "chart_insights" and isinstance(value, dict):
+            cleaned_dict: dict = {}
+            for cap_key, cap_val in value.items():
+                if not isinstance(cap_val, str):
+                    cleaned_dict[cap_key] = cap_val
+                    continue
+                cleaned = _scrub_text(cap_val, subjects)
+                if cleaned != cap_val.strip():
+                    scrubbed += 1
+                if cleaned:
+                    cleaned_dict[cap_key] = cleaned
+            narrative[key] = cleaned_dict
+        elif isinstance(value, str):
+            cleaned = _scrub_text(value, subjects)
+            if cleaned != value.strip():
+                scrubbed += 1
+            narrative[key] = cleaned
+        elif isinstance(value, list):
+            cleaned_list: list = []
+            for item in value:
+                if not isinstance(item, str):
+                    cleaned_list.append(item)
+                    continue
+                cleaned = _scrub_text(item, subjects)
+                if cleaned != item.strip():
+                    scrubbed += 1
+                if cleaned:
+                    cleaned_list.append(cleaned)
+            narrative[key] = cleaned_list
+
+    if scrubbed:
+        logger.warning(
+            "Narrative scrub removed %d sentence(s) ungroundedly describing "
+            "%s as trending",
+            scrubbed, ", ".join(subjects),
+        )
+    return narrative
+
+
 def _entity_lines(source: dict, breakdown: list) -> list[str]:
     """
     Per-entity totals AND each entity's own within-period change.
@@ -261,6 +461,23 @@ def _entity_lines(source: dict, breakdown: list) -> list[str]:
                 parts.append(f"{label} {_fmt_num(value)}{suffix} ({changes[key]:+.1f}%)")
             else:
                 parts.append(f"{label} {_fmt_num(value)}{suffix}")
+
+        # Deduplicated metrics (reach and similar) are deliberately NOT
+        # listed here. The first attempt gave each entity its real peak
+        # value with an explicit "(peak day, no trend)" flag, on the theory
+        # that a real grounded number beats a gap the model would otherwise
+        # fill by guessing — which is exactly the reasoning that fixed the
+        # earlier half-value and attribution bugs. It backfired here: even
+        # WITH the value and an explicit "do not describe as rising/falling"
+        # instruction, a live multi-run check still caught the model writing
+        # "reach and engagement improved" and "regain lost reach" for
+        # entities with no reach change data at all — vague, adjective-level
+        # trend claims a number-swap check cannot even catch, in 3 of 5
+        # runs. Merely being told a topic exists was enough to invite
+        # commentary on its direction. So the topic itself is withheld from
+        # entity lines; the real value still renders correctly on the slide,
+        # which is a rendered number, not free text, and carries no such
+        # risk. See _format_csv_sources for the matching source-wide choice.
         if parts:
             lines.append(f"    {name}: " + ", ".join(parts))
 
@@ -270,10 +487,17 @@ def _entity_lines(source: dict, breakdown: list) -> list[str]:
         "figures: never attach a source-wide percentage to a named entity. "
         "If you want to say something about one entity's metric and that "
         "metric is not on its line above, say nothing about it rather than "
-        "reaching for the source-wide number. Name an entity as a driver "
-        "only where its own number above supports it; otherwise describe "
-        "the movement without naming one, and do not invent absolute values "
-        "behind a percentage.]"
+        "reaching for the source-wide number or for a different metric's "
+        "number as a stand-in. Reach (or any peak-day, non-summable figure) "
+        "is deliberately absent from every entity line above and from the "
+        "totals further up — it exists only as a number on the slide, is "
+        "not part of this analysis, and must not be mentioned, estimated, "
+        "or described in any way, for the source or for any entity, "
+        "including using words like improved/declined/lost/regained "
+        "without a number attached. Name an entity as a driver only where "
+        "its own number above supports it; otherwise describe the movement "
+        "without naming one, and do not invent absolute values behind a "
+        "percentage.]"
     )
     return lines
 
@@ -311,7 +535,40 @@ def _format_csv_sources(csv_sources: list) -> str:
             )
         else:
             lines.append(f"\nUPLOADED DATA — {name}:")
+
+        # Deduplicated (peak-day) metrics are named ONCE here, as a plain
+        # notice, and then excluded from the per-metric lines below entirely
+        # — no value, no "(no trend)" flag, nothing to react to. The first
+        # version gave the model reach's real value with an explicit
+        # instruction not to describe it as trending, at both the source and
+        # entity level, and a live multi-run check still caught the model
+        # writing "reach and engagement improved" / "regain lost reach" with
+        # no number attached at all — in 3 of 5 runs. A number-swap check
+        # cannot even catch a claim with no number in it. Naming the topic
+        # was apparently invitation enough, so the topic itself — not just
+        # its trend — is withheld from the narrative prompt. It still
+        # renders correctly on the slide as a plain number, which carries no
+        # such risk because nothing there is free text.
+        peak_daily_names = [
+            m.get("name", m.get("metric_key", "metric"))
+            for m in metrics if m.get("value_basis") == "peak_daily"
+        ]
+        if peak_daily_names:
+            lines.append(
+                "  [" + ", ".join(peak_daily_names) + " " +
+                ("is" if len(peak_daily_names) == 1 else "are") +
+                " shown only as a number on the slide and excluded from this "
+                "analysis — a peak single day cannot be summed or compared "
+                "across a period. Do not mention, estimate, or describe "
+                + ("it" if len(peak_daily_names) == 1 else "them")
+                + " in any section, including with words like "
+                "improved/declined/lost/regained and with no number "
+                "attached.]"
+            )
+
         for metric in metrics[:12]:
+            if metric.get("value_basis") == "peak_daily":
+                continue
             label = metric.get("name", "Metric")
             current = metric.get("current_value")
             previous = metric.get("previous_value")
@@ -697,6 +954,7 @@ Return ONLY valid JSON, no markdown code blocks, no explanation outside the JSON
             raise ValueError("Empty response from OpenAI")
 
         narrative: Dict[str, str] = json.loads(content)
+        narrative = _scrub_narrative(narrative, data.get("csv_sources") or [])
         logger.info("AI narrative generated successfully for client: %s", client_name)
         return narrative
 

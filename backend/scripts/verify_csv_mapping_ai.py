@@ -30,11 +30,16 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import settings  # noqa: E402
+from services.ai_narrative import (  # noqa: E402
+    find_ungrounded_trend_sentences,
+    generate_narrative,
+)
 from services.csv_ingest import templates as mapping_store  # noqa: E402
 from services.csv_ingest.mapper import propose_mapping  # noqa: E402
 from services.csv_ingest.normalizer import normalize  # noqa: E402
@@ -46,6 +51,17 @@ FIXTURES = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "tests", "fixtures", "csv_ingest",
 )
+
+# Model output — column names, ambiguity questions, narrative sentences — is
+# printed verbatim and can carry an em-dash, curly quote, or (from a live
+# narrative's "✓ "/"⚠ " bullets) an emoji. On a cp1252 console any of those
+# raises UnicodeEncodeError, which previously crashed this script mid-fixture,
+# on run 2 of 5, right as it was about to print the one sentence the run
+# existed to catch — turning a real finding into a stack trace with no
+# evidence attached. Same fix as verify_csv_rendered_values.py: lossy, not
+# fatal.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 PASSED: list[str] = []
 FAILED: list[tuple[str, str]] = []
@@ -204,6 +220,19 @@ def assert_no_low_confidence_auto_accepted(proposal: MappingProposal) -> None:
         (not low) or proposal.requires_user_input,
         f"below threshold {low} but requires_user_input is False",
     )
+
+
+# Words that turn a bare figure into a directional claim. Deliberately loose
+# — a false positive here means a sentence gets re-read by a human, a false
+# negative means a fabricated trend ships to a client. The cheaper mistake is
+# the one this list is built to make.
+# _sentences_framing_as_trend, TREND_WORDS, and the clause splitter are the
+# canonical implementation in services/ai_narrative.py — the same module
+# that scrubs the production narrative with them. Importing rather than
+# duplicating means this check and the thing it verifies cannot silently
+# drift into checking two different rules.
+def _sentences_framing_as_trend(text: str, subject: str) -> list[str]:
+    return find_ungrounded_trend_sentences(text, subject)
 
 
 def assert_no_rate_summed(source: dict, profile, proposal: MappingProposal) -> None:
@@ -502,6 +531,20 @@ async def fixture_meta_csv() -> None:
           reach is not None and reach["current_value"] == 101502.0
           and reach["name"].lower().startswith("peak daily"),
           str(reach))
+    # A peak day is a maximum, not a sum: comparing the highest day of one
+    # half against the highest day of the other is two order statistics, not
+    # a trend. This survived the reach-summing fix because it produces a
+    # real, individually-correct number at each end — it is the pairing that
+    # is false, not either value — so it needed its own check.
+    check("reach carries no period-over-period change",
+          reach is not None and reach["change"] is None
+          and reach["first_half_value"] is None
+          and reach["second_half_value"] is None,
+          str(reach))
+    check("no entity's reach carries a change either",
+          all("reach" not in (row.get("changes") or {})
+              for row in (source.get("breakdown") or [])),
+          str([row.get("changes") for row in (source.get("breakdown") or [])]))
     check("frequency is withheld, not divided by a summed reach",
           "frequency" not in by_key, str(by_key.get("frequency")))
     check("no multiplier metric renders as a percent",
@@ -510,6 +553,48 @@ async def fixture_meta_csv() -> None:
           str([(m["metric_key"], m["unit"]) for m in source["metrics"]]))
 
     assert_no_rate_summed(source, profile, proposal)
+
+    # ── Live narrative: does the model frame a peak as a trend? ─────────────
+    # Model-facing on purpose, and check_model rather than check: the pipeline
+    # correctly withholds the change and tells the model so in plain language
+    # ("do not describe it as rising, falling, or trending"), but whether the
+    # model actually honours that is a judgement call, not a computation — the
+    # same gap between "the data is right" and "the model says something true
+    # about it" that motivated giving the model real per-entity numbers in the
+    # first place. A single clean run proves this is possible, not reliable,
+    # which is the whole reason this suite runs five times.
+    offenders: list[str] = []
+    if not STUB_MODE:
+        # A second live call, not stubbed alongside the mapping call — a
+        # stubbed mapping still needs a real narrative call to say anything
+        # about check_model's actual question. Skipped in --stub mode so that
+        # mode still makes zero OpenAI calls, matching what it promises.
+        data = {
+            "client_name": "Northwind Home",
+            "period_start": "2026-07-01",
+            "period_end": "2026-07-31",
+            "csv_sources": [source],
+            "meta_ads": {"currency": "INR"},
+        }
+        narrative = await generate_narrative(
+            data, "Northwind Home", "grow ecommerce purchases",
+            tone="professional", template="full", language="en",
+        )
+        full_text = "\n".join(
+            "\n".join(str(x) for x in v) if isinstance(v, list) else str(v)
+            for v in narrative.values()
+        )
+        offenders = _sentences_framing_as_trend(full_text, "reach")
+
+    check_model(
+        "narrative never frames peak daily reach as rising, falling, or trending",
+        not offenders,
+        " | ".join(offenders) if offenders else "",
+    )
+    if offenders:
+        print("    reach sentences flagged as trend-framed:")
+        for sentence in offenders:
+            print(f"      - {sentence}")
 
 
 # ---------------------------------------------------------------------------

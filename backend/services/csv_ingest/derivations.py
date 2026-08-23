@@ -436,15 +436,29 @@ def aggregate(
 
         derivation = rate_derivation(key)
 
-        # A rate whose denominator is a people-count has no honest period
-        # value: frequency is impressions per person, and dividing a month of
-        # impressions by a summed reach is dividing by a number that does not
-        # mean anything. Peak-day frequency would be a different metric wearing
-        # the same label, so it is withheld rather than approximated.
-        if derivation and multi_row and is_deduplicated(derivation.denominator):
+        # A rate with a people-count on EITHER side has no honest period
+        # value. Denominator is the case seen so far: frequency is impressions
+        # per person, and dividing a month of impressions by a summed reach
+        # divides by a number that does not mean anything. A dedup numerator
+        # has the same problem one step earlier — recomputing a rate sums its
+        # numerator directly (see below), and reach must not be summed for
+        # exactly the reason the period total isn't. Either way, a value
+        # computed over the whole period would be a different metric wearing
+        # the same label, so it is withheld rather than approximated. Checked
+        # generally, not for any one metric by name, so a future rate that
+        # touches a dedup component on either side is covered automatically.
+        dedup_component = next(
+            (
+                component for component in
+                (derivation.numerator, derivation.denominator)
+                if derivation and is_deduplicated(component)
+            ),
+            None,
+        ) if derivation else None
+        if derivation and multi_row and dedup_component:
             out[key] = Derived(
                 None, "suppressed",
-                detail=f"needs {derivation.denominator}, which is deduplicated "
+                detail=f"needs {dedup_component}, which is deduplicated "
                        "and has no meaningful multi-day total",
             )
             continue
