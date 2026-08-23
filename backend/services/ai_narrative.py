@@ -155,13 +155,45 @@ sugarcoating. Never hide bad results."""
 
 
 
+_CURRENCY_SYMBOLS: Dict[str, str] = {
+    "USD": "$",    "EUR": "€",    "GBP": "£",    "INR": "₹",
+    "AUD": "A$",   "CAD": "C$",   "JPY": "¥",    "CNY": "¥",
+    "BRL": "R$",   "MXN": "Mex$", "SGD": "S$",   "HKD": "HK$",
+    "CHF": "CHF ", "SEK": "kr",   "NOK": "kr",   "DKK": "kr",
+    "ZAR": "R",    "AED": "AED ", "SAR": "SAR ", "MYR": "RM",
+}
+
+
+def _fmt_num(value: Any) -> str:
+    """
+    A figure written the way it should appear in prose.
+
+    The prompt used to pass raw floats — "3884961.0" — leaving the model to
+    insert the thousands separators itself, and it got them wrong: a live run
+    produced "delivered 388,4961 impressions" in the CSV performance section.
+    Grouping digits is not a judgement call, so it should not be delegated to
+    a model that is concentrating on the analysis.
+    """
+    if not isinstance(value, (int, float)):
+        return str(value)
+    if float(value).is_integer():
+        return f"{value:,.0f}"
+    return f"{value:,.2f}"
+
+
 # Metrics worth naming per entity, in the order a reader cares about them.
 # Capped so a 10-campaign upload does not flood the prompt.
 _ENTITY_METRIC_PRIORITY = (
     "impressions", "clicks", "conversions", "spend", "leads", "revenue",
-    "sessions", "ctr", "conversion_rate",
+    "sessions", "cpc", "cost_per_conversion", "ctr", "conversion_rate",
+    "cpm", "roas",
 )
-_ENTITY_METRIC_LIMIT = 4
+# Cost and rate metrics are included per entity, not just volumes. With only
+# the volumes listed, a live run wrote "'Q3 Lead Gen Form | Agency Owners'
+# average CPC rose 2.8%" — which is the SOURCE-WIDE CPC change, borrowed
+# because that campaign's own CPC was not in front of the model. Whatever is
+# missing per entity is what gets substituted from the aggregate.
+_ENTITY_METRIC_LIMIT = 6
 _ENTITY_LIMIT = 6
 
 
@@ -212,18 +244,22 @@ def _entity_lines(source: dict, breakdown: list) -> list[str]:
             suffix = "%" if metric_units.get(key) == "percent" else ""
             label = metric_names.get(key, key)
             if key in changes:
-                parts.append(f"{label} {value:,.2f}{suffix} ({changes[key]:+.1f}%)")
+                parts.append(f"{label} {_fmt_num(value)}{suffix} ({changes[key]:+.1f}%)")
             else:
-                parts.append(f"{label} {value:,.2f}{suffix}")
+                parts.append(f"{label} {_fmt_num(value)}{suffix}")
         if parts:
             lines.append(f"    {name}: " + ", ".join(parts))
 
     lines.append(
-        "    [The percentages above are each entity's own change. The "
-        "source-wide change reported for a metric is NOT any single entity's "
-        "change. Name an entity as a driver only when that entity's own "
-        "number above supports it; if none does, describe the movement "
-        "without naming one.]"
+        "    [Every number on these entity lines is that entity's own. The "
+        "source-wide figures listed further up are NOT any single entity's "
+        "figures: never attach a source-wide percentage to a named entity. "
+        "If you want to say something about one entity's metric and that "
+        "metric is not on its line above, say nothing about it rather than "
+        "reaching for the source-wide number. Name an entity as a driver "
+        "only where its own number above supports it; otherwise describe "
+        "the movement without naming one, and do not invent absolute values "
+        "behind a percentage.]"
     )
     return lines
 
@@ -247,7 +283,20 @@ def _format_csv_sources(csv_sources: list) -> str:
         metrics = source.get("metrics") or []
         if not metrics:
             continue
-        lines.append(f"\nUPLOADED DATA — {name}:")
+        # The source's own currency, stated per source. Without it the model
+        # reads the Meta-Ads currency rule as the only guidance in the prompt
+        # and applies it to uploads too: a live run wrote "₹264.33" for a
+        # LinkedIn file in dollars, on a deck whose KPI slide correctly
+        # rendered "$". The slide and the paragraph beside it disagreed.
+        code = (source.get("currency") or "").strip().upper()
+        if code:
+            symbol = _CURRENCY_SYMBOLS.get(code, code + " ")
+            lines.append(
+                f"\nUPLOADED DATA — {name} "
+                f"(all money in this source is {code}; write it as {symbol}):"
+            )
+        else:
+            lines.append(f"\nUPLOADED DATA — {name}:")
         for metric in metrics[:12]:
             label = metric.get("name", "Metric")
             current = metric.get("current_value")
@@ -258,6 +307,9 @@ def _format_csv_sources(csv_sources: list) -> str:
             change_text = (
                 f", change: {change:+.1f}%" if isinstance(change, (int, float)) else ""
             )
+            first_half = metric.get("first_half_value")
+            second_half = metric.get("second_half_value")
+
             if previous is not None:
                 # A real prior period, from a file that carried one.
                 context = f" (prev: {previous}{suffix}{change_text})"
@@ -265,13 +317,27 @@ def _format_csv_sources(csv_sources: list) -> str:
                 # One uploaded period: the figure is the whole period's total
                 # and the change is its internal trend. Said explicitly so the
                 # model does not describe it as month-over-month growth.
-                context = (
-                    f" (total for the period; second half vs first half"
-                    f" within the period: {change:+.1f}%)"
-                )
+                #
+                # Both half-values are spelled out because omitting them does
+                # not stop the model needing them — it makes them up. Given
+                # only "760 total, +20%" it wrote "rose from 380 to 456": a
+                # correct percentage over two invented figures that do not
+                # even sum to the total. Supplying the real 335 and 402
+                # removes the gap rather than forbidding it.
+                if first_half is not None and second_half is not None:
+                    context = (
+                        f" (period total; within this period: 1st half "
+                        f"{_fmt_num(first_half)}{suffix} -> 2nd half "
+                        f"{_fmt_num(second_half)}{suffix}, {change:+.1f}%)"
+                    )
+                else:
+                    context = (
+                        f" (total for the period; second half vs first half"
+                        f" within the period: {change:+.1f}%)"
+                    )
             else:
                 context = ""
-            lines.append(f"  {label}: {current}{suffix}{context}")
+            lines.append(f"  {label}: {_fmt_num(current)}{suffix}{context}")
         if source.get("daily"):
             lines.append(
                 f"  [{len(source['daily'])} days of daily figures are available "
@@ -453,13 +519,7 @@ async def generate_narrative(
         ]
 
     # Determine currency for the Meta Ads section so the AI uses the right symbol
-    _currency_symbols: Dict[str, str] = {
-        "USD": "$",    "EUR": "€",    "GBP": "£",    "INR": "₹",
-        "AUD": "A$",   "CAD": "C$",   "JPY": "¥",    "CNY": "¥",
-        "BRL": "R$",   "MXN": "Mex$", "SGD": "S$",   "HKD": "HK$",
-        "CHF": "CHF ", "SEK": "kr",   "NOK": "kr",   "DKK": "kr",
-        "ZAR": "R",    "AED": "AED ", "SAR": "SAR ",  "MYR": "RM",
-    }
+    _currency_symbols: Dict[str, str] = _CURRENCY_SYMBOLS
     currency_code = (data.get("meta_ads", {}).get("currency") or "USD").upper()
     cur_sym = _currency_symbols.get(currency_code, currency_code + " ")
 
@@ -569,7 +629,10 @@ CTR: {search_console.get('ctr', 'N/A')}% | Avg Position: {search_console.get('av
 TONE: {tone_modifier}
 
 IMPORTANT — CURRENCY: All monetary amounts for Meta Ads must use the {currency_code} currency symbol ({cur_sym}). \
-Never use "$" for Meta Ads figures unless the currency is USD.
+Never use "$" for Meta Ads figures unless the currency is USD. \
+This rule is about Meta Ads only. Each uploaded data source states its own \
+currency on its heading — use that source's currency for its figures, even \
+when it differs from the Meta Ads one.
 
 Generate the following sections as a JSON object:
 {section_instructions}

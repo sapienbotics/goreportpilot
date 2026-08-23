@@ -108,6 +108,14 @@ cd frontend && npm run dev
     1.04%. See `backend/scripts/verify_csv_rendered_values.py` for the shape
     this takes, including mutation-testing each assertion so a test that
     cannot fail is never mistaken for a test that passed.
+13. **Never run a destructive git command on a file with uncommitted work.**
+    `git checkout <file>`, `git reset --hard`, and `git clean` discard
+    everything uncommitted, not just the change you meant to undo. To try an
+    experiment on a file — a mutation test, a what-if — copy it to the
+    scratchpad first and restore from that copy, or commit before
+    experimenting. A `git checkout` used to revert one mutated line destroyed
+    a full session's uncommitted work on `normalizer.py`; the second
+    destructive-action incident of that engagement.
 
 ---
 

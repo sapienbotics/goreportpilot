@@ -82,11 +82,17 @@ export default function CSVMappingDialog({ clientId, onAdd, onClose }: Props) {
   // "2 columns need your confirmation" for a single column with two
   // overlapping reasons. canConfirm was never affected by this — it only
   // checked blockers.length === 0 — so this was a display-only miscount.
+  // NOTE: the comparison is `<=`, matching ColumnMapping.needs_confirmation in
+  // backend/services/csv_ingest/schema.py. It must stay in step with it: the
+  // backend rejects a commit containing any column it considers unconfirmed,
+  // so if this said `<` while the backend said `<=`, a column at exactly the
+  // threshold would leave Confirm enabled and then fail the request with a 422
+  // the user cannot act on. 0.80 is a value GPT-4.1 emits often.
   const blockers = useMemo(() => {
     if (!mapping) return [] as string[]
     const out = new Set<string>()
     for (const column of mapping.columns) {
-      if (column.confidence < threshold && !resolved.has(column.source_column)) {
+      if (column.confidence <= threshold && !resolved.has(column.source_column)) {
         out.add(column.source_column)
       }
     }
@@ -455,8 +461,11 @@ export default function CSVMappingDialog({ clientId, onAdd, onClose }: Props) {
                       </tr>
                     )}
                     {mapping.columns.map((column) => {
+                      // `<=` for the same reason as `blockers` above — a row
+                      // that blocks Confirm must also be highlighted as the
+                      // reason why.
                       const needsAttention =
-                        column.confidence < threshold && !resolved.has(column.source_column)
+                        column.confidence <= threshold && !resolved.has(column.source_column)
                       return (
                         <tr
                           key={column.source_column}

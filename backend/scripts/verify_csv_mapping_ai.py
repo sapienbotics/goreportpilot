@@ -119,7 +119,7 @@ def report_mapping(proposal: MappingProposal, profile) -> None:
               f"(conf {proposal.entity_column.confidence:.2f})")
     print("    columns:")
     for column in proposal.columns:
-        flag = "  <-- BELOW THRESHOLD" if column.confidence < CONFIDENCE_THRESHOLD else ""
+        flag = "  <-- NEEDS CONFIRMATION" if column.needs_confirmation else ""
         print(f"      {column.source_column:24} -> {column.target_metric:22} "
               f"{column.unit:9} {column.direction:17} conf={column.confidence:.2f}{flag}")
     if proposal.ignored_columns:
@@ -155,7 +155,7 @@ def assert_no_low_confidence_auto_accepted(proposal: MappingProposal) -> None:
     The server refuses to commit any mapping still below threshold. Assert the
     proposal correctly flags those rather than presenting them as settled.
     """
-    low = [c.source_column for c in proposal.columns if c.confidence < CONFIDENCE_THRESHOLD]
+    low = [c.source_column for c in proposal.columns if c.needs_confirmation]
     check(
         "low-confidence mappings are flagged, not auto-accepted",
         (not low) or proposal.requires_user_input,
@@ -401,8 +401,13 @@ async def fixture_semrush() -> None:
     cost_mapping = next(
         (c for c in proposal.columns if c.source_column == "Cost"), None
     )
+    # Ask the schema whether this needs confirming rather than re-deriving
+    # the comparison here. This line used to read `confidence <
+    # CONFIDENCE_THRESHOLD`, a second copy of the boundary that kept saying
+    # "fine" after the real one was tightened to `<=` — so the test reported a
+    # failure that the code had already fixed.
     cost_low_confidence = (
-        cost_mapping is not None and cost_mapping.confidence < CONFIDENCE_THRESHOLD
+        cost_mapping is not None and cost_mapping.needs_confirmation
     )
     check_model(
         "'Cost' is questioned rather than silently mapped",
