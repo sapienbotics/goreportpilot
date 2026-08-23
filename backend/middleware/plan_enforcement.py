@@ -11,10 +11,61 @@ from services.supabase_client import get_supabase_admin
 logger = logging.getLogger(__name__)
 
 
+def get_internal_user_ids() -> set[str]:
+    """
+    All profile ids with is_internal=true, for excluding owner accounts from
+    admin revenue analytics (MRR, conversion, churn) — never appear as a
+    paying customer in numbers meant to describe real users. Not used for
+    access gating; see _is_internal_account for that.
+    """
+    try:
+        supabase = get_supabase_admin()
+        result = supabase.table("profiles").select("id").eq("is_internal", True).execute()
+        return {row["id"] for row in (result.data or [])}
+    except Exception:
+        logger.exception("get_internal_user_ids failed")
+        return set()
+
+
+def _is_internal_account(user_id: str) -> bool:
+    """
+    True for the product owner's own accounts (profiles.is_internal).
+
+    DB-only flag — see migration 021. A trigger on profiles pins the column
+    for any role other than service_role/postgres, so this can never be set
+    by a user through any path (the FastAPI backend, a direct PostgREST
+    call, or the Supabase JS client), regardless of what this function does.
+    Fails closed: any error here means "not internal", never the reverse.
+    """
+    try:
+        supabase = get_supabase_admin()
+        result = (
+            supabase.table("profiles")
+            .select("is_internal")
+            .eq("id", user_id)
+            .maybe_single()
+            .execute()
+        )
+        return bool(result and result.data and result.data.get("is_internal"))
+    except Exception:
+        logger.exception("IS_INTERNAL_CHECK_FAILED user_id=%s", user_id)
+        return False
+
+
 def get_user_subscription(user_id: str) -> dict:
     """
     Return the user's active subscription row, auto-creating a trial if none exists.
     Also checks whether a trial has expired and updates the status accordingly.
+
+    Internal (owner) accounts get plan/status overridden to a fully active
+    Agency subscription before returning, regardless of what's underneath.
+    This is the single seam every access check in the app reads through
+    (can_use_feature, can_create_client, the report-generation gate, the
+    billing/dashboard/goals routers) — none of them need their own
+    is_internal check as a result. Every other field (trial_ends_at, id,
+    created_at, ...) is left as whatever the real underlying row says, so
+    anything that displays subscription details shows an honest picture;
+    only the two fields that actually gate access are overridden.
     """
     from datetime import timedelta
 
@@ -46,24 +97,27 @@ def get_user_subscription(user_id: str) -> dict:
         }
         try:
             ins = supabase.table("subscriptions").insert(trial_sub).execute()
-            return ins.data[0] if (ins and ins.data) else trial_sub
+            sub = ins.data[0] if (ins and ins.data) else trial_sub
         except Exception as exc:
             logger.error("Trial subscription creation failed: %s", exc)
-            return trial_sub
+            sub = trial_sub
+    else:
+        sub = existing
 
-    sub = existing
+        # Check if trial has expired
+        if sub.get("status") == "trialing" and sub.get("trial_ends_at"):
+            try:
+                trial_end = datetime.fromisoformat(sub["trial_ends_at"].replace("Z", "+00:00"))
+                if datetime.now(timezone.utc) > trial_end:
+                    supabase.table("subscriptions").update(
+                        {"status": "expired"}
+                    ).eq("id", sub["id"]).execute()
+                    sub["status"] = "expired"
+            except Exception as exc:
+                logger.warning("Could not parse trial_ends_at: %s", exc)
 
-    # Check if trial has expired
-    if sub.get("status") == "trialing" and sub.get("trial_ends_at"):
-        try:
-            trial_end = datetime.fromisoformat(sub["trial_ends_at"].replace("Z", "+00:00"))
-            if datetime.now(timezone.utc) > trial_end:
-                supabase.table("subscriptions").update(
-                    {"status": "expired"}
-                ).eq("id", sub["id"]).execute()
-                sub["status"] = "expired"
-        except Exception as exc:
-            logger.warning("Could not parse trial_ends_at: %s", exc)
+    if _is_internal_account(user_id):
+        return {**sub, "plan": "agency", "status": "active"}
 
     return sub
 

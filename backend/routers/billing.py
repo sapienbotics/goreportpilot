@@ -75,6 +75,27 @@ class ChangePlanPayload(BaseModel):
 # GET /api/billing/subscription
 # ---------------------------------------------------------------------------
 
+# TEMPORARY — Pass 4 diagnostic for the is_internal production discrepancy.
+# Mirrors _is_internal_account()'s query exactly but returns the raw
+# exception instead of swallowing it. Gated to the caller's own id (no path
+# param) so it can't be used to probe other accounts. Remove once the
+# discrepancy is root-caused.
+@router.get("/_debug/is-internal")
+async def debug_is_internal(user_id: str = Depends(get_current_user_id)) -> dict:
+    supabase = get_supabase_admin()
+    try:
+        result = (
+            supabase.table("profiles")
+            .select("is_internal")
+            .eq("id", user_id)
+            .maybe_single()
+            .execute()
+        )
+        return {"ok": True, "data": result.data if result else None}
+    except Exception as e:
+        return {"ok": False, "error_type": type(e).__name__, "error": str(e)}
+
+
 @router.get("/subscription")
 async def get_subscription(user_id: str = Depends(get_current_user_id)) -> dict:
     """Return the user's current subscription status, plan details, and usage stats."""

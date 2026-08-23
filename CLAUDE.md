@@ -90,6 +90,13 @@ cd frontend && npm run dev
     actually cutting traffic over is real and has caused both a production
     outage (code pushed without a startup check) and an account lockout
     (a manual DB fallback reverted before its replacement had deployed).
+11. **After a migration adds or alters a column, reload PostgREST's schema
+    cache:** run `NOTIFY pgrst, 'reload schema';` via the pooler connection
+    right after applying the migration. PostgREST caches the schema, and the
+    running Railway process (which talks to Supabase through PostgREST, not
+    a raw connection) will not see the new column until it reloads — code
+    that reads the column will silently fail-closed on exceptions that are
+    never surfaced anywhere you'd think to look.
 
 ---
 

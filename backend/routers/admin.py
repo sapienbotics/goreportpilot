@@ -16,6 +16,7 @@ from fastapi.responses import Response
 
 from config import settings as app_settings
 from middleware.auth import get_current_user_id
+from middleware.plan_enforcement import get_internal_user_ids
 from services.supabase_client import get_supabase_admin
 
 logger = logging.getLogger(__name__)
@@ -83,18 +84,24 @@ async def _admin_stats_inner() -> dict:
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
     thirty_days_ago = (now - timedelta(days=30)).isoformat()
 
+    # Owner accounts (profiles.is_internal) never count as a user, a
+    # subscriber, or revenue in this dashboard.
+    internal_ids = get_internal_user_ids()
+
     profiles = (sb.table("profiles").select("id").execute()).data or []
-    total_users = len(profiles)
+    total_users = sum(1 for p in profiles if p.get("id") not in internal_ids)
     active_30d = len((sb.table("profiles").select("id").gte("updated_at", thirty_days_ago).execute()).data or [])
     total_clients = len((sb.table("clients").select("id").eq("is_active", True).execute()).data or [])
     reports_month = len((sb.table("reports").select("id").gte("created_at", month_start).execute()).data or [])
     reports_all = len((sb.table("reports").select("id").execute()).data or [])
 
     # Subscriptions by plan — count active + trialing
-    subs = (sb.table("subscriptions").select("plan,status,billing_cycle").execute()).data or []
+    subs = (sb.table("subscriptions").select("user_id,plan,status,billing_cycle").execute()).data or []
     active_subs: dict[str, int] = {}
     trialing_count = 0
     for s in subs:
+        if s.get("user_id") in internal_ids:
+            continue
         if s.get("status") in ("active", "trialing"):
             p = s.get("plan", "unknown")
             active_subs[p] = active_subs.get(p, 0) + 1
@@ -545,8 +552,14 @@ async def revenue_stats(admin_id: str = Depends(_require_admin)) -> dict:
     now = datetime.now(timezone.utc)
     thirty_days_ago = (now - timedelta(days=30)).isoformat()
 
-    subs = (sb.table("subscriptions").select("plan,status,billing_cycle,created_at,cancelled_at").execute()).data or []
+    subs_raw = (sb.table("subscriptions").select("user_id,plan,status,billing_cycle,created_at,cancelled_at").execute()).data or []
     payments = (sb.table("payment_history").select("amount,status,created_at").execute()).data or []
+
+    # Owner accounts (profiles.is_internal) never count as a subscriber or
+    # revenue here — filtered once, up front, since MRR, plan_distribution,
+    # active_count, and trial_to_paid_rate below all derive from this list.
+    internal_ids = get_internal_user_ids()
+    subs = [s for s in subs_raw if s.get("user_id") not in internal_ids]
 
     total_revenue = sum(float(p.get("amount", 0) or 0) for p in payments if p.get("status") == "captured")
 

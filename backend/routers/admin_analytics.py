@@ -24,6 +24,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from middleware.plan_enforcement import get_internal_user_ids
 from routers.admin import _require_admin
 from services.plans import PLANS
 from services.supabase_client import get_supabase_admin
@@ -184,12 +185,21 @@ async def _build_payload() -> dict[str, Any]:
     cutoff_7d_s   = cutoff_7d.isoformat()
     cutoff_30d_s  = cutoff_30d.isoformat()
 
+    # Owner accounts (profiles.is_internal) are excluded from every count or
+    # revenue figure below so they never appear as a signup, a paying
+    # customer, or a conversion/churn data point. Activity/behavioral views
+    # further down (active_users_7d/30d, signup trend, country map, top
+    # users) deliberately still include them — those are debugging views
+    # where seeing your own account's activity is useful, not a revenue
+    # metric that would be skewed by it.
+    internal_ids = get_internal_user_ids()
+
     # ── Profiles (one scan drives user counts + country breakdown) ────────
     profiles = _fetch_all(
         sb, "profiles",
         "id,email,name,agency_name,timezone,created_at,updated_at",
     )
-    total_users = len(profiles)
+    total_users = sum(1 for p in profiles if p.get("id") not in internal_ids)
 
     new_users_today = 0
     new_users_7d = 0
@@ -330,9 +340,16 @@ async def _build_payload() -> dict[str, Any]:
     paid_user_ids: set[str] = set()
 
     for s in subs:
+        uid = s.get("user_id")
+        if uid in internal_ids:
+            # Owner account. The synthetic sub_INTERNAL_OWNER/agency/active
+            # row an internal account carries (see migration 021 + the
+            # is_internal gate in plan_enforcement.py) must never inflate
+            # sub_breakdown["agency"], total_paying, or MRR.
+            continue
+
         plan = (s.get("plan") or "").lower()
         status = (s.get("status") or "").lower()
-        uid = s.get("user_id")
 
         if plan == "trial":
             if status in ("trialing", "active"):
