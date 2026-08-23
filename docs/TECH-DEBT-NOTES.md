@@ -4,10 +4,9 @@ Log of known issues observed during verification work, not yet fixed.
 Add to this file rather than fixing inline when the fix is out of scope
 for the task at hand — see CLAUDE.md's "flag before fixing" process.
 
-**Status:** items 3, 4 and 5 were fixed on 2026-08-23 (see
-`PHASE-1-FIX-REPORT.md`); their entries are kept below as the record of what
-was wrong and how it was found. Items 1, 2, 6 and 7 remain open. Item 6 is
-sequenced after item 4, which it depended on.
+**Status:** items 3, 4, 5, 6 and 7 are fixed (see `PHASE-1-FIX-REPORT.md` and
+`PHASE-1-CLOSE-REPORT.md`); their entries are kept below as the record of what
+was wrong and how it was found. **Items 1 and 2 remain open.**
 
 ---
 
@@ -82,7 +81,7 @@ deliberate product decision rather than being an implicit side effect of
 the comparison-split logic — a user skimming just the headline number
 will materially undercount their own period's performance.
 
-### 6. AI narrative attributes aggregate metric changes to specific entities without per-entity trend data
+### 6. AI narrative attributes aggregate changes to specific entities — FIXED 2026-08-23
 `services/ai_narrative.py` passes GPT-4.1 only entity *names* from a CSV's
 `breakdown` (top 5 by primary metric, see item 4's line reference), not
 each entity's own trend. The model is separately given the aggregate
@@ -103,7 +102,7 @@ the prompt instructions, or to give the model real per-entity trend data
 (from `breakdown`, once item 4 is fixed) so an attribution claim like this
 would be grounded.
 
-### 7. CSV mapping confidence exactly at the threshold slips through unconfirmed
+### 7. CSV mapping confidence exactly at the threshold slips through — FIXED 2026-08-23
 `ColumnMapping.needs_confirmation` is `confidence < CONFIDENCE_THRESHOLD`
 with the threshold at 0.80, so a model returning exactly `0.80` is treated
 as pre-accepted and raises no confirmation prompt. Observed on 2026-08-23:
