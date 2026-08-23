@@ -116,11 +116,25 @@ def test_date_disambiguation() -> None:
 
 
 def test_aggregation() -> None:
-    """Counts sum; rates average. Summing a CTR column is the classic wrong answer."""
+    """
+    Counts sum over the whole period; rates recompute from their components.
+
+    The fixture is built so the two wrong answers and the right one are all
+    different numbers. Days 1-3 run at 4% CTR on light volume, days 4-6 at 6%
+    on double the volume:
+
+        summed CTR            = 30.0    (nonsense, the classic bug)
+        unweighted mean CTR   =  5.0    (plausible, still wrong)
+        Sigma clicks / Sigma impressions = 5.3333  (correct)
+
+    The previous version of this test could not tell those apart: its CTR
+    column said 6% on days whose own clicks and impressions worked out to 5%,
+    so any method looked defensible. A self-contradictory fixture cannot fail.
+    """
     print("\nAggregation")
     data = b"Day,Impressions,Clicks,CTR,Spend\n" + b"".join(
-        f"2026-07-{d:02d},{1000 if d <= 3 else 2000},{50 if d <= 3 else 100},"
-        f"{5.0 if d <= 3 else 6.0},{100 if d <= 3 else 200}\n".encode()
+        f"2026-07-{d:02d},{1000 if d <= 3 else 2000},{40 if d <= 3 else 120},"
+        f"{4.0 if d <= 3 else 6.0},{100 if d <= 3 else 200}\n".encode()
         for d in range(1, 7)
     )
     p = profile_file(data, "ads.csv")[0]
@@ -137,10 +151,31 @@ def test_aggregation() -> None:
     )
     out = normalize(p, m)
     by = {r["metric_key"]: r for r in out["metrics"]}
-    check("counts are summed", by["impressions"]["current_value"] == 6000.0, str(by["impressions"]))
-    check("previous period summed", by["impressions"]["previous_value"] == 3000.0, str(by["impressions"]))
-    check("rates are averaged, not summed", by["ctr"]["current_value"] == 6.0, str(by["ctr"]["current_value"]))
-    check("change computed", by["impressions"]["change"] == 100.0, str(by["impressions"]["change"]))
+
+    # The headline is the whole uploaded period: 3x1000 + 3x2000.
+    check("counts sum over the whole period",
+          by["impressions"]["current_value"] == 9000.0, str(by["impressions"]))
+    check("halves retained for the trend",
+          by["impressions"]["first_half_value"] == 3000.0
+          and by["impressions"]["second_half_value"] == 6000.0,
+          str(by["impressions"]))
+    # One upload is one period; there is no prior period to compare against.
+    check("no invented previous period",
+          by["impressions"]["previous_value"] is None, str(by["impressions"]))
+    check("change is the within-period trend",
+          by["impressions"]["change"] == 100.0
+          and by["impressions"]["change_basis"] == "within_period",
+          str(by["impressions"]))
+
+    ctr = by["ctr"]["current_value"]
+    check("rate recomputed from components, not summed",
+          abs(ctr - 5.3333) < 0.001, f"{ctr} (summed would be 30.0)")
+    check("rate is volume-weighted, not an unweighted mean",
+          abs(ctr - 5.0) > 0.001, f"{ctr} == the unweighted mean of the CTR column")
+    check("rate reports how it was derived",
+          out["derivations"]["ctr"]["method"] == "recomputed",
+          str(out["derivations"]["ctr"]))
+
     check("daily series emitted", len(out.get("daily", [])) == 6, str(len(out.get("daily", []))))
 
     undated = b"Channel,Sessions\nOrganic,500\nPaid,300\n"

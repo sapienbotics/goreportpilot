@@ -145,6 +145,22 @@ def _currency_symbol(data: Dict[str, Any]) -> str:
     return _CURRENCY_SYMBOLS.get(code.upper(), code + " ")
 
 
+def _csv_currency_symbol(csv_src: Dict[str, Any], account_symbol: str) -> str:
+    """
+    The symbol for ONE uploaded source.
+
+    An upload that states its own currency wins over the account default: a
+    LinkedIn export headed "Currency: USD" is dollars even when the connected
+    Meta account bills in rupees. When the file does not say, the account
+    default stands — the normaliser returns no currency at all rather than
+    guessing, so this falls back on absence, never on a bad guess.
+    """
+    code = (csv_src.get("currency") or "").strip().upper()
+    if not code:
+        return account_symbol
+    return _CURRENCY_SYMBOLS.get(code, code + " ")
+
+
 def _section_enabled(enabled_sections: dict | None, key: str) -> bool:
     if enabled_sections is None:
         return True
@@ -1474,7 +1490,12 @@ def _fmt_csv_value(raw: Any, unit: str, cur_sym: str) -> str:
 
     unit must already be normalised to lowercase semantic form
     ("currency" | "percent" | "number").
-    Uses 2 decimal places for currency values < 10 (e.g. ₹0.24 not ₹0).
+
+    Currency keeps its cents whenever it has any. The rule used to be "2dp
+    below 10, none above", which rendered a CPM of 51.34 as "$51" and a spend
+    of 199,457.12 as "$199,457" — on a CPM or CPC, a third of a unit is a real
+    difference, not display noise. Whole amounts still print clean, so a
+    1,240,000.00 spend is "$1,240,000" and not "$1,240,000.00".
     """
     try:
         num = float(str(raw)) if raw != "" else None
@@ -1483,7 +1504,7 @@ def _fmt_csv_value(raw: Any, unit: str, cur_sym: str) -> str:
     if num is None:
         return str(raw) if raw != "" else ""
     if unit == "currency":
-        return f"{cur_sym}{num:,.2f}" if num < 10 else f"{cur_sym}{num:,.0f}"
+        return f"{cur_sym}{num:,.0f}" if float(num).is_integer() else f"{cur_sym}{num:,.2f}"
     if unit == "percent":
         return f"{num:.2f}%"
     return f"{int(num):,}" if num == int(num) else f"{num:,.2f}"
@@ -1563,17 +1584,27 @@ def _populate_csv_slide(
         raw_prev = metric.get("previous_value")
         val_str  = _fmt_csv_value(raw_curr, unit, cur_sym)
 
-        try:
-            curr_num = float(str(raw_curr)) if raw_curr != "" else None
-            prev_num = float(str(raw_prev)) if raw_prev is not None else None
-        except (ValueError, TypeError):
-            curr_num = prev_num = None
-
-        if curr_num is not None and prev_num is not None and prev_num > 0:
-            chg = round((curr_num - prev_num) / prev_num * 100, 1)
+        # Prefer the change the normaliser computed. It must not be re-derived
+        # from current_value here: current_value is the whole uploaded period
+        # while the change compares that period's second half against its
+        # first, so dividing one by the other would invent a number. Falls
+        # back to the old recomputation for sources that carry a real prior
+        # period (the legacy long-KPI templates) and no explicit change.
+        change_str = ""
+        explicit_change = metric.get("change")
+        if isinstance(explicit_change, (int, float)):
+            chg = round(float(explicit_change), 1)
             change_str = f"+{chg}%" if chg >= 0 else f"{chg}%"
         else:
-            change_str = ""
+            try:
+                curr_num = float(str(raw_curr)) if raw_curr != "" else None
+                prev_num = float(str(raw_prev)) if raw_prev is not None else None
+            except (ValueError, TypeError):
+                curr_num = prev_num = None
+
+            if curr_num is not None and prev_num is not None and prev_num > 0:
+                chg = round((curr_num - prev_num) / prev_num * 100, 1)
+                change_str = f"+{chg}%" if chg >= 0 else f"{chg}%"
 
         src_repl[f"{{{{csv_kpi_{i}_label}}}}"]  = (metric.get("name") or "").upper()
         src_repl[f"{{{{csv_kpi_{i}_value}}}}"]  = val_str
@@ -2038,9 +2069,17 @@ def generate_pptx_report(
                     new_idx = _duplicate_slide(prs, _csv_tpl_idx)
                     _csv_slide_indices.append(new_idx)
 
-                # Populate each slide with its corresponding source
+                # Populate each slide with its corresponding source. Currency
+                # is resolved per source, not once for the deck: an uploaded
+                # file that states its own currency must be rendered in it,
+                # regardless of what the connected ad account bills in.
                 for _slide_idx, _csv_src in zip(_csv_slide_indices, csv_sources_list):
-                    _populate_csv_slide(prs.slides[_slide_idx], _csv_src, cur_sym, charts)
+                    _populate_csv_slide(
+                        prs.slides[_slide_idx],
+                        _csv_src,
+                        _csv_currency_symbol(_csv_src, cur_sym),
+                        charts,
+                    )
                 logger.info(
                     "CSV slides populated: %d source(s) → slide indices %s",
                     len(csv_sources_list), _csv_slide_indices,

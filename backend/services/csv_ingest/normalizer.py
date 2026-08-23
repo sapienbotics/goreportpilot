@@ -23,6 +23,8 @@ import logging
 from datetime import datetime
 from typing import Any
 
+from services.csv_ingest import currency as currency_detect
+from services.csv_ingest import derivations
 from services.csv_ingest.profiler import TableProfile, _parse_localized
 from services.csv_ingest.schema import ColumnMapping, MappingProposal
 
@@ -98,22 +100,14 @@ def _percent_scale(profile: TableProfile, mapping: ColumnMapping) -> float:
 
 def _is_rate(mapping: ColumnMapping) -> bool:
     """
-    Rates and ratios must be averaged across rows, never summed.
+    Rates and ratios must never be summed — and never plainly averaged either.
 
-    Summing a CTR column across 30 days produces a number like 89% and puts it
-    on a client's slide. This check is the difference between a correct report
-    and an embarrassing one.
+    Delegates to services.csv_ingest.derivations, which owns both the question
+    "is this a rate" and the answer "then how does it combine". Averaging was
+    the previous answer here and it was wrong: the arithmetic mean of daily
+    CTRs ignores that days carry different volumes.
     """
-    if mapping.unit in ("percent", "ratio"):
-        return True
-    name = f"{mapping.target_metric} {mapping.label}".lower()
-    return any(
-        token in name
-        for token in (
-            "rate", "ratio", "ctr", "cpc", "cpm", "cpa", "roas",
-            "average", "avg", "per_", "per ", "position", "frequency",
-        )
-    )
+    return derivations.is_rate(mapping.target_metric, mapping.unit, mapping.label)
 
 
 def normalize(
@@ -183,46 +177,86 @@ def normalize(
             values.append(value * scale if value is not None else float("nan"))
         columns[column_mapping.target_metric] = values
 
-    # ── Split into current vs previous period ────────────────────────────────
+    # ── Work out the period, and the halves used for the trend ───────────────
+    #
+    # A single dated upload is ONE period, not two. The headline figure is
+    # therefore the whole uploaded period — a July export of 3,884,961
+    # impressions must read 3,884,961, not the 2,053,132 of its second half.
+    # The halves still exist, but only to compute the change badge, which is a
+    # within-period trend and is labelled as one.
     dated = date_index is not None and any(d for d in dates)
     if dated:
         order = sorted(
             (i for i, d in enumerate(dates) if d), key=lambda i: dates[i] or ""
         )
         split = comparison_rows or len(order) // 2
-        previous_indices = order[:split]
-        current_indices = order[split:]
-        # A single-period export has nothing to compare against; show it whole.
-        if not previous_indices or not current_indices:
-            previous_indices, current_indices = [], order
+        first_half = order[:split]
+        second_half = order[split:]
+        if not first_half or not second_half:
+            first_half, second_half = [], order
+        whole_period = order
     else:
-        previous_indices, current_indices = [], list(range(len(rows)))
+        first_half, second_half = [], list(range(len(rows)))
+        whole_period = list(range(len(rows)))
 
     # ── Aggregate ────────────────────────────────────────────────────────────
+    # Every reduction goes through derivations.aggregate — counts sum, declared
+    # rates recompute from their components against these totals. The entity
+    # breakdown below calls the same function, so a per-campaign CTR and the
+    # headline CTR cannot be computed two different ways.
+    metric_keys = [m.target_metric for m in mappings]
+    units = {m.target_metric: m.unit for m in mappings}
+    labels = {m.target_metric: m.label or m.source_column for m in mappings}
+
+    full = derivations.aggregate(metric_keys, units, labels, columns, whole_period)
+    recent = (
+        derivations.aggregate(metric_keys, units, labels, columns, second_half)
+        if first_half else {}
+    )
+    earlier = (
+        derivations.aggregate(metric_keys, units, labels, columns, first_half)
+        if first_half else {}
+    )
+
     metrics: list[dict[str, Any]] = []
+    derivation_report: dict[str, dict[str, Any]] = {}
     for column_mapping in mappings:
-        values = columns.get(column_mapping.target_metric)
-        if not values:
-            continue
-        average = _is_rate(column_mapping)
-        current = _aggregate(values, current_indices, average=average)
-        previous = _aggregate(values, previous_indices, average=average) if previous_indices else None
-        if current is None:
+        key = column_mapping.target_metric
+        derived = full.get(key)
+        if derived is None or derived.value is None:
             continue
 
+        # The badge compares the period's second half against its first.
         change = None
-        if previous not in (None, 0):
-            change = round((current - previous) / abs(previous) * 100, 2)
+        before = earlier.get(key)
+        after = recent.get(key)
+        if before is not None and after is not None:
+            if before.value not in (None, 0) and after.value is not None:
+                change = round(
+                    (after.value - before.value) / abs(before.value) * 100, 2
+                )
 
         metrics.append({
             "name":           column_mapping.label or column_mapping.source_column,
-            "metric_key":     column_mapping.target_metric,
-            "current_value":  round(current, 4),
-            "previous_value": round(previous, 4) if previous is not None else None,
+            "metric_key":     key,
+            "current_value":  round(derived.value, 4),
+            # No prior period exists inside a single upload. Left absent rather
+            # than filled with the first half, which would make the comparison
+            # chart draw a full-period bar against a half-period one.
+            "previous_value": None,
             "unit":           _slide_unit(column_mapping.unit),
             "direction":      column_mapping.direction,
             "change":         change,
+            "change_basis":   "within_period" if change is not None else None,
+            "first_half_value":  round(before.value, 4) if before and before.value is not None else None,
+            "second_half_value": round(after.value, 4) if after and after.value is not None else None,
+            "derivation":     derived.method,
         })
+        derivation_report[key] = {
+            "method":      derived.method,
+            "weighted_by": derived.weighted_by,
+            "detail":      derived.detail,
+        }
 
     if not metrics:
         raise NormalizationError(
@@ -235,7 +269,15 @@ def normalize(
         "metrics":     metrics,
         "mapped_at":   datetime.utcnow().isoformat(),
         "row_count":   len(rows),
+        # How each metric was reduced, so a report can state which figures were
+        # recomputed from components and which fell back to a weighted mean.
+        "derivations": derivation_report,
     }
+
+    detected_currency, currency_source = _detect_currency(profile, mappings)
+    if detected_currency:
+        result["currency"] = detected_currency
+        result["currency_source"] = currency_source
 
     # Surface the scaling rather than doing it silently — the user should be
     # able to see why 0.0047 became 0.47%.
@@ -391,17 +433,25 @@ def _resolve_row_unit(
     return resolved or _slide_unit(fallback)
 
 
-def _aggregate(
-    values: list[float], indices: list[int], *, average: bool
-) -> float | None:
-    """Sum counts, average rates. NaN cells (unparseable) are skipped, not zeroed."""
-    picked = [
-        values[i] for i in indices
-        if i < len(values) and values[i] == values[i]  # NaN != NaN
-    ]
-    if not picked:
-        return None
-    return sum(picked) / len(picked) if average else sum(picked)
+def _detect_currency(
+    profile: TableProfile, mappings: list[ColumnMapping]
+) -> tuple[str | None, str]:
+    """
+    The currency this file's money columns are in, if it says.
+
+    Only the columns actually mapped to money are inspected — a stray "$" in a
+    campaign name must not decide the currency of the whole report.
+    """
+    money_columns = {m.source_column for m in mappings if m.unit == "currency"}
+    headers: list[str] = []
+    samples: list[str] = []
+    for column in profile.columns:
+        if column.name in money_columns:
+            headers.append(column.name)
+            samples.extend(column.samples[:8])
+    return currency_detect.detect(
+        getattr(profile, "_preamble_rows", []) or [], headers, samples
+    )
 
 
 def _slide_unit(unit: str) -> str:
@@ -443,7 +493,15 @@ def _build_entity_breakdown(
     columns: dict[str, list[float]],
     limit: int = 10,
 ) -> list[dict[str, Any]]:
-    """Top entities (campaigns, pages, products) by the first mapped metric."""
+    """
+    Top entities (campaigns, pages, products) by the first mapped metric.
+
+    Goes through derivations.aggregate, exactly as the period totals do. This
+    used to sum every column per entity, rates included, which produced a
+    per-campaign conversion rate of 178.8% on the LinkedIn fixture — the same
+    defect as the headline CTR, in a different shape. Fixing one and not the
+    other is why they are now one function.
+    """
     if not mapping.entity_column:
         return []
     index = _column_index(profile, mapping.entity_column.name)
@@ -451,19 +509,28 @@ def _build_entity_breakdown(
         return []
 
     primary = mapping.columns[0].target_metric if mapping.columns else None
-    totals: dict[str, dict[str, float]] = {}
+    metric_keys = [m.target_metric for m in mapping.columns]
+    units = {m.target_metric: m.unit for m in mapping.columns}
+    labels = {m.target_metric: m.label or m.source_column for m in mapping.columns}
+
+    row_indices: dict[str, list[int]] = {}
     for i, row in enumerate(rows):
         name = (row[index] if index < len(row) else "").strip()
         if not name:
             continue
-        bucket = totals.setdefault(name, {})
-        for metric, values in columns.items():
-            if i < len(values) and values[i] == values[i]:
-                bucket[metric] = bucket.get(metric, 0.0) + values[i]
+        row_indices.setdefault(name, []).append(i)
 
-    entries = [{"name": name, **metrics} for name, metrics in totals.items()]
+    entries: list[dict[str, Any]] = []
+    for name, indices in row_indices.items():
+        derived = derivations.aggregate(metric_keys, units, labels, columns, indices)
+        entry: dict[str, Any] = {"name": name}
+        for key, value in derived.items():
+            if value.value is not None:
+                entry[key] = round(value.value, 4)
+        entries.append(entry)
+
     if primary:
-        entries.sort(key=lambda e: e.get(primary, 0.0), reverse=True)
+        entries.sort(key=lambda e: e.get(primary) or 0.0, reverse=True)
     return entries[:limit]
 
 

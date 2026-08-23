@@ -97,6 +97,17 @@ cd frontend && npm run dev
     a raw connection) will not see the new column until it reloads — code
     that reads the column will silently fail-closed on exceptions that are
     never surfaced anywhere you'd think to look.
+12. **Assertions on user-visible values must read the rendered output.** Never
+    verify a number by recomputing it alongside the code that produces it. To
+    check a figure on a slide, open the generated `.pptx` and read the text on
+    the shape; to check a figure in the UI, read the DOM. A parallel
+    calculation only proves the formula was applied twice — it cannot see a
+    formatter that drops decimals, a currency symbol from the wrong account, or
+    a headline wired to the wrong variable. Pass 4 asserted a CTR of 0.6952%
+    in Python and reported PASS while the deck it was verifying displayed
+    1.04%. See `backend/scripts/verify_csv_rendered_values.py` for the shape
+    this takes, including mutation-testing each assertion so a test that
+    cannot fail is never mistaken for a test that passed.
 
 ---
 

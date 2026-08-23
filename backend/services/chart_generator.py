@@ -1225,7 +1225,16 @@ def generate_csv_comparison_chart(
     metrics = metrics_raw[:6]
     labels = [m["name"] for m in metrics]
     current = [m["current_value"] for m in metrics]
-    previous = [m.get("previous_value", 0) for m in metrics]
+    # previous_value is None for a single dated upload — one period has no
+    # prior period. `or 0` rather than a dict default because the key is
+    # present and explicitly None; matplotlib cannot plot None.
+    previous = [m.get("previous_value") or 0 for m in metrics]
+
+    # With nothing to compare against, a "current vs previous" chart is a row
+    # of full bars beside a row of empty ones. Skip it and let the trend chart
+    # carry the time dimension.
+    if not any(previous):
+        return None
 
     # Use a wider, taller figsize than default so the horizontal bars
     # are readable when placed on the slide (avoids the squeezed 5:1 look).

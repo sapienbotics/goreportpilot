@@ -130,6 +130,10 @@ class TableProfile:
 
     # Retained for normalisation; never sent to the LLM.
     _rows: list[list[str]] = field(default_factory=list, repr=False)
+    # The rows above the header — an export's own banner. Discarded for
+    # mapping (they are not data) but read at normalisation time for the
+    # "Currency: USD" line platforms put there. Never sent to the LLM.
+    _preamble_rows: list[list[str]] = field(default_factory=list, repr=False)
 
     @property
     def column_fingerprint(self) -> str:
@@ -832,6 +836,7 @@ def profile_table(table: RawTable) -> TableProfile:
         truncated=table.truncated,
         warnings=warnings,
         _rows=body,
+        _preamble_rows=[r for r in rows[:header_index] if not _row_is_blank(r)],
     )
 
 

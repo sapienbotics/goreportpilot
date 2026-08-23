@@ -185,11 +185,20 @@ def _format_csv_sources(csv_sources: list) -> str:
             change_text = (
                 f", change: {change:+.1f}%" if isinstance(change, (int, float)) else ""
             )
-            previous_text = (
-                f" (prev: {previous}{suffix}{change_text})"
-                if previous is not None else ""
-            )
-            lines.append(f"  {label}: {current}{suffix}{previous_text}")
+            if previous is not None:
+                # A real prior period, from a file that carried one.
+                context = f" (prev: {previous}{suffix}{change_text})"
+            elif isinstance(change, (int, float)):
+                # One uploaded period: the figure is the whole period's total
+                # and the change is its internal trend. Said explicitly so the
+                # model does not describe it as month-over-month growth.
+                context = (
+                    f" (total for the period; second half vs first half"
+                    f" within the period: {change:+.1f}%)"
+                )
+            else:
+                context = ""
+            lines.append(f"  {label}: {current}{suffix}{context}")
         if source.get("daily"):
             lines.append(
                 f"  [{len(source['daily'])} days of daily figures are available "
