@@ -20,10 +20,20 @@ TableShape = Literal["long_kpi", "wide_timeseries", "wide_entity", "unknown"]
 MetricUnit = Literal["number", "currency", "percent", "ratio", "duration"]
 Direction = Literal["higher_is_better", "lower_is_better"]
 
-# Mappings at or above this confidence are pre-accepted in the UI. Anything
-# below starts unconfirmed and blocks the Confirm button until a human resolves
-# it — silently accepting a low-confidence guess is how wrong numbers reach
-# clients.
+# Mappings ABOVE this confidence are pre-accepted in the UI. Anything at or
+# below it starts unconfirmed and blocks the Confirm button until a human
+# resolves it — silently accepting a low-confidence guess is how wrong numbers
+# reach clients.
+#
+# The boundary is exclusive on purpose. It used to be `confidence < 0.80`,
+# which accepted exactly 0.80 without asking — and 0.80 is one of the most
+# likely values for a model to emit, because models reach for round numbers.
+# GPT-4.1 returned precisely 0.8 for the Semrush "Cost" column, a genuinely
+# ambiguous header (ad spend or estimated traffic value?), and it sailed
+# through unquestioned. A guardrail with a hole at its most probable input is
+# not a guardrail. The cost of the stricter comparison is one extra question
+# on a borderline column; the cost of the looser one is a wrong metric on a
+# client's slide.
 CONFIDENCE_THRESHOLD = 0.80
 
 
@@ -48,7 +58,7 @@ class ColumnMapping(BaseModel):
 
     @property
     def needs_confirmation(self) -> bool:
-        return self.confidence < CONFIDENCE_THRESHOLD
+        return self.confidence <= CONFIDENCE_THRESHOLD
 
 
 class DateColumn(BaseModel):

@@ -228,25 +228,36 @@ async def fixture_linkedin() -> None:
         (m for m in source["metrics"] if "click through" in m["name"].lower()
          or m["name"].lower() == "ctr"), None,
     )
-    check("CTR is averaged to ~1.16%, not summed to 5.80",
-          ctr_metric is not None and abs(ctr_metric["current_value"] - 1.16) < 0.02,
+    # Sigma clicks / Sigma impressions = 1531 / 131,650 = 1.1629%.
+    # The unweighted mean of the CTR column is 1.1600% and summing it gives
+    # 11.60%. The old tolerance here was +/-0.02 around 1.16, which accepted
+    # the recomputed and the unweighted-mean answers equally — tight enough
+    # now to tell them apart.
+    check("CTR recomputed from components (1.1629%), not averaged (1.1600%)",
+          ctr_metric is not None and abs(ctr_metric["current_value"] - 1.1629) < 0.001,
           str(ctr_metric["current_value"] if ctr_metric else "CTR not produced"))
 
     impressions = by_key.get("impressions")
-    check("impressions SUM (69,100 current / 62,550 previous)",
+    check("impressions SUM over the whole period (131,650)",
           impressions is not None
-          and impressions["current_value"] == 69100.0
-          and impressions["previous_value"] == 62550.0,
+          and impressions["current_value"] == 131650.0
+          and impressions["first_half_value"] == 62550.0
+          and impressions["second_half_value"] == 69100.0,
           str(impressions))
 
     clicks = by_key.get("clicks")
-    check("clicks SUM (804 / 727)",
-          clicks is not None and clicks["current_value"] == 804.0
-          and clicks["previous_value"] == 727.0, str(clicks))
+    check("clicks SUM over the whole period (1,531)",
+          clicks is not None and clicks["current_value"] == 1531.0
+          and clicks["first_half_value"] == 727.0
+          and clicks["second_half_value"] == 804.0, str(clicks))
 
     spend = next((m for m in source["metrics"] if m["unit"] == "currency"), None)
-    check("spend SUM (1,525.35 current)",
-          spend is not None and abs(spend["current_value"] - 1525.35) < 0.01, str(spend))
+    check("spend SUM over the whole period (2,942.20)",
+          spend is not None and abs(spend["current_value"] - 2942.20) < 0.01, str(spend))
+
+    check("no invented previous period",
+          impressions is not None and impressions["previous_value"] is None,
+          str(impressions))
 
     check("daily series produced for the trend chart",
           len(source.get("daily", [])) == 10, str(len(source.get("daily", []))))

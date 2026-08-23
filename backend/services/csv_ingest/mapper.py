@@ -72,8 +72,9 @@ cost_per_lead. Otherwise invent a clear snake_case name from the header.
 - unit: currency | percent | ratio | duration | number
 - direction: higher_is_better, or lower_is_better for costs, bounce rate, \
 unsubscribes, CPA/CPC/CPM and similar
-- confidence: 0.0-1.0, honest. Use below 0.8 whenever the header is vague, \
-abbreviated, or could plausibly mean more than one thing.
+- confidence: 0.0-1.0, honest. Use 0.8 or lower whenever the header is vague, \
+abbreviated, or could plausibly mean more than one thing; above 0.8 means you \
+are sure enough that no human needs to check it.
 - reasoning: one short clause
 
 Also identify:
