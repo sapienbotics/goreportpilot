@@ -124,6 +124,18 @@ cd frontend && npm run dev
     by that very change. This is rule 12's mistake one level up: measuring a
     convenient part of the evidence instead of the whole of it. Filter output
     only to locate something you have already read in full.
+15. **Assertions on model output must be verified across multiple runs.** A
+    single passing run proves the output is *possible*, not that it is
+    *reliable*. GPT-4.1 mapped one Meta export perfectly on the first run and,
+    across five, dropped the date column in three of them and switched entity
+    level in three — taking the trend chart, every change badge and all trend
+    language with it, on a deck that still rendered and looked fine. Every
+    prior verification in this project had been a single run.
+    `backend/scripts/verify_csv_mapping_ai.py` runs each assertion N=5 times
+    and reports a distribution; anything short of N/N is UNSTABLE and fails the
+    suite. Where instability is found, prefer settling it deterministically —
+    the profiler usually already measured what the model was guessing at —
+    over re-prompting until a run looks good.
 
 ---
 

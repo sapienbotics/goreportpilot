@@ -248,10 +248,21 @@ def normalize(
 
     metrics: list[dict[str, Any]] = []
     derivation_report: dict[str, dict[str, Any]] = {}
+    metric_warnings: list[str] = []
     for column_mapping in mappings:
         key = column_mapping.target_metric
         derived = full.get(key)
         if derived is None or derived.value is None:
+            # A metric withheld on purpose says so, rather than vanishing.
+            if derived is not None and derived.method == "suppressed":
+                metric_warnings.append(
+                    f"{column_mapping.label or column_mapping.source_column} is "
+                    f"not shown: {derived.detail}."
+                )
+                derivation_report[key] = {
+                    "method": derived.method, "weighted_by": None,
+                    "detail": derived.detail,
+                }
             continue
 
         # The badge compares the period's second half against its first.
@@ -264,18 +275,35 @@ def normalize(
                     (after.value - before.value) / abs(before.value) * 100, 2
                 )
 
+        # A figure that is not a period total must not be read as one. The
+        # label carries the correction, because the number appears on a slide
+        # with nothing else around it to explain itself.
+        name = column_mapping.label or column_mapping.source_column
+        if derived.basis == "peak_daily":
+            name = _peak_daily_label(name)
+            metric_warnings.append(
+                f"{name} is the highest single day, not a period total — "
+                f"{derived.detail}."
+            )
+
         metrics.append({
-            "name":           column_mapping.label or column_mapping.source_column,
+            "name":           name,
             "metric_key":     key,
             "current_value":  round(derived.value, 4),
             # No prior period exists inside a single upload. Left absent rather
             # than filled with the first half, which would make the comparison
             # chart draw a full-period bar against a half-period one.
             "previous_value": None,
-            "unit":           _slide_unit(column_mapping.unit),
+            # The registry's declared display wins over the unit the mapper
+            # inferred from the column: "percent" and "multiplier" both reach
+            # here as "ratio", and only the registry knows which this is.
+            "unit":           derivations.display_unit(
+                key, _slide_unit(column_mapping.unit)
+            ),
             "direction":      column_mapping.direction,
             "change":         change,
             "change_basis":   "within_period" if change is not None else None,
+            "value_basis":    derived.basis,
             "first_half_value":  round(before.value, 4) if before and before.value is not None else None,
             "second_half_value": round(after.value, 4) if after and after.value is not None else None,
             "derivation":     derived.method,
@@ -309,11 +337,18 @@ def normalize(
 
     # Surface the scaling rather than doing it silently — the user should be
     # able to see why 0.0047 became 0.47%.
+    warnings: list[str] = []
     if scaled_columns:
-        result["warnings"] = [
+        warnings.append(
             f"{', '.join(scaled_columns)} was stored as a decimal fraction "
             "(0.0047) and has been converted to a percentage (0.47%)."
-        ]
+        )
+    # Relabelled and withheld metrics explain themselves here, so the reason a
+    # figure is not what someone expected is attached to the source rather than
+    # left for them to work out from the slide.
+    warnings.extend(metric_warnings)
+    if warnings:
+        result["warnings"] = warnings
 
     # ── Daily series, when the table is dated ────────────────────────────────
     if dated:
@@ -483,6 +518,24 @@ def _detect_currency(
     return currency_detect.detect(
         getattr(profile, "_preamble_rows", []) or [], headers, samples
     )
+
+
+def _peak_daily_label(label: str) -> str:
+    """
+    "Reach" -> "Peak daily reach". Leaves an already-corrected label alone.
+
+    Chosen over dropping the metric because the relabelling is clean and the
+    number stays real: peak daily reach is a figure the client can look up in
+    their own Ads Manager for that day and find it agrees. Suppressing reach
+    entirely would leave a hole on the one slide a Meta advertiser looks at
+    first, and would replace a checkable number with nothing.
+    """
+    stripped = label.strip()
+    if stripped.lower().startswith("peak daily"):
+        return stripped
+    if not stripped:
+        return "Peak daily value"
+    return "Peak daily " + stripped[0].lower() + stripped[1:]
 
 
 def _slide_unit(unit: str) -> str:

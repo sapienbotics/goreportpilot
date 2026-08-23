@@ -54,17 +54,58 @@ UNVERIFIED: list[str] = []
 # Set from --stub. When true, propose_mapping is replaced by a recorded response.
 STUB_MODE = False
 
+# ── Multi-run verification ──────────────────────────────────────────────────
+# A single passing run proves the model CAN produce the right answer, not that
+# it does so reliably. Running one Meta export five times showed GPT-4.1
+# dropping the date column in 3 of them and picking a different entity column
+# in 3 of them — neither visible from one run, and both changing what the deck
+# contains. Every assertion is therefore evaluated on every run and reported by
+# its distribution: N/N is a pass, anything less is UNSTABLE and named as such.
+RUNS = 1
+RUN_INDEX = 0
+# name -> list of (passed, detail), one entry per run
+RESULTS: dict[str, list[tuple[bool, str]]] = {}
+_ORDER: list[str] = []
+# Assertions registered through check_model(), tracked so the summary can say
+# which unstable ones are the model's judgement rather than our arithmetic.
+_MODEL_ASSERTIONS: set[str] = set()
+# Which fixture is running, so assertion keys stay distinct across files.
+CURRENT_FIXTURE = ""
+
+
+def _key(name: str) -> str:
+    return f"[{CURRENT_FIXTURE}] {name}" if CURRENT_FIXTURE else name
+
+
+def _record(name: str, condition: bool, detail: str) -> bool:
+    # Keyed by fixture as well as name: several fixtures share an assertion
+    # name ("low-confidence mappings are flagged"), and merging them would let
+    # a failure in one file hide inside passes from the other four.
+    name = _key(name)
+    if name not in RESULTS:
+        RESULTS[name] = []
+        _ORDER.append(name)
+    RESULTS[name].append((bool(condition), detail))
+    if RUN_INDEX == 0:
+        # Only the first run prints, so the transcript stays readable; the
+        # remaining runs are reflected in the distribution at the end.
+        if condition:
+            print(f"    PASS  {name}")
+        else:
+            print(f"    FAIL  {name}")
+            if detail:
+                print(f"          {detail}")
+    return bool(condition)
+
 
 def check(name: str, condition: bool, detail: str = "") -> bool:
-    if condition:
-        PASSED.append(name)
-        print(f"    PASS  {name}")
-    else:
-        FAILED.append((name, detail))
-        print(f"    FAIL  {name}")
-        if detail:
-            print(f"          {detail}")
-    return bool(condition)
+    """
+    A deterministic assertion — but still evaluated on every run.
+
+    Deterministic code consuming model output is only as stable as that output,
+    so these are measured too. One that varies is a finding in itself.
+    """
+    return _record(name, condition, detail)
 
 
 def check_model(name: str, condition: bool, detail: str = "") -> bool:
@@ -74,11 +115,13 @@ def check_model(name: str, condition: bool, detail: str = "") -> bool:
     In stub mode these are recorded as UNVERIFIED: passing them would only prove
     the fixture agrees with itself.
     """
+    _MODEL_ASSERTIONS.add(_key(name))
     if STUB_MODE:
-        UNVERIFIED.append(name)
-        print(f"    ----  {name}  (UNVERIFIED — stub mode, model not called)")
+        if name not in UNVERIFIED:
+            UNVERIFIED.append(name)
+            print(f"    ----  {name}  (UNVERIFIED — stub mode, model not called)")
         return True
-    return check(name, condition, detail)
+    return _record(name, condition, detail)
 
 
 async def get_mapping(profile, filename: str) -> MappingProposal:
@@ -375,6 +418,101 @@ async def fixture_meta_xlsx() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Fixture 3b - Meta Ads Manager export, the full daily shape
+# ---------------------------------------------------------------------------
+
+async def fixture_meta_csv() -> None:
+    """
+    The real Meta export shape: a redundant date pair, currency in the header,
+    CTR as a bare fraction, "Results" instead of conversions, em-dash nulls and
+    a campaign/ad set/ad hierarchy.
+
+    This file is why the multi-run harness exists. On a single run it mapped
+    perfectly; across five, GPT-4.1 returned no date column in three of them
+    and switched entity level in three. Both are now settled deterministically,
+    and these assertions are what keeps them settled.
+    """
+    print("")
+    print("[3b] meta_ads_export_july2026.csv - date pair, (USD) header, em-dash nulls")
+    raw = load("meta_ads_export_july2026.csv")
+    profile = profile_file(raw, "meta_ads_export_july2026.csv")[0]
+    proposal = await get_mapping(profile, "meta_ads_export_july2026.csv")
+    report_mapping(proposal, profile)
+
+    # The instability that motivated this harness. Deliberately check() and
+    # not check_model(): the date column is now decided by measurement when
+    # the model declines to name one, so it must hold on every run whatever
+    # the model said.
+    check("a date column is resolved on every run",
+          proposal.date_column is not None
+          and proposal.date_column.name == "Reporting starts",
+          str(proposal.date_column))
+    check("entity resolves to the coarsest hierarchy level",
+          proposal.entity_column is not None
+          and proposal.entity_column.name == "Campaign name",
+          str(proposal.entity_column))
+
+    check_model("'Results' is questioned rather than silently mapped",
+          any(a.column.strip().lower() == "results" for a in proposal.ambiguities)
+          or any(c.needs_confirmation for c in proposal.columns
+                 if c.source_column == "Results"),
+          "Results was accepted with no question raised")
+
+    assert_no_low_confidence_auto_accepted(proposal)
+
+    answered = {"Results", "Cost per result (USD)"}
+    for column in proposal.columns:
+        if column.source_column in answered:
+            column.confidence = 1.0
+    proposal.ambiguities = [
+        a for a in proposal.ambiguities if a.column not in answered
+    ]
+
+    source = normalize(profile, proposal, source_name="Meta Ads")
+    report_metrics(source)
+    by_key = {m["metric_key"]: m for m in source["metrics"]}
+
+    check("currency read from the (USD) column header",
+          source.get("currency") == "USD",
+          "%r via %r" % (source.get("currency"), source.get("currency_source")))
+    check("all 124 rows read despite em-dash nulls",
+          source.get("row_count") == 124, str(source.get("row_count")))
+    check("impressions total 6,921,544",
+          by_key.get("impressions", {}).get("current_value") == 6921544.0,
+          str(by_key.get("impressions")))
+    check("link clicks total 74,372",
+          by_key.get("clicks", {}).get("current_value") == 74372.0,
+          str(by_key.get("clicks")))
+
+    ctr = by_key.get("ctr", {}).get("current_value")
+    check("CTR recomputed to 1.0745%, not the raw 0.0107 fraction",
+          ctr is not None and abs(ctr - 1.0745) < 0.001, str(ctr))
+
+    cpr = by_key.get("cost_per_result") or by_key.get("cost_per_conversion") or {}
+    check("cost per result recomputed to 14.49, not weighted to 101.06",
+          cpr.get("current_value") is not None
+          and abs(cpr["current_value"] - 14.4927) < 0.01,
+          str(cpr.get("current_value")))
+
+    reach = next((m for m in source["metrics"] if m["metric_key"] == "reach"), None)
+    check("reach is not summed across days",
+          reach is not None and reach["current_value"] != 5186231.0,
+          str(reach.get("current_value") if reach else "reach missing"))
+    check("reach is the peak day, relabelled to say so",
+          reach is not None and reach["current_value"] == 101502.0
+          and reach["name"].lower().startswith("peak daily"),
+          str(reach))
+    check("frequency is withheld, not divided by a summed reach",
+          "frequency" not in by_key, str(by_key.get("frequency")))
+    check("no multiplier metric renders as a percent",
+          all(m["unit"] != "percent" for m in source["metrics"]
+              if m["metric_key"] in ("frequency", "roas")),
+          str([(m["metric_key"], m["unit"]) for m in source["metrics"]]))
+
+    assert_no_rate_summed(source, profile, proposal)
+
+
+# ---------------------------------------------------------------------------
 # Fixture 4 — Semrush, adversarial structure + ambiguous "Cost"
 # ---------------------------------------------------------------------------
 
@@ -560,6 +698,10 @@ async def main() -> int:
                         help="also exercise saved-mapping persistence against the live DB")
     parser.add_argument("--stub", action="store_true",
                         help="use recorded mappings instead of calling GPT-4.1")
+    parser.add_argument("--runs", type=int, default=5,
+                        help="how many times to run each assertion "
+                             "(default 5; a single run proves an answer is "
+                             "possible, not that it is reliable)")
     args = parser.parse_args()
 
     global STUB_MODE
@@ -590,30 +732,85 @@ async def main() -> int:
     print("=" * 72)
     print(f"confidence threshold: {CONFIDENCE_THRESHOLD}")
 
-    await fixture_linkedin()
-    await fixture_german()
-    await fixture_meta_xlsx()
-    await fixture_semrush()
-    await fixture_legacy()
+    global RUNS, RUN_INDEX, CURRENT_FIXTURE
+    RUNS = 1 if STUB_MODE else max(1, args.runs)
+    print("runs per assertion:   %d%s" % (
+        RUNS, "" if RUNS > 1 else "  (single run - proves possible, not reliable)"))
+
+    for index in range(RUNS):
+        RUN_INDEX = index
+        if index:
+            print("")
+            print("--- repeat run %d/%d (stability check) ---" % (index + 1, RUNS))
+        for _label, _fixture in (
+            ("linkedin", fixture_linkedin),
+            ("google_ads_de", fixture_german),
+            ("meta_xlsx", fixture_meta_xlsx),
+            ("meta_csv", fixture_meta_csv),
+            ("semrush", fixture_semrush),
+            ("legacy_kpi", fixture_legacy),
+        ):
+            CURRENT_FIXTURE = _label
+            await _fixture()
+        CURRENT_FIXTURE = ""
     if args.cache_test:
+        RUN_INDEX = 0
         await fixture_cache()
 
-    print("\n" + "=" * 72)
-    summary = f"{len(PASSED)} passed, {len(FAILED)} failed"
+    # -- Verdict by distribution ------------------------------------------
+    stable_pass: list[str] = []
+    stable_fail: list[tuple[str, str]] = []
+    unstable: list[tuple[str, int, int, str]] = []
+    for name in _ORDER:
+        outcomes = RESULTS[name]
+        passes = sum(1 for ok, _ in outcomes if ok)
+        total = len(outcomes)
+        if passes == total:
+            stable_pass.append(name)
+        elif passes == 0:
+            stable_fail.append((name, outcomes[0][1]))
+        else:
+            failing = next(d for ok, d in outcomes if not ok)
+            unstable.append((name, passes, total, failing))
+
+    PASSED.extend(stable_pass)
+    FAILED.extend(stable_fail)
+
+    print("")
+    print("=" * 72)
+    summary = "%d passed, %d failed" % (len(stable_pass), len(stable_fail))
+    if unstable:
+        summary += ", %d UNSTABLE" % len(unstable)
     if UNVERIFIED:
-        summary += f", {len(UNVERIFIED)} UNVERIFIED (stub mode)"
-    print(summary)
-    for name, detail in FAILED:
-        print(f"  FAILED: {name}")
+        summary += ", %d UNVERIFIED (stub mode)" % len(UNVERIFIED)
+    print(summary + "   (each assertion run %dx)" % RUNS)
+
+    for name, detail in stable_fail:
+        print("  FAILED: %s" % name)
         if detail:
-            print(f"          {detail}")
+            print("          %s" % detail)
+
+    if unstable:
+        print("")
+        print("  UNSTABLE - passed on some runs and not others. The mapper")
+        print("  does not reliably produce these; one run would hide it:")
+        for name, passes, total, detail in unstable:
+            kind = ("model judgement" if name in _MODEL_ASSERTIONS
+                    else "derived from model output")
+            print("    %d/%d  %s   [%s]" % (passes, total, name, kind))
+            if detail:
+                print("           e.g. %s" % detail)
+
     if UNVERIFIED:
-        print()
-        print("  These depend on the model's judgement and were NOT verified.")
-        print("  A stub cannot check them — re-run without --stub when credits allow:")
+        print("")
+        print("  These depend on the model judgement and were NOT verified.")
+        print("  A stub cannot check them - re-run without --stub:")
         for name in UNVERIFIED:
-            print(f"    - {name}")
-    return 1 if FAILED else 0
+            print("    - %s" % name)
+
+    # An unstable assertion is a failure: what ships depends on the reliable
+    # answer, not the achievable one.
+    return 1 if (stable_fail or unstable) else 0
 
 
 async def _preflight() -> tuple[bool, str]:

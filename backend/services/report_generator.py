@@ -1507,6 +1507,10 @@ def _fmt_csv_value(raw: Any, unit: str, cur_sym: str) -> str:
         return f"{cur_sym}{num:,.0f}" if float(num).is_integer() else f"{cur_sym}{num:,.2f}"
     if unit == "percent":
         return f"{num:.2f}%"
+    if unit == "multiplier":
+        # Frequency and ROAS. Rendered "1.33x", never with a percent sign —
+        # "1.33%" is not a quantity that exists.
+        return f"{num:,.2f}×"
     return f"{int(num):,}" if num == int(num) else f"{num:,.2f}"
 
 

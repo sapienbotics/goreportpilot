@@ -164,6 +164,20 @@ _CURRENCY_SYMBOLS: Dict[str, str] = {
 }
 
 
+def _unit_suffix(unit: str) -> str:
+    """
+    What follows a number of this unit in prose.
+
+    A multiplier is not a percentage: frequency 1.33 means 1.33 impressions
+    per person reached, and writing it "1.33%" describes nothing.
+    """
+    if unit == "percent":
+        return "%"
+    if unit == "multiplier":
+        return "×"
+    return ""
+
+
 def _fmt_num(value: Any) -> str:
     """
     A figure written the way it should appear in prose.
@@ -241,7 +255,7 @@ def _entity_lines(source: dict, breakdown: list) -> list[str]:
             value = row.get(key)
             if not isinstance(value, (int, float)):
                 continue
-            suffix = "%" if metric_units.get(key) == "percent" else ""
+            suffix = _unit_suffix(metric_units.get(key, "number"))
             label = metric_names.get(key, key)
             if key in changes:
                 parts.append(f"{label} {_fmt_num(value)}{suffix} ({changes[key]:+.1f}%)")
@@ -302,7 +316,7 @@ def _format_csv_sources(csv_sources: list) -> str:
             current = metric.get("current_value")
             previous = metric.get("previous_value")
             unit = metric.get("unit", "number")
-            suffix = "%" if unit == "percent" else ""
+            suffix = _unit_suffix(unit)
             change = metric.get("change")
             change_text = (
                 f", change: {change:+.1f}%" if isinstance(change, (int, float)) else ""

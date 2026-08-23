@@ -24,6 +24,7 @@ from services.csv_ingest.schema import (
     Ambiguity,
     ColumnMapping,
     DateColumn,
+    EntityColumn,
     IgnoredColumn,
     MappingProposal,
 )
@@ -319,6 +320,8 @@ def _finalise(
     if proposal.entity_column and proposal.entity_column.name not in known:
         proposal.entity_column = None
 
+    proposal.entity_column = _coarsest_entity(proposal.entity_column, profile)
+
     proposal.sheet_name = profile.sheet_name
     proposal.column_fingerprint = profile.column_fingerprint
     proposal.origin = "ai"
@@ -332,6 +335,77 @@ def _finalise(
             "chart. Pick the ones you want below."
         )
     return proposal
+
+
+# Ad-platform hierarchies, coarsest first. A file carrying more than one of
+# these levels is offering a choice, not several different entities.
+_ENTITY_HIERARCHY: tuple[tuple[str, ...], ...] = (
+    ("campaign",),
+    ("ad set", "ad_set", "adset", "ad group", "ad_group", "adgroup"),
+    ("ad name", "ad_name", "creative", "asset"),
+)
+
+
+def _hierarchy_rank(column_name: str) -> int | None:
+    """Which level of an ad-platform hierarchy this column names, if any."""
+    name = column_name.strip().lower()
+    for rank, tokens in enumerate(_ENTITY_HIERARCHY):
+        if any(token in name for token in tokens):
+            return rank
+    return None
+
+
+def _coarsest_entity(chosen, profile: TableProfile):
+    """
+    Prefer the coarsest hierarchy level a file offers.
+
+    Across five live runs on one Meta export the model picked "Campaign name"
+    twice and "Ad name" three times — both defensible, but it meant the same
+    file produced a different set of "top entries" from one run to the next,
+    and a saved mapping locked in whichever happened to win. For an agency
+    report the campaign is almost always the right level anyway: an ad-level
+    breakdown of a forty-ad account is unreadable on a slide.
+
+    Hierarchy depth is measurable, so this is decided here rather than asked
+    of the model. Only columns that actually name a hierarchy level are
+    considered — a "Keyword" or "Landing page" entity is left exactly as the
+    model chose it.
+    """
+    if chosen is None:
+        return None
+    chosen_rank = _hierarchy_rank(chosen.name)
+    if chosen_rank is None or chosen_rank == 0:
+        return chosen
+
+    by_name = {c.name: c for c in profile.columns}
+    chosen_column = by_name.get(chosen.name)
+    if chosen_column is None:
+        return chosen
+
+    better = None
+    better_rank = chosen_rank
+    for column in profile.columns:
+        if column.inferred_type != "text" or column.name == chosen.name:
+            continue
+        rank = _hierarchy_rank(column.name)
+        if rank is None or rank >= better_rank:
+            continue
+        # A coarser level cannot have MORE distinct values than a finer one.
+        # Where it does, the header is lying about the hierarchy and the
+        # model's choice is left alone.
+        if column.distinct_count > chosen_column.distinct_count:
+            continue
+        better, better_rank = column, rank
+
+    if better is None:
+        return chosen
+
+    logger.info(
+        "Entity column %r is level %d of the hierarchy; using coarser %r "
+        "(level %d, %d distinct values)",
+        chosen.name, chosen_rank, better.name, better_rank, better.distinct_count,
+    )
+    return EntityColumn(name=better.name, confidence=chosen.confidence)
 
 
 def _day_month_settled(samples: list[str], fmt: str) -> bool:

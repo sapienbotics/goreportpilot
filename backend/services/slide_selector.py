@@ -427,6 +427,11 @@ def select_kpis(data: dict, currency_symbol: str = "$") -> list[dict]:
             unit = metric.get("unit", "number")
             if unit == "currency":
                 val_str = _fmt_currency(curr) if isinstance(curr, (int, float)) else str(curr)
+            elif unit == "multiplier":
+                # Frequency / ROAS: a multiplier, never a percentage.
+                val_str = (
+                    f"{curr:,.2f}×" if isinstance(curr, (int, float)) else f"{curr}×"
+                )
             elif unit == "percent":
                 # Trim the float tail: 2.83 stays 2.83, but 15.0 reads as 15%.
                 val_str = (

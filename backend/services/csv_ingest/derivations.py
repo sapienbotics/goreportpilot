@@ -12,22 +12,37 @@ period totals:
 
     CTR = Σclicks / Σimpressions        — never mean(daily CTR)
 
-So every rate declares what it is made of, here, once. ``RATE_DERIVATIONS``
+So every rate declares what it is made of, here, once. ``METRICS``
 is that declaration, and ``aggregate`` below is the only place any metric is
 reduced over a set of rows — used both for the period totals and for the
 per-entity breakdown, so the two cannot drift apart. They previously did:
 the period aggregate averaged rates while the entity breakdown summed them,
 which is how a per-campaign conversion rate of 178.8% became possible.
 
-Adding a rate metric means adding a line to ``RATE_DERIVATIONS``. The
-import-time check at the bottom of this file refuses to load if an alias
-points at a rate with no declared derivation.
+Adding a metric means adding a line to ``METRICS``, which also declares how
+it is written (percent vs multiplier — indistinguishable from the values) and
+whether it counts people rather than events. The import-time check at the
+bottom refuses to load if any of that is missing.
 """
 from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
+
+
+# How a metric should be written when it reaches a slide.
+#
+# "percent" and "multiplier" both arrive from the model as unit "ratio", and
+# collapsing them was wrong in a way no value inspection can fix: CTR scales to
+# 1.07 and a retargeting CTR is 4.12, while frequency is 1.33 — so "a ratio
+# above 1 is a multiplier" would render a real percentage as "4.12×". The
+# distinction is a property of the metric, not of its value, so it is declared.
+DisplayUnit = str  # "number" | "currency" | "percent" | "multiplier" | "duration"
+
+_VALID_DISPLAY_UNITS = frozenset(
+    {"number", "currency", "percent", "multiplier", "duration"}
+)
 
 
 @dataclass(frozen=True)
@@ -39,23 +54,62 @@ class RateDerivation:
     scale: float = 1.0
 
 
+@dataclass(frozen=True)
+class MetricSpec:
+    """
+    Everything the pipeline needs to know about a metric it recognises.
+
+    ``display`` is mandatory — a metric that reaches a slide without a declared
+    way to be written is the FREQUENCY "1.33%" defect, and the import-time
+    check below refuses to load without it.
+
+    ``deduplicated`` marks a count of PEOPLE rather than of events. Those can
+    never be summed: reach counts distinct people, and the same person recurs
+    on day two, so 31 daily rows added together can overstate a month's reach
+    two- or three-fold. See ``aggregate`` for what happens instead.
+    """
+
+    display: DisplayUnit
+    derivation: RateDerivation | None = None
+    deduplicated: bool = False
+
+
 # ── The registry ────────────────────────────────────────────────────────────
-# Keyed by canonical rate name. Numerator/denominator name *canonical
-# components*, resolved against whatever the upload actually calls them by
-# _COMPONENT_ALIASES below.
-RATE_DERIVATIONS: dict[str, RateDerivation] = {
-    "ctr":                 RateDerivation("clicks",      "impressions", 100.0),
-    "cpc":                 RateDerivation("spend",       "clicks"),
-    "cpm":                 RateDerivation("spend",       "impressions", 1000.0),
-    "conversion_rate":     RateDerivation("conversions", "clicks",      100.0),
-    "cost_per_conversion": RateDerivation("spend",       "conversions"),
-    "cost_per_lead":       RateDerivation("spend",       "leads"),
-    "roas":                RateDerivation("revenue",     "spend"),
-    "aov":                 RateDerivation("revenue",     "conversions"),
+# Keyed by canonical metric name. A derivation's numerator/denominator name
+# *canonical components*, resolved against whatever the upload actually calls
+# them by _COMPONENT_ALIASES below.
+METRICS: dict[str, MetricSpec] = {
+    # ── Rates ───────────────────────────────────────────────────────────────
+    "ctr":                 MetricSpec("percent",    RateDerivation("clicks",      "impressions", 100.0)),
+    "cpc":                 MetricSpec("currency",   RateDerivation("spend",       "clicks")),
+    "cpm":                 MetricSpec("currency",   RateDerivation("spend",       "impressions", 1000.0)),
+    "conversion_rate":     MetricSpec("percent",    RateDerivation("conversions", "clicks",      100.0)),
+    "cost_per_conversion": MetricSpec("currency",   RateDerivation("spend",       "conversions")),
+    "cost_per_lead":       MetricSpec("currency",   RateDerivation("spend",       "leads")),
+    "aov":                 MetricSpec("currency",   RateDerivation("revenue",     "conversions")),
+    # A 3.5x return on ad spend is not "3.5%".
+    "roas":                MetricSpec("multiplier", RateDerivation("revenue",     "spend")),
     # Meta reports impressions and reach separately, so frequency is derivable
-    # rather than approximable. Weighted by impressions instead it came out at
-    # 1.3415 against a true 1.3346 on the Meta fixture.
-    "frequency":           RateDerivation("impressions", "reach"),
+    # rather than approximable — but only over a basis where reach is real.
+    # 1.33 means each reached person saw the ad 1.33 times; "1.33%" is not a
+    # quantity that exists.
+    "frequency":           MetricSpec("multiplier", RateDerivation("impressions", "reach")),
+
+    # ── Deduplicated people-counts ──────────────────────────────────────────
+    "reach":               MetricSpec("number", deduplicated=True),
+    "unique_clicks":       MetricSpec("number", deduplicated=True),
+    "unique_link_clicks":  MetricSpec("number", deduplicated=True),
+    "unique_users":        MetricSpec("number", deduplicated=True),
+    "users":               MetricSpec("number", deduplicated=True),
+
+    # ── Plain event counts, declared so their display is not inferred ───────
+    "impressions":         MetricSpec("number"),
+    "clicks":              MetricSpec("number"),
+    "conversions":         MetricSpec("number"),
+    "leads":               MetricSpec("number"),
+    "sessions":            MetricSpec("number"),
+    "spend":               MetricSpec("currency"),
+    "revenue":             MetricSpec("currency"),
 }
 
 # An upload's own name for a rate → the canonical rate above.
@@ -144,15 +198,82 @@ _RATE_NAME_TOKENS: tuple[str, ...] = (
 )
 
 
+# Names for registry metrics that the component aliases do not already cover —
+# chiefly the deduplicated people-counts, which are not components of anything.
+_EXTRA_ALIASES: dict[str, str] = {
+    "unique_clicks":      "unique_clicks",
+    "unique_link_clicks": "unique_link_clicks",
+    "unique_users":       "unique_users",
+    "unique_reach":       "reach",
+    "users":              "users",
+    "unique_visitors":    "unique_users",
+    "sessions":           "sessions",
+    "visits":             "sessions",
+}
+
+
+def _build_metric_aliases() -> dict[str, str]:
+    """
+    One lookup from an upload's metric slug to a canonical registry name.
+
+    Component aliases come first so "results" resolves to conversions and
+    "link_clicks" to clicks; rate aliases are applied over the top because a
+    name like "unique_ctr" is a rate, not a people-count.
+    """
+    out: dict[str, str] = {}
+    for canonical, aliases in _COMPONENT_ALIASES.items():
+        for alias in aliases:
+            out.setdefault(alias, canonical)
+    for alias, canonical in _EXTRA_ALIASES.items():
+        out.setdefault(alias, canonical)
+    out.update(_RATE_ALIASES)
+    return out
+
+
+_METRIC_ALIASES: dict[str, str] = _build_metric_aliases()
+
+
 def canonical_rate(metric_key: str) -> str | None:
     """The canonical rate name for a target_metric slug, or None."""
     return _RATE_ALIASES.get((metric_key or "").strip().lower())
 
 
+def canonical_metric(metric_key: str) -> str | None:
+    """The canonical registry name for any metric slug, or None if unknown."""
+    key = (metric_key or "").strip().lower()
+    if key in METRICS:
+        return key
+    return _METRIC_ALIASES.get(key)
+
+
+def metric_spec(metric_key: str) -> MetricSpec | None:
+    """What the registry knows about this metric, if anything."""
+    name = canonical_metric(metric_key)
+    return METRICS.get(name) if name else None
+
+
 def rate_derivation(metric_key: str) -> RateDerivation | None:
     """How this metric derives from its components, if it is a declared rate."""
-    name = canonical_rate(metric_key)
-    return RATE_DERIVATIONS.get(name) if name else None
+    spec = metric_spec(metric_key)
+    return spec.derivation if spec else None
+
+
+def display_unit(metric_key: str, fallback: str) -> str:
+    """
+    How to write this metric, preferring the registry's declaration.
+
+    ``fallback`` is what the mapper guessed from the column — used only for
+    metrics the registry has never heard of, where an inferred unit is the
+    best available answer.
+    """
+    spec = metric_spec(metric_key)
+    return spec.display if spec else fallback
+
+
+def is_deduplicated(metric_key: str) -> bool:
+    """True for a count of people, which must never be summed across rows."""
+    spec = metric_spec(metric_key)
+    return bool(spec and spec.deduplicated)
 
 
 def is_rate(metric_key: str, unit: str = "", label: str = "") -> bool:
@@ -214,15 +335,28 @@ def _unweighted_mean(values: list[float], indices: Sequence[int]) -> float | Non
     return sum(picked) / len(picked) if picked else None
 
 
+def _peak_over(values: list[float], indices: Sequence[int]) -> float | None:
+    """The largest single row's value. Used where summing would double-count."""
+    picked = [
+        values[i] for i in indices
+        if i < len(values) and values[i] == values[i]
+    ]
+    return max(picked) if picked else None
+
+
 @dataclass
 class Derived:
     """One metric reduced over a set of rows, and how."""
 
     value: float | None
-    # "sum" | "recomputed" | "weighted_mean" | "unweighted_mean"
+    # "sum" | "recomputed" | "weighted_mean" | "unweighted_mean" | "peak" |
+    # "suppressed"
     method: str
     weighted_by: str | None = None
     detail: str = ""
+    # Set when the figure is NOT a period total and must be relabelled before
+    # a reader sees it — "Reach" becoming "Peak daily reach".
+    basis: str | None = None
 
 
 def aggregate(
@@ -269,9 +403,31 @@ def aggregate(
         if candidates:
             fallback_weight = max(candidates)[1]
 
+    # More than one row means summing a people-count would count the same
+    # person once per row. One row is safe.
+    multi_row = len([i for i in indices]) > 1
+
     for key in metric_keys:
         values = columns.get(key)
         if not values:
+            continue
+
+        # ── Deduplicated people-counts ──────────────────────────────────────
+        # Reach is distinct people, and the same person is reached again
+        # tomorrow. Adding 31 daily rows can overstate a month two- or
+        # threefold — and it is a number the client can check against their own
+        # Ads Manager, so it fails visibly and expensively. The peak day is a
+        # real, verifiable figure; it is returned with a basis so the label can
+        # say what it actually is before anyone reads it as a period total.
+        if is_deduplicated(key):
+            if multi_row:
+                out[key] = Derived(
+                    _peak_over(values, indices), "peak", basis="peak_daily",
+                    detail="deduplicated people-count; summing would "
+                           "double-count anyone reached on more than one day",
+                )
+            else:
+                out[key] = Derived(sums.get(key), "sum")
             continue
 
         if not is_rate(key, units.get(key, ""), labels.get(key, "")):
@@ -279,6 +435,19 @@ def aggregate(
             continue
 
         derivation = rate_derivation(key)
+
+        # A rate whose denominator is a people-count has no honest period
+        # value: frequency is impressions per person, and dividing a month of
+        # impressions by a summed reach is dividing by a number that does not
+        # mean anything. Peak-day frequency would be a different metric wearing
+        # the same label, so it is withheld rather than approximated.
+        if derivation and multi_row and is_deduplicated(derivation.denominator):
+            out[key] = Derived(
+                None, "suppressed",
+                detail=f"needs {derivation.denominator}, which is deduplicated "
+                       "and has no meaningful multi-day total",
+            )
+            continue
 
         if derivation:
             numerator = _resolve_component(derivation.numerator, available)
@@ -334,18 +503,47 @@ def aggregate(
 
 def _check_registry() -> None:
     """Every alias must point at a rate that declares how it derives."""
-    missing = sorted(set(_RATE_ALIASES.values()) - set(RATE_DERIVATIONS))
+    missing = sorted(set(_RATE_ALIASES.values()) - set(METRICS))
     if missing:
         raise RuntimeError(
             "csv_ingest.derivations: these rates are aliased but have no "
-            f"declared numerator/denominator: {missing}. Add them to "
-            "RATE_DERIVATIONS — a rate with no derivation would silently fall "
-            "back to a weighted mean."
+            f"registry entry: {missing}. Add them to METRICS — a rate with no "
+            "derivation would silently fall back to a weighted mean."
         )
+
+    # Every declared rate must actually declare how it derives.
+    no_derivation = sorted(
+        name for name in set(_RATE_ALIASES.values())
+        if METRICS[name].derivation is None
+    )
+    if no_derivation:
+        raise RuntimeError(
+            "csv_ingest.derivations: these rates have a registry entry but no "
+            f"numerator/denominator: {no_derivation}."
+        )
+
+    # Every metric must say how it is written. A metric that reaches a slide
+    # without a declared display unit is the FREQUENCY "1.33%" defect, where a
+    # multiplier was rendered as a percentage because "ratio" collapsed onto
+    # "percent". Inferring it from the value cannot work — CTR scales above 1
+    # and a retargeting CTR of 4.12% would read "4.12x" — so it is declared,
+    # and refusing to load is how it stays declared.
+    undeclared = sorted(
+        name for name, spec in METRICS.items()
+        if spec.display not in _VALID_DISPLAY_UNITS
+    )
+    if undeclared:
+        raise RuntimeError(
+            "csv_ingest.derivations: these metrics have no valid display unit: "
+            f"{undeclared}. Declare one of {sorted(_VALID_DISPLAY_UNITS)} — "
+            "percent and multiplier both arrive as 'ratio' from the model and "
+            "cannot be told apart from their values."
+        )
+
     unknown_components = sorted({
         component
-        for derivation in RATE_DERIVATIONS.values()
-        for component in (derivation.numerator, derivation.denominator)
+        for spec in METRICS.values() if spec.derivation
+        for component in (spec.derivation.numerator, spec.derivation.denominator)
         if component not in _COMPONENT_ALIASES
     })
     if unknown_components:
@@ -353,6 +551,19 @@ def _check_registry() -> None:
             "csv_ingest.derivations: these components are used by a rate but "
             f"have no alias list: {unknown_components}. Add them to "
             "_COMPONENT_ALIASES so they can be resolved against real uploads."
+        )
+
+    # A metric named as a component must be resolvable to a registry entry, so
+    # is_deduplicated() can answer for it — that is how frequency knows its
+    # denominator is people rather than events.
+    unresolvable = sorted(
+        component for component in _COMPONENT_ALIASES
+        if canonical_metric(component) is None
+    )
+    if unresolvable:
+        raise RuntimeError(
+            "csv_ingest.derivations: these components resolve to no METRICS "
+            f"entry: {unresolvable}."
         )
 
 
