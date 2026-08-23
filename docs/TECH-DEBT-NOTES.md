@@ -4,6 +4,11 @@ Log of known issues observed during verification work, not yet fixed.
 Add to this file rather than fixing inline when the fix is out of scope
 for the task at hand — see CLAUDE.md's "flag before fixing" process.
 
+**Status:** items 3, 4 and 5 were fixed on 2026-08-23 (see
+`PHASE-1-FIX-REPORT.md`); their entries are kept below as the record of what
+was wrong and how it was found. Items 1, 2, 6 and 7 remain open. Item 6 is
+sequenced after item 4, which it depended on.
+
 ---
 
 ## 2026-08-23 — Phase 1 Pass 4 verification
@@ -30,7 +35,7 @@ production discrepancy required adding a temporary diagnostic endpoint
 because the underlying exception (once identified) would have been just
 another line lost in this noise.
 
-### 3. CSV import: source currency not read from the file
+### 3. CSV import: source currency not read from the file — FIXED 2026-08-23
 `services/csv_ingest/normalizer.py` / the report generator do not read a
 CSV's stated currency (e.g. a "Currency: USD" line in an export's preamble,
 or a `$` vs `₹` symbol in the raw cells) — monetary CSV metrics are always
@@ -43,7 +48,7 @@ the number is numerically right, the currency label is wrong, which is
 worse for an agency showing this to a client than a clearly-broken number
 would be.
 
-### 4. CSV entity breakdown: rate metrics summed instead of recomputed
+### 4. CSV entity breakdown: rate metrics summed instead of recomputed — FIXED 2026-08-23
 `_build_entity_breakdown()` in `services/csv_ingest/normalizer.py` (line
 ~460) sums every mapped column per entity, including rate-type metrics
 (CTR, conversion rate, CPC, CPM, cost-per-conversion) that must be
@@ -61,7 +66,7 @@ for the "Top entries" list handed to GPT-4.1). The moment any per-entity
 table or chart is built from `breakdown`, this will show broken numbers.
 Worth fixing before that feature lands, not after.
 
-### 5. CSV report KPI headline shows only the latter half of the period, not the full-period total
+### 5. CSV report KPI headline shows only the latter half of the period — FIXED 2026-08-23
 For a single dated CSV source, `normalize()` splits the uploaded rows at
 the date midpoint into "previous" and "current" halves so the report can
 show period-over-period change (see `normalizer.py:186-199`). The KPI
@@ -97,3 +102,18 @@ either to stop naming a specific entity next to an aggregate change in
 the prompt instructions, or to give the model real per-entity trend data
 (from `breakdown`, once item 4 is fixed) so an attribution claim like this
 would be grounded.
+
+### 7. CSV mapping confidence exactly at the threshold slips through unconfirmed
+`ColumnMapping.needs_confirmation` is `confidence < CONFIDENCE_THRESHOLD`
+with the threshold at 0.80, so a model returning exactly `0.80` is treated
+as pre-accepted and raises no confirmation prompt. Observed on 2026-08-23:
+`scripts/verify_csv_mapping_ai.py` failed its two "'Cost' is questioned
+rather than silently mapped" assertions because that run's live GPT-4.1
+returned `confidence=0.8` with no ambiguity, where earlier runs returned a
+lower value plus an ambiguity. Not caused by any code change — `mapper.py`
+was untouched — but it means that test is flaky at the boundary, and more
+importantly that a genuinely borderline column can reach a client report
+without anyone being asked. Worth deciding whether the comparison should be
+`<=`, and separately whether that verification script should assert on a
+model-judgment value at all (see CLAUDE.md rule 12's concern about
+assertions that measure something adjacent to the claim).
