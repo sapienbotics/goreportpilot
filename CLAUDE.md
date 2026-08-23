@@ -82,6 +82,14 @@ cd frontend && npm run dev
 7. **Production = MVP:** No quality distinction — potential clients may evaluate at any time
 8. **Incremental safety:** When risk of breaking existing functionality, split into safe incremental steps
 9. **Git commit after every change set** with descriptive message
+10. **Deploy → verify → remove, never remove-then-deploy:** When replacing a
+    production state or code path with a new one: (1) deploy the replacement,
+    (2) verify it is live and working against production, (3) only then remove
+    the old state or path. Never remove the fallback in the same step that
+    introduces the replacement — the gap between push and Railway/Vercel
+    actually cutting traffic over is real and has caused both a production
+    outage (code pushed without a startup check) and an account lockout
+    (a manual DB fallback reverted before its replacement had deployed).
 
 ---
 
