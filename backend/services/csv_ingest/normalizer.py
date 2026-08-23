@@ -189,9 +189,37 @@ def normalize(
         order = sorted(
             (i for i, d in enumerate(dates) if d), key=lambda i: dates[i] or ""
         )
-        split = comparison_rows or len(order) // 2
-        first_half = order[:split]
-        second_half = order[split:]
+        if comparison_rows:
+            first_half = order[:comparison_rows]
+            second_half = order[comparison_rows:]
+        else:
+            # Split on a DATE boundary, not at the midpoint of the row list.
+            #
+            # An entity-per-day export has several rows per date, so a row
+            # midpoint lands mid-day: on this fixture (4 campaigns x 31 days)
+            # index 62 falls inside 2026-07-16, giving two campaigns 16 days
+            # "before" and 15 "after" while the other two got the reverse.
+            # Every per-entity change was then measured over a different span
+            # than its neighbour's, which quietly flatters some campaigns and
+            # penalises others — and those per-entity changes are exactly what
+            # the narrative now attributes growth by. Splitting on the date
+            # gives every entity the identical two windows.
+            # The two windows are also equal in LENGTH. An odd number of days
+            # cannot be halved, so the middle day is left out of the
+            # comparison — it still counts in the period total, it just is not
+            # allowed to land on one side and inflate it. July's 31 days
+            # compare the 1st-15th against the 17th-31st; splitting 15-against-
+            # 16 instead reported +19.4% impressions where an even comparison
+            # gives +12.9%, most of that gap being nothing but the extra day.
+            unique_dates = sorted({dates[i] for i in order if dates[i]})
+            half = len(unique_dates) // 2
+            if half:
+                early = set(unique_dates[:half])
+                late = set(unique_dates[len(unique_dates) - half:])
+                first_half = [i for i in order if dates[i] in early]
+                second_half = [i for i in order if dates[i] in late]
+            else:
+                first_half, second_half = [], order
         if not first_half or not second_half:
             first_half, second_half = [], order
         whole_period = order
@@ -294,7 +322,10 @@ def normalize(
             result["daily"] = series
 
     if mapping.entity_column:
-        breakdown = _build_entity_breakdown(profile, mapping, rows, columns)
+        breakdown = _build_entity_breakdown(
+            profile, mapping, rows, columns,
+            first_half=first_half, second_half=second_half,
+        )
         if breakdown:
             result["breakdown"] = breakdown
 
@@ -491,6 +522,8 @@ def _build_entity_breakdown(
     mapping: MappingProposal,
     rows: list[list[str]],
     columns: dict[str, list[float]],
+    first_half: list[int] | None = None,
+    second_half: list[int] | None = None,
     limit: int = 10,
 ) -> list[dict[str, Any]]:
     """
@@ -520,6 +553,14 @@ def _build_entity_breakdown(
             continue
         row_indices.setdefault(name, []).append(i)
 
+    # Each entity's OWN within-period trend. Without this the narrative has
+    # only the source-wide change and a list of entity names, and the model
+    # pins the one onto the other: Pass 4's deck credited "Q3 Thought
+    # Leadership | Video Views" with the whole source's +12.1% impressions
+    # growth when that campaign grew 3.5%.
+    first_set = set(first_half or [])
+    second_set = set(second_half or [])
+
     entries: list[dict[str, Any]] = []
     for name, indices in row_indices.items():
         derived = derivations.aggregate(metric_keys, units, labels, columns, indices)
@@ -527,6 +568,22 @@ def _build_entity_breakdown(
         for key, value in derived.items():
             if value.value is not None:
                 entry[key] = round(value.value, 4)
+
+        own_first = [i for i in indices if i in first_set]
+        own_second = [i for i in indices if i in second_set]
+        if own_first and own_second:
+            before = derivations.aggregate(metric_keys, units, labels, columns, own_first)
+            after = derivations.aggregate(metric_keys, units, labels, columns, own_second)
+            changes: dict[str, float] = {}
+            for key in metric_keys:
+                b, a = before.get(key), after.get(key)
+                if b is None or a is None:
+                    continue
+                if b.value in (None, 0) or a.value is None:
+                    continue
+                changes[key] = round((a.value - b.value) / abs(b.value) * 100, 2)
+            if changes:
+                entry["changes"] = changes
         entries.append(entry)
 
     if primary:

@@ -155,6 +155,79 @@ sugarcoating. Never hide bad results."""
 
 
 
+# Metrics worth naming per entity, in the order a reader cares about them.
+# Capped so a 10-campaign upload does not flood the prompt.
+_ENTITY_METRIC_PRIORITY = (
+    "impressions", "clicks", "conversions", "spend", "leads", "revenue",
+    "sessions", "ctr", "conversion_rate",
+)
+_ENTITY_METRIC_LIMIT = 4
+_ENTITY_LIMIT = 6
+
+
+def _entity_lines(source: dict, breakdown: list) -> list[str]:
+    """
+    Per-entity totals AND each entity's own within-period change.
+
+    This used to be a bare list of names ("Top entries: A, B, C") sitting
+    beside the source-wide change, and the model did the only thing it could
+    with that pairing: it attached the aggregate movement to whichever name
+    looked most prominent. Pass 4's deck credited the +12.1% impressions rise
+    to "Q3 Thought Leadership | Video Views", a campaign that grew 3.5%, while
+    Demand Gen (+34.6%) and Lead Gen (+33.0%) did the actual work.
+
+    Giving the model each entity's own numbers removes the need to guess. The
+    instruction below is deliberately explicit rather than trusting it to
+    infer the rule.
+    """
+    lines: list[str] = ["  Per-entity breakdown — each entity's OWN figures and "
+                        "its OWN within-period change:"]
+
+    metric_units = {
+        m.get("metric_key"): m.get("unit", "number")
+        for m in (source.get("metrics") or [])
+    }
+    metric_names = {
+        m.get("metric_key"): m.get("name", m.get("metric_key"))
+        for m in (source.get("metrics") or [])
+    }
+
+    for row in breakdown[:_ENTITY_LIMIT]:
+        name = str(row.get("name", "")).strip()
+        if not name:
+            continue
+        changes = row.get("changes") or {}
+        keys = [k for k in _ENTITY_METRIC_PRIORITY if k in row]
+        keys += [
+            k for k in row
+            if k not in ("name", "changes") and k not in keys
+            and isinstance(row[k], (int, float))
+        ]
+
+        parts: list[str] = []
+        for key in keys[:_ENTITY_METRIC_LIMIT]:
+            value = row.get(key)
+            if not isinstance(value, (int, float)):
+                continue
+            suffix = "%" if metric_units.get(key) == "percent" else ""
+            label = metric_names.get(key, key)
+            if key in changes:
+                parts.append(f"{label} {value:,.2f}{suffix} ({changes[key]:+.1f}%)")
+            else:
+                parts.append(f"{label} {value:,.2f}{suffix}")
+        if parts:
+            lines.append(f"    {name}: " + ", ".join(parts))
+
+    lines.append(
+        "    [The percentages above are each entity's own change. The "
+        "source-wide change reported for a metric is NOT any single entity's "
+        "change. Name an entity as a driver only when that entity's own "
+        "number above supports it; if none does, describe the movement "
+        "without naming one.]"
+    )
+    return lines
+
+
 def _format_csv_sources(csv_sources: list) -> str:
     """
     Render uploaded data sources for the prompt.
@@ -206,9 +279,7 @@ def _format_csv_sources(csv_sources: list) -> str:
             )
         breakdown = source.get("breakdown") or []
         if breakdown:
-            top = ", ".join(str(row.get("name", "")) for row in breakdown[:5] if row.get("name"))
-            if top:
-                lines.append(f"  Top entries: {top}")
+            lines.extend(_entity_lines(source, breakdown))
 
     if not lines:
         return "CSV SOURCES: none"
