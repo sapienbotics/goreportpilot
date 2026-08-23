@@ -6,7 +6,7 @@ for the task at hand — see CLAUDE.md's "flag before fixing" process.
 
 **Status:** items 3, 4, 5, 6 and 7 are fixed (see `PHASE-1-FIX-REPORT.md` and
 `PHASE-1-CLOSE-REPORT.md`); their entries are kept below as the record of what
-was wrong and how it was found. **Items 1 and 2 remain open.**
+was wrong and how it was found. **Items 1, 2, 9 and 11 remain open.**
 
 ---
 
@@ -121,7 +121,7 @@ assertions that measure something adjacent to the claim).
 
 ## 2026-08-23 — Meta Ads CSV verification
 
-### 8. "ratio" unit renders as a percentage, so Frequency shows "1.33%"
+### 8. "ratio" unit renders as a percentage — FIXED 2026-08-23
 `_slide_unit()` in `services/csv_ingest/normalizer.py` collapses the mapping
 unit "ratio" onto "percent", and `_fmt_csv_value()` then appends a "%". That is
 right for a CTR expressed as 0.0047, and wrong for a ratio that is a
@@ -160,7 +160,7 @@ does mean the trend lives only in the narrative and the trend chart.
 Fixing it means editing six binary .pptx files to add a third text box per KPI
 card, which is a template-design task rather than a code change.
 
-### 10. Entity column is unstable when a file has a campaign/ad set/ad hierarchy
+### 10. Entity column unstable under a hierarchy — FIXED 2026-08-23
 Across five live GPT-4.1 runs on the same Meta export, the model chose
 "Campaign name" twice and "Ad name" three times as the entity column. Both are
 defensible readings and the numbers are correct either way, but the report's
