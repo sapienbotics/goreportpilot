@@ -116,6 +116,14 @@ cd frontend && npm run dev
     experimenting. A `git checkout` used to revert one mutated line destroyed
     a full session's uncommitted work on `normalizer.py`; the second
     destructive-action incident of that engagement.
+14. **When checking a command's output, read all of it.** Never draw a
+    conclusion about a verification run from `head`, `tail`, or `grep` — those
+    show you a slice chosen before you knew what was in it, and a summary line
+    is not the same as the failures above it. Pass 4 reported "2 pre-existing
+    failures" from `tail -4` of a script that had five, three of them caused
+    by that very change. This is rule 12's mistake one level up: measuring a
+    convenient part of the evidence instead of the whole of it. Filter output
+    only to locate something you have already read in full.
 
 ---
 

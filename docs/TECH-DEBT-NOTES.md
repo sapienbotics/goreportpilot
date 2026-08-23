@@ -116,3 +116,66 @@ without anyone being asked. Worth deciding whether the comparison should be
 `<=`, and separately whether that verification script should assert on a
 model-judgment value at all (see CLAUDE.md rule 12's concern about
 assertions that measure something adjacent to the claim).
+
+---
+
+## 2026-08-23 — Meta Ads CSV verification
+
+### 8. "ratio" unit renders as a percentage, so Frequency shows "1.33%"
+`_slide_unit()` in `services/csv_ingest/normalizer.py` collapses the mapping
+unit "ratio" onto "percent", and `_fmt_csv_value()` then appends a "%". That is
+right for a CTR expressed as 0.0047, and wrong for a ratio that is a
+multiplier. Meta's **Frequency** is impressions per person — 1.33 means each
+reached person saw the ad 1.33 times — and the deck renders it "1.33%", which
+is not a quantity that exists. Confirmed on the rendered KPI slide of
+`meta_ads_export_july2026.csv`. **ROAS has the same shape** (a 3.5x return
+would render "3.5%") and so would any "X per Y" multiplier.
+
+The value is correct; only the suffix is wrong, which is the more dangerous
+kind of error because nothing looks broken. Fix is a fourth display unit —
+"multiplier", rendered as a bare number or with an "x" — distinguished from
+"percent" at mapping time. `MetricUnit` in `schema.py` would need the new
+member and the mapper prompt would need to know when to choose it; a cheaper
+interim is to treat a ratio-unit metric whose value exceeds 1 as a multiplier,
+since a genuine percentage stored as a fraction is by definition <= 1 after
+`_percent_scale` has run.
+
+Not fixed: flagged rather than changed, because it alters rendering for every
+existing ratio metric and deserves an explicit decision.
+
+### 9. No template has a `{{csv_kpi_N_change}}` placeholder
+All six PPTX templates carry only `label` and `value` tokens for CSV KPI
+cards. `_populate_csv_slide()` computes `change_str` — including the explicit
+`change` field added when the full-period headline landed — and then has
+nowhere to put it, so the within-period trend never appears on a CSV source
+slide. The number is computed, reaches the AI narrative (where it is used
+correctly), and is silently dropped at render time.
+
+Consequence after the generic-KPI-slide suppression (item 4a of the Meta
+verification): a CSV-only deck now shows no change indicator on any KPI card
+at all. This is not a regression — the generic slide previously showed "—" for
+these metrics, because `previous_value` is None for a single upload — but it
+does mean the trend lives only in the narrative and the trend chart.
+
+Fixing it means editing six binary .pptx files to add a third text box per KPI
+card, which is a template-design task rather than a code change.
+
+### 10. Entity column is unstable when a file has a campaign/ad set/ad hierarchy
+Across five live GPT-4.1 runs on the same Meta export, the model chose
+"Campaign name" twice and "Ad name" three times as the entity column. Both are
+defensible readings and the numbers are correct either way, but the report's
+"top entries" change identity between runs of the same file, and a saved
+mapping therefore locks in whichever level happened to win. Worth deciding
+whether the mapper should prefer the coarsest hierarchy level by default, or
+whether this should become an explicit ambiguity question ("report by campaign,
+ad set, or ad?") the way the Cost column already is.
+
+### 11. `_parse_localized` prints to stdout on every failed parse
+`services/csv_ingest/profiler.py` emits `Could not parse numeric value: ...`
+via `print()` for each cell it probes and rejects — which is normal, expected
+behaviour while inferring column types. A single verification run produced 529
+such lines against 59 lines of actual report, and the CSV ingest suite 202
+against 65. In production this goes to stdout on every upload and lands in
+Railway's logs, compounding item 2's noise problem. It also actively obstructs
+CLAUDE.md rule 14 (read all of a command's output) by burying the signal.
+Should be `logger.debug()`, not `print()`.

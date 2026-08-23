@@ -52,6 +52,10 @@ RATE_DERIVATIONS: dict[str, RateDerivation] = {
     "cost_per_lead":       RateDerivation("spend",       "leads"),
     "roas":                RateDerivation("revenue",     "spend"),
     "aov":                 RateDerivation("revenue",     "conversions"),
+    # Meta reports impressions and reach separately, so frequency is derivable
+    # rather than approximable. Weighted by impressions instead it came out at
+    # 1.3415 against a true 1.3346 on the Meta fixture.
+    "frequency":           RateDerivation("impressions", "reach"),
 }
 
 # An upload's own name for a rate → the canonical rate above.
@@ -86,6 +90,17 @@ _RATE_ALIASES: dict[str, str] = {
     "cost_per_lead": "cost_per_lead",
     "cpl": "cost_per_lead",
 
+    # Meta calls a conversion a "result" and its cost "Cost per result". Same
+    # arithmetic as cost per conversion, and "results" resolves as a
+    # conversions component below. Missing this, the Meta fixture reported a
+    # cost per result of 101.06 against a true 14.49 — the weighted-mean
+    # fallback was dominated by an awareness campaign with enormous
+    # impressions and almost no results.
+    "cost_per_result": "cost_per_conversion",
+    "cost_per_purchase": "cost_per_conversion",
+
+    "frequency": "frequency",
+
     "roas": "roas",
     "return_on_ad_spend": "roas",
 
@@ -103,7 +118,10 @@ _COMPONENT_ALIASES: dict[str, tuple[str, ...]] = {
     "spend":       ("spend", "ad_spend", "cost", "costs", "spent", "total_spent",
                     "total_spend", "amount_spent", "total_cost"),
     "conversions": ("conversions", "conversion", "total_conversions", "results",
-                    "purchases"),
+                    "purchases", "result"),
+    # Distinct from impressions, deliberately: reach counts people, impressions
+    # count deliveries, and conflating them would silently redefine frequency.
+    "reach":       ("reach", "unique_reach", "people_reached", "accounts_reached"),
     "leads":       ("leads", "lead", "form_submissions", "form_completions"),
     "revenue":     ("revenue", "total_revenue", "conversion_value", "purchase_value",
                     "sales", "gross_revenue"),

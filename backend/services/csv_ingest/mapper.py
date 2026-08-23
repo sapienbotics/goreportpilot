@@ -23,6 +23,7 @@ from services.csv_ingest.schema import (
     MAPPING_JSON_SCHEMA,
     Ambiguity,
     ColumnMapping,
+    DateColumn,
     IgnoredColumn,
     MappingProposal,
 )
@@ -272,6 +273,47 @@ def _finalise(
                         "could be day/month or month/day. Which is it?"
                     ),
                 )
+            )
+
+    # Recover a time dimension the model declined to name.
+    #
+    # Meta's export heads its date pair "Reporting starts" / "Reporting ends",
+    # which reads like report metadata — the window the report covers — rather
+    # than a per-row dimension, and at account level that is exactly what it
+    # is. On a daily breakdown it is the day. GPT-4.1 cannot tell those apart
+    # from eight samples and returned no date column in 3 of 5 live runs on the
+    # same file, taking the trend chart, every change badge and all trend
+    # language in the narrative with it — the deck still rendered, just flat,
+    # with nothing to indicate anything was missing.
+    #
+    # The profiler already measured what the model was guessing at: whether a
+    # date column's values actually VARY. A column of 31 distinct dates across
+    # 124 rows is a time dimension whatever its header says. Deciding that is
+    # measurement, not classification, so it belongs here and not in a prompt.
+    if proposal.date_column is None:
+        candidates = [
+            column for column in profile.columns
+            if column.inferred_type == "date"
+            and column.date_format
+            and column.distinct_count > 1
+        ]
+        if candidates:
+            # Most distinct values wins: on a start/end pair the two are
+            # usually identical, and where they differ the finer-grained one
+            # is the real dimension. Ties fall to the leftmost column, which
+            # is the "starts" side of every export that carries a pair.
+            chosen = min(candidates, key=lambda c: (-c.distinct_count, c.index))
+            proposal.date_column = DateColumn(
+                name=chosen.name, format=chosen.date_format, confidence=0.75
+            )
+            proposal.ignored_columns = [
+                ignored for ignored in proposal.ignored_columns
+                if ignored.name != chosen.name
+            ]
+            logger.info(
+                "Model named no date column; using measured date column %r "
+                "(%d distinct values, format %s)",
+                chosen.name, chosen.distinct_count, chosen.date_format,
             )
 
     if proposal.entity_column and proposal.entity_column.name not in known:

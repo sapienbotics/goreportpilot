@@ -397,7 +397,13 @@ _SECTION_INSTRUCTIONS: Dict[str, str] = {
     # Content-count enforcement (3+3+3): every report should land with exactly
     # 3 wins, 3 concerns, and 3 next steps in the canonical structure.
     "key_wins":           '"{key}" — EXACTLY 3 bullet points. Each must name a specific entity from TOP MOVERS (campaign, page, query, or traffic source) and the metric it moved. Start each with "\u2713 "',
-    "concerns":           '"{key}" — EXACTLY 3 bullet points. Each must (a) name a specific entity from TOP MOVERS, (b) state its underperformance with numbers, (c) give a concrete fix tied to that entity. Start each with "\u26A0 "',
+    # The "unless you state the tension" clause earns its length. A live
+    # Meta run put "Video Views" in Key Wins for cutting cost per result
+    # 11.9% and in Concerns for producing only 22 results — both true, but
+    # read back to back they make the report look like it is arguing with
+    # itself. Either drop the weaker point or name the tension, which is a
+    # more useful sentence than either half was alone.
+    "concerns":           '"{key}" — EXACTLY 3 bullet points. Each must (a) name a specific entity from TOP MOVERS, (b) state its underperformance with numbers, (c) give a concrete fix tied to that entity. Start each with "\u26A0 " An entity you credited in key_wins must NOT also appear here, UNLESS this bullet states the tension explicitly in the same sentence (e.g. "X cut cost per result 11.9% but produced only 22 results, so the efficiency gain sits on volume too small to matter"). Never present the same entity as a plain win and a plain concern.',
     "next_steps":         '"{key}" — EXACTLY 3 numbered items. Each MUST cite a specific data point from TOP MOVERS and follow the pattern: "Next month we will [action] on [specific campaign/page/source from TOP MOVERS], based on [cited metric], to achieve [expected outcome with a number]."',
     "google_ads_performance": '"{key}" — 2-3 diagnostic paragraphs. Name specific Google Ads campaigns (TOP MOVERS > google_ads) that delivered vs underperformed. Cite CTR, cost-per-conversion, and spend share per named campaign.',
     "seo_performance": '"{key}" — 2-3 diagnostic paragraphs. Name specific organic queries (TOP MOVERS > search_console.top_queries) and landing pages driving clicks. Cite position, CTR, and impression volume per named query.',

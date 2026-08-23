@@ -63,12 +63,61 @@ def _has_csv(data: dict) -> bool:
     return bool(data.get("csv_sources"))
 
 
+# The CSV source slide renders the first six metrics of its source; keep this
+# in step with report_generator._populate_csv_slide, which slices [:6].
+_CSV_SLIDE_METRIC_CAPACITY = 6
+
+
+def _kpi_scorecard_is_redundant(data: dict) -> bool:
+    """
+    True when the generic KPI scorecard only repeats a source slide that follows.
+
+    On a CSV-only report this happens every time. select_kpis takes the first
+    two metrics of each uploaded source, and the source's own slide then shows
+    those same two plus four more — so the deck opens with a scorecard reading
+    "IMPRESSIONS 3.9M / CLICKS 27.0K", both with no change indicator, and the
+    very next slide repeats them with context. The scorecard earns its place
+    when it summarises across sources; it earns nothing when it is a strict
+    subset of one slide the reader is about to see.
+
+    Deliberately conservative — the scorecard is dropped only when EVERY label
+    on it appears on a SINGLE upcoming source slide:
+
+      * any GA4/Meta/Google/GSC figure puts a label on the scorecard that no
+        CSV slide carries, so a mixed report keeps it;
+      * labels spread across two sources are not a subset of either, and the
+        scorecard is then the only place they appear together, so it stays;
+      * an empty scorecard is not treated as redundant here, because dropping
+        a slide for having no content is a different decision from dropping it
+        for duplication, and this predicate should not quietly make both.
+    """
+    sources = data.get("csv_sources") or []
+    if not sources:
+        return False
+
+    scorecard_labels = {
+        kpi["label"] for kpi in select_kpis(data) if kpi.get("label")
+    }
+    if not scorecard_labels:
+        return False
+
+    for source in sources:
+        slide_labels = {
+            (metric.get("name") or "").upper()
+            for metric in (source.get("metrics") or [])[:_CSV_SLIDE_METRIC_CAPACITY]
+        }
+        if scorecard_labels <= slide_labels:
+            return True
+    return False
+
+
 # Each entry: (slide_id, data_check_fn, detail_levels)
 SLIDE_POOL = [
     # ALWAYS INCLUDED
     ("cover",             lambda d: True,     ["full", "summary", "brief"]),
     ("executive_summary", lambda d: True,     ["full", "summary", "brief"]),
-    ("kpi_scorecard",     lambda d: True,     ["full", "summary", "brief"]),
+    ("kpi_scorecard",     lambda d: not _kpi_scorecard_is_redundant(d),
+     ["full", "summary", "brief"]),
 
     # GA4 slides
     ("website_traffic",     lambda d: _has_ga4(d) and bool(d.get("ga4", {}).get("daily")),
